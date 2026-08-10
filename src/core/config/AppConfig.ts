@@ -51,6 +51,13 @@ export const AppConfig = Object.freeze({
     useMockServices,
   }),
 
+  storage: Object.freeze({
+    /** Namespace for every persisted key, so clearing Fixora data is unambiguous. */
+    keyPrefix: '@fixora',
+    /** Holds the signed-in session. Read once at startup, written on sign in/out. */
+    sessionKey: '@fixora/session',
+  }),
+
   pagination: Object.freeze({
     defaultPageSize: 20,
     initialPage: 1,
