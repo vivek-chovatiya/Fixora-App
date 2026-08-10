@@ -197,6 +197,32 @@ export const EmailInput = memo(
   }),
 );
 
+export type PhoneInputProps = Omit<InputProps, 'keyboardType' | 'autoCapitalize'>;
+
+/**
+ * A variant, not a new component: formatting, normalisation and validation stay
+ * out of it, so there is still exactly one text entry primitive.
+ *
+ * `leftIcon` is a default rather than a fixed value — it sits before the spread
+ * so a caller can still override or drop it.
+ */
+export const PhoneInput = memo(
+  forwardRef<TextInput, PhoneInputProps>(function PhoneInputBase(props, ref) {
+    return (
+      <Input
+        ref={ref}
+        leftIcon="call"
+        keyboardType="phone-pad"
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="tel"
+        textContentType="telephoneNumber"
+        {...props}
+      />
+    );
+  }),
+);
+
 export type PasswordInputProps = Omit<
   InputProps,
   'secureTextEntry' | 'rightIcon' | 'onRightIconPress'

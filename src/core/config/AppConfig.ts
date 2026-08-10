@@ -63,6 +63,22 @@ export const AppConfig = Object.freeze({
     initialPage: 1,
   }),
 
+  /**
+   * Phone number limits, counted in digits after formatting is stripped.
+   *
+   * Deliberately a range rather than a country-specific pattern. `maxDigits` is
+   * the E.164 ceiling, so a number entered with a country code still validates
+   * and multi-country support needs no change here. `minDigits` is the shortest
+   * national number accepted today.
+   *
+   * The backend remains the authority on whether a number is real or reachable;
+   * this only stops an obviously incomplete entry reaching the network.
+   */
+  phone: Object.freeze({
+    minDigits: 10,
+    maxDigits: 15,
+  }),
+
   image: Object.freeze({
     maxSizeBytes: 5 * 1024 * 1024,
     maxUploadsPerRequest: 5,

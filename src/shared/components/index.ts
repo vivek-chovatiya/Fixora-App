@@ -26,10 +26,12 @@ export {
 export {
   Input,
   EmailInput,
+  PhoneInput,
   PasswordInput,
   SearchInput,
   type InputProps,
   type EmailInputProps,
+  type PhoneInputProps,
   type PasswordInputProps,
   type SearchInputProps,
 } from './Input';

@@ -11,7 +11,9 @@
  * avoid.
  */
 
+import { AppConfig } from '@/core/config/AppConfig';
 import type { AuthUser } from '@/features/auth/types';
+import { normalisePhone } from '@/shared/validation/phone';
 
 /** The one-time code MockAuthService accepts, for customers and vendors alike. */
 export const MOCK_OTP_CODE = '123456';
@@ -22,8 +24,6 @@ export const MOCK_OTP_TTL_SECONDS = 300;
 /** Cooldown before the UI may offer "resend". */
 export const MOCK_OTP_RESEND_AFTER_SECONDS = 30;
 
-/** Shortest input the mock treats as a plausible phone number. */
-export const MOCK_MIN_PHONE_DIGITS = 10;
 
 export interface MockAccount {
   /** Digits only. Compared after normalisation, so formatting does not matter. */
@@ -69,18 +69,13 @@ export const MOCK_ACCOUNTS: readonly MockAccount[] = Object.freeze([
   },
 ]);
 
-/** Strips formatting so '+91 98765-43210' and '9876543210' are the same number. */
-export function normalisePhone(phone: string): string {
-  return phone.replace(/\D/g, '');
-}
-
 /**
  * Finds a seeded account by phone. Matches on trailing digits so a number
  * entered with a country code still resolves.
  */
 export function findMockAccount(phone: string): MockAccount | undefined {
   const digits = normalisePhone(phone);
-  if (digits.length < MOCK_MIN_PHONE_DIGITS) {
+  if (digits.length < AppConfig.phone.minDigits) {
     return undefined;
   }
   return MOCK_ACCOUNTS.find(account => digits.endsWith(account.phone));

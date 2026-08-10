@@ -19,17 +19,16 @@
  * vendor in. Only `verifyVendorAuthCode` produces a session.
  */
 
+import { AppConfig } from '@/core/config/AppConfig';
 import { createLogger } from '@/core/logger/Logger';
 import type { AuthUser, SessionPayload } from '@/features/auth/types';
 import {
-  MOCK_MIN_PHONE_DIGITS,
   MOCK_OTP_CODE,
   MOCK_OTP_RESEND_AFTER_SECONDS,
   MOCK_OTP_TTL_SECONDS,
   findMockAccount,
   generateMockVendorAuthCode,
   maskPhone,
-  normalisePhone,
 } from '@/shared/services/mock/mockAuthData';
 import { mockId, simulateNetwork, type MockLatency } from '@/shared/services/mock/mockUtils';
 import type {
@@ -40,6 +39,7 @@ import type {
   VendorRegistrationDetails,
 } from '@/shared/services/types/AuthService';
 import { AppError } from '@/shared/types/error';
+import { normalisePhone } from '@/shared/validation/phone';
 
 const log = createLogger('MockAuthService');
 
@@ -296,7 +296,7 @@ export class MockAuthService implements AuthService {
 
   private requirePlausiblePhone(phone: string): string {
     const digits = normalisePhone(phone);
-    if (digits.length < MOCK_MIN_PHONE_DIGITS) {
+    if (digits.length < AppConfig.phone.minDigits) {
       throw new AppError({
         kind: 'validation',
         message: 'Phone number too short for a mock challenge',
