@@ -21,15 +21,44 @@ export function delay(ms: number): Promise<void> {
 }
 
 /**
+ * How long a mock call pretends to take. Field names match `AppConfig.mock` so
+ * there is one vocabulary for latency across the app.
+ */
+export interface MockLatency {
+  minLatencyMs: number;
+  maxLatencyMs: number;
+}
+
+/**
+ * Latency-free, for tests only.
+ *
+ * ⚠️ Never pass this to a service the app actually runs. Simulated latency is
+ * what makes the loading and retry states reachable before the backend exists;
+ * removing it from the running app would hide exactly the states the Definition
+ * of Done requires. Tests assert behaviour, not waiting, so they opt out.
+ */
+export const NO_LATENCY: MockLatency = Object.freeze({ minLatencyMs: 0, maxLatencyMs: 0 });
+
+/**
  * Wraps a mock result in realistic latency and an optional simulated failure.
+ *
+ * Latency defaults to `AppConfig.mock`, so every caller keeps its runtime
+ * behaviour unless it deliberately overrides it.
  *
  * Raise `AppConfig.mock.failureRate` to exercise error and retry paths across
  * the whole app without touching a single screen.
  */
-export async function simulateNetwork<T>(produce: () => T | Promise<T>): Promise<T> {
-  const { minLatencyMs, maxLatencyMs, failureRate } = AppConfig.mock;
+export async function simulateNetwork<T>(
+  produce: () => T | Promise<T>,
+  latency: MockLatency = AppConfig.mock,
+): Promise<T> {
+  const { failureRate } = AppConfig.mock;
 
-  await delay(randomBetween(minLatencyMs, maxLatencyMs));
+  // Skipped rather than awaited at zero: a timer per call is the cost this
+  // override exists to remove.
+  if (latency.maxLatencyMs > 0) {
+    await delay(randomBetween(latency.minLatencyMs, latency.maxLatencyMs));
+  }
 
   if (failureRate > 0 && Math.random() < failureRate) {
     throw new AppError({

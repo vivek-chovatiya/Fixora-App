@@ -31,7 +31,7 @@ import {
   maskPhone,
   normalisePhone,
 } from '@/shared/services/mock/mockAuthData';
-import { mockId, simulateNetwork } from '@/shared/services/mock/mockUtils';
+import { mockId, simulateNetwork, type MockLatency } from '@/shared/services/mock/mockUtils';
 import type {
   AuthService,
   OtpChallenge,
@@ -62,6 +62,25 @@ interface ActiveVendor {
   authCode: string;
 }
 
+/**
+ * Both fields exist so tests can remove the two things that make a mock slow to
+ * assert against: waiting for a clock, and waiting for a network.
+ *
+ * Neither is set by the running app, which keeps real-feeling latency.
+ */
+export interface MockAuthServiceOptions {
+  /**
+   * Injectable clock. Expiry is time-dependent behaviour, and a test that had to
+   * wait five real minutes to prove a code expires would never be written.
+   */
+  now?: () => number;
+  /**
+   * Simulated latency. Defaults to `AppConfig.mock`; pass `NO_LATENCY` in tests
+   * so a suite is not billed hundreds of milliseconds per call.
+   */
+  latency?: MockLatency;
+}
+
 export class MockAuthService implements AuthService {
   /** Customer one-time codes, by normalised phone. */
   private readonly customerChallenges = new Map<string, IssuedChallenge>();
@@ -72,16 +91,27 @@ export class MockAuthService implements AuthService {
   /** Vendors activated this process, by normalised phone. */
   private readonly activeVendors = new Map<string, ActiveVendor>();
 
+  private readonly now: () => number;
+
+  private readonly latency: MockLatency | undefined;
+
+  constructor(options: MockAuthServiceOptions = {}) {
+    this.now = options.now ?? (() => Date.now());
+    this.latency = options.latency;
+  }
+
   /**
-   * Injectable clock. Expiry is time-dependent behaviour, and a test that had to
-   * wait five real minutes to prove a code expires would never be written.
+   * Every public method goes through here rather than calling `simulateNetwork`
+   * directly, so a method added later cannot quietly ignore the override.
    */
-  constructor(private readonly now: () => number = () => Date.now()) {}
+  private simulate<T>(produce: () => T): Promise<T> {
+    return this.latency ? simulateNetwork(produce, this.latency) : simulateNetwork(produce);
+  }
 
   /* Customer ------------------------------------------------------------- */
 
   async requestCustomerOtp(phone: string): Promise<OtpChallenge> {
-    return simulateNetwork(() => {
+    return this.simulate(() => {
       const digits = this.requirePlausiblePhone(phone);
 
       // Succeeds whether or not the number is registered. Answering that would
@@ -94,7 +124,7 @@ export class MockAuthService implements AuthService {
   }
 
   async verifyCustomerOtp(phone: string, code: string): Promise<SessionPayload> {
-    return simulateNetwork(() => {
+    return this.simulate(() => {
       const digits = normalisePhone(phone);
       const challenge = this.customerChallenges.get(digits);
 
@@ -120,7 +150,7 @@ export class MockAuthService implements AuthService {
   /* Vendor onboarding ---------------------------------------------------- */
 
   async registerVendor(details: VendorRegistrationDetails): Promise<VendorRegistration> {
-    return simulateNetwork(() => {
+    return this.simulate(() => {
       const digits = this.requirePlausiblePhone(details.phone);
 
       if (this.findActiveVendor(digits)) {
@@ -155,7 +185,7 @@ export class MockAuthService implements AuthService {
   }
 
   async requestVendorOtp(registrationId: string): Promise<OtpChallenge> {
-    return simulateNetwork(() => {
+    return this.simulate(() => {
       const onboarding = this.requireOnboarding(registrationId);
 
       onboarding.challenge = { expiresAtMs: this.expiryFromNow() };
@@ -166,7 +196,7 @@ export class MockAuthService implements AuthService {
   }
 
   async verifyVendorOtp(registrationId: string, code: string): Promise<VendorAuthCode> {
-    return simulateNetwork(() => {
+    return this.simulate(() => {
       const onboarding = this.requireOnboarding(registrationId);
 
       this.assertChallengeUsable(onboarding.challenge, () => {
@@ -189,7 +219,7 @@ export class MockAuthService implements AuthService {
   }
 
   async regenerateVendorAuthCode(registrationId: string): Promise<VendorAuthCode> {
-    return simulateNetwork(() => {
+    return this.simulate(() => {
       const onboarding = this.requireOnboarding(registrationId);
       this.assertPhoneVerified(onboarding);
 
@@ -203,7 +233,7 @@ export class MockAuthService implements AuthService {
   }
 
   async verifyVendorAuthCode(registrationId: string, authCode: string): Promise<SessionPayload> {
-    return simulateNetwork(() => {
+    return this.simulate(() => {
       const onboarding = this.requireOnboarding(registrationId);
       this.assertPhoneVerified(onboarding);
 
@@ -231,7 +261,7 @@ export class MockAuthService implements AuthService {
   /* Vendor sign in ------------------------------------------------------- */
 
   async signInVendor(phone: string, authCode: string): Promise<SessionPayload> {
-    return simulateNetwork(() => {
+    return this.simulate(() => {
       const digits = normalisePhone(phone);
       const vendor = this.findActiveVendor(digits);
 
@@ -254,7 +284,7 @@ export class MockAuthService implements AuthService {
   /* Common --------------------------------------------------------------- */
 
   async signOut(): Promise<void> {
-    return simulateNetwork(() => {
+    return this.simulate(() => {
       // Outstanding challenges die with the session. Activated vendors do not:
       // signing out is not the same as losing an account.
       this.customerChallenges.clear();
