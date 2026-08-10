@@ -68,11 +68,14 @@ async function render(service: AuthService, categories: CategoryService = stubCa
   registerService('auth', service);
   registerService('category', categories);
 
+  const navigate = jest.fn();
+  const navigation = { navigate } as never;
+
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   await act(async () => {
     renderer = ReactTestRenderer.create(
       <ThemeProvider>
-        <VendorRegistrationScreen navigation={{ navigate: jest.fn() } as never} route={{} as never} />
+        <VendorRegistrationScreen navigation={navigation} route={{} as never} />
       </ThemeProvider>,
     );
   });
@@ -114,6 +117,7 @@ async function render(service: AuthService, categories: CategoryService = stubCa
 
   return {
     renderer,
+    navigate,
     fill,
     press,
     fillValid,
@@ -303,15 +307,21 @@ describe('VendorRegistrationScreen — submission', () => {
     });
   });
 
-  it('produces the challenge without producing a session', async () => {
-    const { fillValid, submit, text } = await render(stubAuthService());
+  it('hands verification the registration id, not the phone number', async () => {
+    const { fillValid, submit, navigate } = await render(stubAuthService());
 
     await fillValid();
     await submit();
 
-    expect(text()).toContain(REGISTRATION.challenge.maskedDestination);
-    // The handle identifies the onboarding; the vendor has no use for it.
-    expect(text()).not.toContain(REGISTRATION.registrationId);
+    expect(navigate).toHaveBeenCalledWith('VendorOtp', {
+      registrationId: REGISTRATION.registrationId,
+      challenge: REGISTRATION.challenge,
+    });
+
+    // Onboarding is identified by the handle. Knowing the number must not be
+    // enough to resume someone else's registration.
+    const params = navigate.mock.calls[0][1];
+    expect(JSON.stringify(params)).not.toContain(VALID.normalisedPhone);
   });
 });
 
@@ -347,25 +357,26 @@ describe('VendorRegistrationScreen — failure', () => {
         .mockRejectedValueOnce(new AppError({ kind: 'network' }))
         .mockResolvedValueOnce(REGISTRATION),
     });
-    const { fillValid, submit, text } = await render(service);
+    const { fillValid, submit, navigate } = await render(service);
 
     await fillValid();
     await submit();
     await submit();
 
     expect(service.registerVendor).toHaveBeenCalledTimes(2);
-    expect(text()).toContain(REGISTRATION.challenge.maskedDestination);
+    expect(navigate).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('VendorRegistrationScreen — nothing leaks', () => {
-  it('shows no one-time code, because it is never given one', async () => {
-    const { fillValid, submit, text } = await render(stubAuthService());
+  it('passes on no one-time code, because it is never given one', async () => {
+    const { fillValid, submit, navigate, text } = await render(stubAuthService());
 
     await fillValid();
     await submit();
 
     expect(JSON.stringify(REGISTRATION)).not.toMatch(/\b\d{6}\b/);
+    expect(JSON.stringify(navigate.mock.calls)).not.toMatch(/\b\d{6}\b/);
     expect(text()).not.toMatch(/\b\d{6}\b/);
   });
 

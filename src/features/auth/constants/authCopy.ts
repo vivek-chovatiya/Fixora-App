@@ -43,7 +43,7 @@ export const AUTH_COPY = Object.freeze({
     resend: 'Resend code',
     /** `{seconds}` is replaced with the remaining cooldown. */
     resendIn: 'Resend code in {seconds}s',
-    changeNumber: 'Change phone number',
+    changeAction: 'Change phone number',
     /**
      * Replaces ErrorState's default title for `unauthorized`, which reads
      * "Session expired" — accurate everywhere else in the app, but wrong here
@@ -79,9 +79,33 @@ export const AUTH_COPY = Object.freeze({
     submit: 'Continue',
     submitHint: 'Registers your business and sends a verification code',
 
-    sentTitle: 'Verify your number',
+  }),
+
+  vendorOtp: Object.freeze({
+    title: 'Verify your business number',
     /** `{destination}` is replaced with the masked value the backend supplied. */
-    sentBody: 'We have sent a verification code to {destination}.',
+    subtitle: 'Enter the code we sent to {destination}.',
+    codeLabel: 'Verification code',
+    codePlaceholder: 'Enter the code',
+    submit: 'Verify',
+    /**
+     * Deliberately does not promise a sign in. Verifying the number activates
+     * the business and issues an auth code; the session comes later, once that
+     * code is confirmed (PROJECT_BIBLE.md section 7A.2).
+     */
+    submitHint: 'Checks the code and activates your business',
+    resend: 'Resend code',
+    /** `{seconds}` is replaced with the remaining cooldown. */
+    resendIn: 'Resend code in {seconds}s',
+    changeAction: 'Change registration details',
+    expiredTitle: 'Code expired',
+
+    verifiedTitle: 'Business verified',
+    /**
+     * Says nothing about the auth code itself. The code exists at this point but
+     * is not shown until the display step, which owns how it is presented.
+     */
+    verifiedBody: 'Your number is verified and your business is active.',
   }),
 });
 

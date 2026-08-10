@@ -37,14 +37,17 @@ export const customerPhoneSchema = z.object({
 export type CustomerPhoneForm = z.infer<typeof customerPhoneSchema>;
 
 /**
- * Customer sign in, step two: the code they received.
+ * The one-time code, for every flow that verifies a phone number.
  *
- * Kept here rather than in shared validation because a one-time code is not a
- * general field — it belongs to this flow, and the vendor flows have their own
- * rules. It checks shape only: whether the code is the right one is never the
- * app's decision.
+ * Kept in the auth feature rather than shared validation because a one-time code
+ * is not a general-purpose field — it belongs to authentication. Customer sign
+ * in and vendor onboarding send it to different services with different results,
+ * but the code itself has one shape.
+ *
+ * It checks shape only: whether the code is the right one is never the app's
+ * decision (PROJECT_BIBLE.md section 7A.4).
  */
-export const customerOtpSchema = z.object({
+export const otpSchema = z.object({
   code: z
     .string()
     .trim()
@@ -56,7 +59,7 @@ export const customerOtpSchema = z.object({
     ),
 });
 
-export type CustomerOtpForm = z.infer<typeof customerOtpSchema>;
+export type OtpForm = z.infer<typeof otpSchema>;
 
 /** A required name-like field, trimmed and bounded. */
 function requiredName(label: string, maxLength: number) {

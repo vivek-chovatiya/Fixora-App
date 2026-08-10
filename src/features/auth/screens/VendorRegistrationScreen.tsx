@@ -18,12 +18,12 @@
  */
 
 import React, { useCallback } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 
-import { AUTH_COPY, formatCopy } from '@/features/auth/constants/authCopy';
+import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { ServiceCategoryField } from '@/features/auth/components/ServiceCategoryField';
 import { useVendorRegistration } from '@/features/auth/hooks/useAuth';
 import {
@@ -34,11 +34,9 @@ import {
 } from '@/features/auth/validation/authSchemas';
 import type { AuthStackParamList } from '@/navigation/types';
 import {
-  Card,
   ControlledInput,
   EmailInput,
   ErrorState,
-  Icon,
   PhoneInput,
   PrimaryButton,
   Screen,
@@ -51,10 +49,10 @@ const COPY = AUTH_COPY.vendorRegistration;
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'VendorRegistration'>;
 
-export function VendorRegistrationScreen(_props: Props) {
+export function VendorRegistrationScreen({ navigation }: Props) {
   const theme = useTheme();
 
-  const { mutate: register, data: registration, error, isSubmitting } = useVendorRegistration();
+  const { mutate: register, error, isSubmitting } = useVendorRegistration();
 
   const { control, handleSubmit } = useForm<VendorRegistrationForm>({
     resolver: zodResolver(vendorRegistrationSchema),
@@ -76,13 +74,23 @@ export function VendorRegistrationScreen(_props: Props) {
       // doing before this leaves the app: the phone is reduced to digits, and a
       // blank email is sent as absent rather than as an empty string. A failure
       // leaves the form exactly as it is, so nothing typed is lost.
-      await register({
+      const registration = await register({
         ...values,
         phone: normalisePhone(values.phone),
         email: values.email === '' ? undefined : values.email,
       });
+
+      if (registration) {
+        // `registrationId` is the onboarding identity from here on — the phone
+        // number is not carried forward as one. The challenge holds only the
+        // masked destination and timings; no code travels in params.
+        navigation.navigate('VendorOtp', {
+          registrationId: registration.registrationId,
+          challenge: registration.challenge,
+        });
+      }
     },
-    [register],
+    [register, navigation],
   );
 
   const onSubmit = handleSubmit(submit);
@@ -90,40 +98,6 @@ export function VendorRegistrationScreen(_props: Props) {
   const handleSubmitPress = useCallback(() => {
     void onSubmit();
   }, [onSubmit]);
-
-  if (registration) {
-    return (
-      <Screen scrollable testID="vendor-registration-screen">
-        <View style={[styles.body, { gap: theme.spacing.xxl }]}>
-          <Card style={[styles.confirmation, { gap: theme.spacing.md }]}>
-            <Icon name="success" size="xxl" color="success" />
-            <Text variant="h2" align="center">
-              {COPY.sentTitle}
-            </Text>
-            <Text variant="body" color="textSecondary" align="center">
-              {formatCopy(COPY.sentBody, {
-                destination: registration.challenge.maskedDestination,
-              })}
-            </Text>
-          </Card>
-
-          {/*
-            Verification is the next sub-stage. The route contract already
-            exists, so this becomes one call:
-
-              navigation.replace('VendorOtp', {
-                registrationId: registration.registrationId,
-                challenge: registration.challenge,
-              })
-
-            `registrationId` is held in mutation state until then. It is never
-            rendered — it identifies the onboarding, and nothing is gained by
-            showing it to the vendor.
-          */}
-        </View>
-      </Screen>
-    );
-  }
 
   return (
     <Screen scrollable keyboardAvoiding testID="vendor-registration-screen">
@@ -238,13 +212,3 @@ export function VendorRegistrationScreen(_props: Props) {
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  body: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  confirmation: {
-    alignItems: 'center',
-  },
-});
