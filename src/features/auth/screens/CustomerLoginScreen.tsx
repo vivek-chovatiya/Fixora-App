@@ -17,35 +17,27 @@
 
 import React, { useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 
 import { AppConfig } from '@/core/config/AppConfig';
+import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { useRequestCustomerOtp } from '@/features/auth/hooks/useAuth';
 import { customerPhoneSchema, type CustomerPhoneForm } from '@/features/auth/validation/authSchemas';
-import {
-  Card,
-  ErrorState,
-  Icon,
-  PhoneInput,
-  PrimaryButton,
-  Screen,
-  SecondaryButton,
-  Text,
-} from '@/shared/components';
+import type { AuthStackParamList } from '@/navigation/types';
+import { ErrorState, PhoneInput, PrimaryButton, Screen, Text } from '@/shared/components';
 import { useTheme } from '@/shared/theme';
 import { normalisePhone } from '@/shared/validation/phone';
 
-export function CustomerLoginScreen() {
+const COPY = AUTH_COPY.customerLogin;
+
+type Props = NativeStackScreenProps<AuthStackParamList, 'CustomerLogin'>;
+
+export function CustomerLoginScreen({ navigation }: Props) {
   const theme = useTheme();
 
-  const {
-    mutate: requestOtp,
-    data: challenge,
-    error,
-    isSubmitting,
-    reset: clearRequest,
-  } = useRequestCustomerOtp();
+  const { mutate: requestOtp, error, isSubmitting } = useRequestCustomerOtp();
 
   const { control, handleSubmit } = useForm<CustomerPhoneForm>({
     resolver: zodResolver(customerPhoneSchema),
@@ -61,9 +53,16 @@ export function CustomerLoginScreen() {
       // Normalised here so the service always receives digits, whatever the
       // user typed. `mutate` resolves null on failure and surfaces the error
       // through `error`, so there is nothing to catch.
-      await requestOtp(normalisePhone(phone));
+      const digits = normalisePhone(phone);
+      const challenge = await requestOtp(digits);
+
+      if (challenge) {
+        // The number travels with the challenge because verification needs it
+        // and the challenge carries no identifier of its own.
+        navigation.navigate('CustomerOtp', { phone: digits, challenge });
+      }
     },
-    [requestOtp],
+    [requestOtp, navigation],
   );
 
   const onSubmit = handleSubmit(submit);
@@ -71,38 +70,6 @@ export function CustomerLoginScreen() {
   const handleSubmitPress = useCallback(() => {
     void onSubmit();
   }, [onSubmit]);
-
-  // Returns to the form with the number still typed, so correcting a digit does
-  // not mean entering it again.
-  const handleChangeNumber = useCallback(() => {
-    clearRequest();
-  }, [clearRequest]);
-
-  if (challenge) {
-    return (
-      <Screen scrollable testID="customer-login-screen">
-        <View style={[styles.body, { gap: theme.spacing.xxl }]}>
-          <Card style={[styles.confirmation, { gap: theme.spacing.md }]}>
-            <Icon name="success" size="xxl" color="success" />
-            <Text variant="h2" align="center">
-              Code sent
-            </Text>
-            <Text variant="body" color="textSecondary" align="center">
-              We have sent a verification code to {challenge.maskedDestination}.
-            </Text>
-          </Card>
-
-          {/*
-            The verification step is the next sub-stage. When it lands this is
-            the single seam that changes: navigate to it with `challenge`,
-            instead of rendering this confirmation.
-          */}
-
-          <SecondaryButton fullWidth label="Use a different number" onPress={handleChangeNumber} />
-        </View>
-      </Screen>
-    );
-  }
 
   return (
     <Screen scrollable keyboardAvoiding testID="customer-login-screen">
@@ -112,15 +79,15 @@ export function CustomerLoginScreen() {
             {AppConfig.app.name}
           </Text>
           <Text variant="body" color="textSecondary">
-            Local services, requested in a few taps.
+            {AUTH_COPY.brand.tagline}
           </Text>
         </View>
 
         <View style={{ gap: theme.spacing.lg }}>
           <View style={{ gap: theme.spacing.xs }}>
-            <Text variant="h2">Sign in</Text>
+            <Text variant="h2">{COPY.title}</Text>
             <Text variant="body" color="textSecondary">
-              Enter your phone number and we will send you a verification code.
+              {COPY.subtitle}
             </Text>
           </View>
 
@@ -129,9 +96,9 @@ export function CustomerLoginScreen() {
             name="phone"
             render={({ field: { onChange, onBlur, value }, fieldState: { error: fieldError } }) => (
               <PhoneInput
-                label="Phone number"
+                label={COPY.phoneLabel}
                 required
-                placeholder="Your phone number"
+                placeholder={COPY.phonePlaceholder}
                 value={value}
                 onChangeText={onChange}
                 onBlur={onBlur}
@@ -153,10 +120,10 @@ export function CustomerLoginScreen() {
 
           <PrimaryButton
             fullWidth
-            label="Send code"
+            label={COPY.submit}
             onPress={handleSubmitPress}
             isLoading={isSubmitting}
-            accessibilityHint="Sends a verification code to the number you entered"
+            accessibilityHint={COPY.submitHint}
           />
         </View>
       </View>
@@ -168,8 +135,5 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
     justifyContent: 'center',
-  },
-  confirmation: {
-    alignItems: 'center',
   },
 });

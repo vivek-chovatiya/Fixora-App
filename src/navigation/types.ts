@@ -13,11 +13,31 @@
 
 import type { NavigatorScreenParams } from '@react-navigation/native';
 
-/** Pre-authentication flow (PROJECT_BIBLE.md sections 8, 9, 28). */
+import type { OtpChallenge } from '@/shared/services/types/AuthService';
+
+/**
+ * Pre-authentication flow (PROJECT_BIBLE.md sections 7A, 9, 28).
+ *
+ * Routes are named by role. Customer and vendor authentication are different
+ * mechanisms — a one-time code versus a permanent auth code — so a shared
+ * "Login" route would have had to branch on something the screen should not be
+ * deciding.
+ *
+ * There is no password reset route. Neither role has a password: customers use a
+ * one-time code, and vendor recovery is auth code regeneration (section 7A.2).
+ *
+ * The remaining vendor routes are added with their screens, not ahead of them.
+ */
 export type AuthStackParamList = {
-  Login: undefined;
+  CustomerLogin: undefined;
+  /**
+   * `phone` travels with the challenge because `verifyCustomerOtp(phone, code)`
+   * needs it and `OtpChallenge` carries no identifier of its own — unlike vendor
+   * onboarding, which is keyed by `registrationId`. It is the user's own number,
+   * not a credential; the code itself never appears in navigation params.
+   */
+  CustomerOtp: { phone: string; challenge: OtpChallenge };
   Signup: undefined;
-  ForgotPassword: undefined;
 };
 
 /** Customer bottom tabs (PROJECT_BIBLE.md section 26). */

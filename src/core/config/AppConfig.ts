@@ -79,6 +79,17 @@ export const AppConfig = Object.freeze({
     maxDigits: 15,
   }),
 
+  /**
+   * One-time code shape, for input length and local validation only.
+   *
+   * This is not a claim about how codes are generated. Whether a code is correct
+   * or still valid is the backend's answer (PROJECT_BIBLE.md section 7A.4); this
+   * exists so an obviously incomplete entry costs no network round trip.
+   */
+  otp: Object.freeze({
+    length: 6,
+  }),
+
   image: Object.freeze({
     maxSizeBytes: 5 * 1024 * 1024,
     maxUploadsPerRequest: 5,

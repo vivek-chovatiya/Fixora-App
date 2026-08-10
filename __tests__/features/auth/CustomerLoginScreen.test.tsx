@@ -4,17 +4,14 @@
  * - an incomplete number never reaches the network
  * - what does reach the service is normalised, not what was typed
  * - a failure shows the safe message and leaves the form usable
- * - success renders only what the service returned, masked
+ * - success hands the challenge to verification, along with the number it needs
  *
  * A stub AuthService is registered so the screen is exercised through the same
  * abstraction the real one will arrive behind.
  */
 
 import React from 'react';
-import ReactTestRenderer, {
-  act,
-  type ReactTestRendererJSON,
-} from 'react-test-renderer';
+import ReactTestRenderer, { act, type ReactTestRendererJSON } from 'react-test-renderer';
 
 import { CustomerLoginScreen } from '@/features/auth/screens/CustomerLoginScreen';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
@@ -51,11 +48,15 @@ function stubAuthService(overrides: Partial<AuthService> = {}): AuthService {
 async function render(service: AuthService) {
   registerService('auth', service);
 
+  const navigate = jest.fn();
+  const navigation = { navigate } as never;
+  const route = { key: 'CustomerLogin', name: 'CustomerLogin' as const, params: undefined } as never;
+
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   await act(async () => {
     renderer = ReactTestRenderer.create(
       <ThemeProvider>
-        <CustomerLoginScreen />
+        <CustomerLoginScreen navigation={navigation} route={route} />
       </ThemeProvider>,
     );
   });
@@ -74,7 +75,7 @@ async function render(service: AuthService) {
     });
   };
 
-  return { renderer, type, submit, text: () => textOf(renderer.toJSON()) };
+  return { renderer, navigate, type, submit, text: () => textOf(renderer.toJSON()) };
 }
 
 /** Flattens every string in the rendered tree so copy can be asserted on. */
@@ -97,12 +98,13 @@ afterEach(() => {
 describe('CustomerLoginScreen', () => {
   it('keeps an incomplete number off the network', async () => {
     const service = stubAuthService();
-    const { type, submit, text } = await render(service);
+    const { type, submit, text, navigate } = await render(service);
 
     await type('123');
     await submit();
 
     expect(service.requestCustomerOtp).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
     expect(text()).toContain('too short');
   });
 
@@ -116,16 +118,16 @@ describe('CustomerLoginScreen', () => {
     expect(service.requestCustomerOtp).toHaveBeenCalledWith('919876543210');
   });
 
-  it('confirms using the masked destination the service returned', async () => {
-    const { type, submit, text } = await render(stubAuthService());
+  it('hands verification the challenge and the number it will need', async () => {
+    const { type, submit, navigate } = await render(stubAuthService());
 
-    await type('9876543210');
+    await type('+91 98765-43210');
     await submit();
 
-    expect(text()).toContain('Code sent');
-    expect(text()).toContain(CHALLENGE.maskedDestination);
-    // The screen never derives the mask itself, so the raw number cannot appear.
-    expect(text()).not.toContain('9876543210');
+    expect(navigate).toHaveBeenCalledWith('CustomerOtp', {
+      phone: '919876543210',
+      challenge: CHALLENGE,
+    });
   });
 
   it('shows the safe message on failure and leaves the form ready to retry', async () => {
@@ -138,7 +140,7 @@ describe('CustomerLoginScreen', () => {
         throw failure;
       }),
     });
-    const { type, submit, text } = await render(service);
+    const { type, submit, text, navigate } = await render(service);
 
     await type('9876543210');
     await submit();
@@ -146,6 +148,7 @@ describe('CustomerLoginScreen', () => {
     expect(text()).toContain(failure.userMessage);
     expect(text()).not.toContain('ECONNREFUSED');
     expect(text()).toContain('Send code');
+    expect(navigate).not.toHaveBeenCalled();
 
     await submit();
     expect(service.requestCustomerOtp).toHaveBeenCalledTimes(2);
