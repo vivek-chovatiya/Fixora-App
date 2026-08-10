@@ -37,6 +37,18 @@ export type AuthStackParamList = {
    * not a credential; the code itself never appears in navigation params.
    */
   CustomerOtp: { phone: string; challenge: OtpChallenge };
+
+  VendorRegistration: undefined;
+  /**
+   * Typed ahead of its screen so registration has a contract to hand off to.
+   *
+   * `registrationId` is the onboarding identity — never the phone number, so a
+   * half-finished registration cannot be resumed by anyone who merely knows the
+   * number. The challenge carries only the masked destination and timings; no
+   * one-time code and no auth code ever travels in params.
+   */
+  VendorOtp: { registrationId: string; challenge: OtpChallenge };
+
   Signup: undefined;
 };
 

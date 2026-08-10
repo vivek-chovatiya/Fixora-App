@@ -220,6 +220,26 @@ describe('CustomerOtpScreen — verification', () => {
     expect(store.getState().auth.status).not.toBe('authenticated');
   });
 
+  it('titles an expired code correctly rather than claiming the session expired', async () => {
+    const service = stubAuthService({
+      verifyCustomerOtp: jest.fn(async () => {
+        throw new AppError({
+          kind: 'unauthorized',
+          message: 'Mock challenge expired',
+          userMessage: 'That code has expired. Request a new one.',
+        });
+      }),
+    });
+    const { type, press, text } = await render(service);
+
+    await type(TYPED_CODE);
+    await press('Verify');
+
+    expect(text()).toContain('Code expired');
+    // There is no session at this point, so this default would be nonsense.
+    expect(text()).not.toContain('Session expired');
+  });
+
   it('locks the verify button while the check is in flight', async () => {
     // Resolved by the test rather than by the stub, so the pending state can be
     // observed instead of guessed at with a timer.

@@ -44,6 +44,44 @@ export const AUTH_COPY = Object.freeze({
     /** `{seconds}` is replaced with the remaining cooldown. */
     resendIn: 'Resend code in {seconds}s',
     changeNumber: 'Change phone number',
+    /**
+     * Replaces ErrorState's default title for `unauthorized`, which reads
+     * "Session expired" — accurate everywhere else in the app, but wrong here
+     * where no session exists yet and the only thing that can have expired is
+     * the code.
+     */
+    expiredTitle: 'Code expired',
+  }),
+
+  vendorRegistration: Object.freeze({
+    title: 'Register your business',
+    subtitle: 'Tell us about your business. We will send a code to verify your number.',
+
+    businessSection: 'Business',
+    businessNameLabel: 'Business name',
+    businessNamePlaceholder: 'Your business name',
+
+    contactSection: 'Contact',
+    firstNameLabel: 'First name',
+    firstNamePlaceholder: 'Owner first name',
+    lastNameLabel: 'Last name',
+    lastNamePlaceholder: 'Owner last name',
+    phoneLabel: 'Phone number',
+    phonePlaceholder: 'Business phone number',
+    phoneHelper: 'We will send your verification code to this number.',
+    emailLabel: 'Email',
+    emailPlaceholder: 'Business email',
+    emailHelper: 'Optional.',
+
+    servicesSection: 'Services',
+    categoriesLabel: 'Services you offer',
+
+    submit: 'Continue',
+    submitHint: 'Registers your business and sends a verification code',
+
+    sentTitle: 'Verify your number',
+    /** `{destination}` is replaced with the masked value the backend supplied. */
+    sentBody: 'We have sent a verification code to {destination}.',
   }),
 });
 

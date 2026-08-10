@@ -102,6 +102,12 @@ export function CustomerOtpScreen({ route, navigation }: Props) {
   // be in flight at a time, so they share one surface rather than stacking.
   const error = verifyError ?? resendError;
 
+  // Before sign in there is no session, so `unauthorized` can only mean the code
+  // was rejected as expired. Overriding the title here rather than changing the
+  // global kind -> title map keeps the correction to the one screen where the
+  // default reads wrongly.
+  const errorTitle = error?.kind === 'unauthorized' ? COPY.expiredTitle : undefined;
+
   return (
     <Screen scrollable keyboardAvoiding testID="customer-otp-screen">
       <View style={[styles.body, { gap: theme.spacing.xxl }]}>
@@ -138,7 +144,12 @@ export function CustomerOtpScreen({ route, navigation }: Props) {
           />
 
           {/* Retry is the verify button itself, as on the phone step. */}
-          <ErrorState error={error} fullScreen={false} testID="customer-otp-error" />
+          <ErrorState
+            error={error}
+            title={errorTitle}
+            fullScreen={false}
+            testID="customer-otp-error"
+          />
 
           <PrimaryButton
             fullWidth

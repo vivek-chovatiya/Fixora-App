@@ -36,6 +36,8 @@ export {
   type SearchInputProps,
 } from './Input';
 
+export { ControlledInput, type ControlledInputProps } from './ControlledInput';
+
 export { Screen, type ScreenProps } from './Screen';
 export { Card, type CardProps } from './Card';
 export { EmptyState, type EmptyStateProps } from './EmptyState';

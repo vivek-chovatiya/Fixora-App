@@ -14,9 +14,11 @@
 import { AppConfig } from '@/core/config/AppConfig';
 import { createLogger } from '@/core/logger/Logger';
 import { MockAuthService } from '@/shared/services/mock/MockAuthService';
+import { MockCategoryService } from '@/shared/services/mock/MockCategoryService';
 import { MockImageService } from '@/shared/services/mock/MockImageService';
 import { MockNotificationService } from '@/shared/services/mock/MockNotificationService';
 import type { AuthService } from '@/shared/services/types/AuthService';
+import type { CategoryService } from '@/shared/services/types/CategoryService';
 import type { ImageService } from '@/shared/services/types/ImageService';
 import type { NotificationService } from '@/shared/services/types/NotificationService';
 
@@ -24,6 +26,7 @@ const log = createLogger('ServiceRegistry');
 
 export interface ServiceMap {
   auth: AuthService;
+  category: CategoryService;
   notification: NotificationService;
   image: ImageService;
 }
@@ -59,6 +62,7 @@ export function configureServices(): void {
 
   if (AppConfig.features.useMockServices) {
     registerService('auth', new MockAuthService());
+    registerService('category', new MockCategoryService());
     registerService('notification', new MockNotificationService());
     registerService('image', new MockImageService());
     log.info('Services configured', { mode: 'mock', count: registry.size });

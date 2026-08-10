@@ -17,6 +17,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { CustomerLoginScreen } from '@/features/auth/screens/CustomerLoginScreen';
 import { CustomerOtpScreen } from '@/features/auth/screens/CustomerOtpScreen';
+import { VendorRegistrationScreen } from '@/features/auth/screens/VendorRegistrationScreen';
 import { createPlaceholder } from '@/navigation/placeholders/PlaceholderScreen';
 import type { AuthStackParamList } from '@/navigation/types';
 
@@ -29,6 +30,7 @@ export function AuthNavigator() {
     <Stack.Navigator initialRouteName="CustomerLogin" screenOptions={{ headerShown: false }}>
       <Stack.Screen name="CustomerLogin" component={CustomerLoginScreen} />
       <Stack.Screen name="CustomerOtp" component={CustomerOtpScreen} />
+      <Stack.Screen name="VendorRegistration" component={VendorRegistrationScreen} />
       <Stack.Screen name="Signup" component={SignupScreen} />
     </Stack.Navigator>
   );
