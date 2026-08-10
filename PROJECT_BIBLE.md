@@ -219,12 +219,44 @@ verifyCustomerOtp(phone, code)
 > Naming a provider anywhere in the app makes switching provider a mobile
 > release.
 
-## 7A.2 Vendor — phone and permanent vendor code
+## 7A.2 Vendor — registration, phone verification, permanent auth code
+
+> **Supersedes the earlier admin-approval model.** There is **no manual
+> administrator approval** in vendor onboarding. Do not show "waiting for
+> approval", "pending review", or "admin approval required" anywhere in the
+> normal registration flow.
 
 ```text
-Vendor registers → admin reviews → admin approves → admin issues vendor code
-       → vendor signs in with phone + permanent code
+Vendor registration (business details)
+        ↓
+Submit → one-time code sent to the registered phone
+        ↓
+Vendor enters code → verified
+        ↓
+Backend automatically activates the vendor
+        ↓
+Backend generates the permanent auth code
+        ↓
+Auth code displayed once — vendor copies and saves it
+        ↓
+Vendor enters the auth code to confirm they saved it
+        ↓
+Auth code verified → authenticated session → Vendor Dashboard
 ```
+
+**Verifying the phone does not sign the vendor in.** The session is created only
+when the vendor confirms the auth code. Copying the code must never authenticate
+them, and the app must never route to the dashboard merely because a code was
+generated.
+
+**Regeneration.** From the confirmation step the vendor may request a new code.
+The previous one is revoked immediately and stops working.
+
+**Returning vendors** sign in with phone + permanent auth code. No one-time code
+is required on subsequent logins unless a future product decision changes it.
+
+**The frontend never generates the production auth code.** The backend owns
+generation; the mock produces a development stand-in for simulation only.
 
 **The vendor code is a standing credential.** It never expires, so a leak is
 permanent until an administrator reissues it. It must never be:
@@ -682,17 +714,27 @@ The exact required fields must follow the **backend contract**.
 
 ---
 
-# 29. VENDOR APPROVAL
+# 29. VENDOR APPROVAL — SUPERSEDED
 
-```text
-Signup → Pending Approval → Admin Review → Approved / Rejected
-```
+> ⚠️ **This section is obsolete.** Vendor onboarding no longer involves manual
+> administrator approval. **Section 7A.2 is authoritative:** verifying the
+> one-time code activates the vendor automatically, and the session is created
+> when they confirm their permanent auth code.
+>
+> Retained only as the record of the earlier decision. Nothing here should be
+> implemented. `VendorApprovalScreen`, built against this model, has been
+> removed, and `AuthUser` no longer carries an approval status.
 
-If pending, show: *Your account is under verification.*
+~~`Signup → Pending Approval → Admin Review → Approved / Rejected`~~
 
-Vendor should **not** receive normal service requests until approved.
+~~If pending, show: *Your account is under verification.*~~
 
-If rejected, show appropriate status and message.
+~~If rejected, show appropriate status and message.~~
+
+**The one rule that survives:** a vendor must be active before receiving service
+requests. Under the new flow that is guaranteed structurally rather than by a
+check — activation happens during onboarding, so any vendor holding a session is
+already active.
 
 ---
 
@@ -1114,7 +1156,7 @@ If these workflows work reliably, **Phase 1 has achieved its goal**.
 **Vendor**
 - [ ] Signup
 - [ ] Login
-- [ ] Approval Status
+- [ ] Auth Code display, copy and confirmation (§7A.2)
 - [ ] Dashboard
 - [ ] Profile
 - [ ] Shop Images
@@ -1287,7 +1329,7 @@ Vendor   → Receive Leads → Manage Jobs → Manage Team → Complete Jobs
 | Customer Signup | ✅ | Improve |
 | Customer Login | ✅ | Improve |
 | Vendor Signup | ✅ | Improve |
-| Vendor Approval | ✅ | Improve |
+| Vendor auto-activation on phone verification | ✅ | Improve |
 | Categories | ✅ | Search/Recommendation |
 | Sub Categories | ✅ | Improve |
 | Request Creation | ✅ | Advanced |
