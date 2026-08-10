@@ -14,9 +14,7 @@
 import React, { useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { useAppDispatch, useAppSelector } from '@/app/hooks';
-import { selectCurrentUser, selectVendorApproval } from '@/features/auth/state/authSlice';
-import { signOut } from '@/features/auth/state/authThunks';
+import { useAuthSession, useSignOut } from '@/features/auth/hooks/useAuth';
 import { getFullName } from '@/features/auth/types';
 import { SecondaryButton } from '@/shared/components/Button';
 import { Icon } from '@/shared/components/Icon';
@@ -47,13 +45,12 @@ const COPY: Readonly<Record<'pending' | 'rejected', ApprovalCopy>> = {
 
 export function VendorApprovalScreen() {
   const theme = useTheme();
-  const dispatch = useAppDispatch();
-  const user = useAppSelector(selectCurrentUser);
-  const approval = useAppSelector(selectVendorApproval);
+  const { user, vendorApproval: approval } = useAuthSession();
+  const { mutate: signOut, isSubmitting } = useSignOut();
 
   const handleSignOut = useCallback(() => {
-    void signOut(dispatch);
-  }, [dispatch]);
+    void signOut();
+  }, [signOut]);
 
   // `approved` never reaches this screen; treat anything unexpected as pending
   // rather than rendering nothing.
@@ -86,7 +83,13 @@ export function VendorApprovalScreen() {
         </Text>
       ) : null}
 
-      <SecondaryButton label="Sign out" icon="logout" onPress={handleSignOut} fullWidth />
+      <SecondaryButton
+        label="Sign out"
+        icon="logout"
+        onPress={handleSignOut}
+        isLoading={isSubmitting}
+        fullWidth
+      />
     </View>
   );
 }
