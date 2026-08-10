@@ -31,6 +31,7 @@ Build a small, excellent Phase 1.
 - [4. Phase Definitions](#4-phase-definitions)
 - [5. Phase 1 — MVP](#5-phase-1--mvp)
 - [6–26. Phase 1 Customer Application](#6-phase-1-customer-application)
+  - [**7A. Authentication Model**](#7a-authentication-model--approved) — customer OTP, vendor code
   - [**18A. Vendor Selection & Dispatch**](#18a-vendor-selection--dispatch) — directed vs open dispatch
 - [27–43. Phase 1 Vendor Application](#27-phase-1-vendor-application)
 - [44–55. Shared Frontend Concerns](#44-shared-frontend-features--phase-1)
@@ -190,7 +191,76 @@ Splash should be simple. **Do not create unnecessary animation.**
 
 ---
 
+# 7A. AUTHENTICATION MODEL — APPROVED
+
+Sections 8, 9 and 28 were written before the authentication mechanism was
+settled, so they describe fields generally ("Email / Phone ... Password, per
+final backend authentication contract"). **This section is the specific,
+approved decision and takes precedence wherever they differ.** Their field lists
+remain useful as the record of what a form may collect once profile capture is
+designed.
+
+## 7A.1 Customer — phone and one-time code
+
+```text
+Phone number → one-time code → verification → authenticated customer session
+```
+
+**The delivery channel is a backend concern.** The code travels over WhatsApp
+today; it could be SMS or anything else tomorrow. The frontend depends on
+exactly two operations and knows nothing about how the code arrives:
+
+```text
+requestCustomerOtp(phone)
+verifyCustomerOtp(phone, code)
+```
+
+> **No WhatsApp or SMS SDK may be added to the React Native application.**
+> Naming a provider anywhere in the app makes switching provider a mobile
+> release.
+
+## 7A.2 Vendor — phone and permanent vendor code
+
+```text
+Vendor registers → admin reviews → admin approves → admin issues vendor code
+       → vendor signs in with phone + permanent code
+```
+
+**The vendor code is a standing credential.** It never expires, so a leak is
+permanent until an administrator reissues it. It must never be:
+
+- written to a log
+- included in an error message, user-facing or developer-facing
+- persisted anywhere beyond the request that uses it
+- attached to analytics events
+- included in crash reports
+
+`AppConfig.logging.redactedKeys` already masks `vendorCode`, `otp`, `authCode`,
+`password` and `token` at any depth, so `Logger` enforces the first of these
+automatically.
+
+## 7A.3 Roles
+
+The session identifies **CUSTOMER** or **VENDOR**, and nothing else.
+
+- There is **no Admin role in the mobile application.** Admin is a separate
+  future web application.
+- There is **no team-member authentication** in the MVP. Team members are
+  records a vendor manages (section 39), not accounts that sign in.
+
+## 7A.4 The backend decides
+
+The frontend never determines whether an account exists, whether a code is
+valid, whether a vendor is approved, whether a session is still good, or what a
+user is allowed to do. It asks and it renders the answer. The mock simulates
+those answers so the UI can be built; simulation never becomes the rule.
+
+---
+
 # 8. CUSTOMER LOGIN
+
+> **Mechanism superseded by section 7A:** customers sign in with a phone number
+> and a one-time code. There is no customer password.
 
 **Screen:** Login
 
@@ -599,6 +669,10 @@ Vendor focuses on: Requests, Work, Team, Profile, Reports.
 ---
 
 # 28. VENDOR AUTHENTICATION
+
+> **Mechanism superseded by section 7A:** vendors sign in with a phone number
+> and the permanent code issued by an administrator after approval. There is no
+> vendor password.
 
 **Screens:** Vendor Login, Vendor Signup
 
