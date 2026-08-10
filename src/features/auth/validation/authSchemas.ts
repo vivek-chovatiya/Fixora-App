@@ -91,3 +91,17 @@ export const vendorRegistrationSchema = z.object({
 });
 
 export type VendorRegistrationForm = z.infer<typeof vendorRegistrationSchema>;
+
+/**
+ * Confirmation that the vendor saved their permanent auth code.
+ *
+ * Completeness only. `VendorAuthCode.code` is an opaque string in the contract —
+ * the backend owns generation and format — so checking it looks like anything in
+ * particular would encode a format the app was never promised, and would reject
+ * a valid code the day generation changes.
+ */
+export const vendorAuthCodeSchema = z.object({
+  authCode: z.string().trim().min(1, 'Enter your authentication code.'),
+});
+
+export type VendorAuthCodeForm = z.infer<typeof vendorAuthCodeSchema>;

@@ -1,41 +1,55 @@
 /**
  * VendorOtpScreen
  *
- * Vendor onboarding, step two: the vendor enters the code sent to the number
- * they registered (PROJECT_BIBLE.md section 7A.2).
+ * The whole of vendor onboarding after registration, in one mounted screen:
+ * verify the phone, receive the permanent auth code, save it, confirm it
+ * (PROJECT_BIBLE.md section 7A.2).
  *
- * The security boundary this screen exists to hold:
+ * Three steps, one route. That is a security decision, not a layout one. The
+ * auth code is a standing credential, and separate routes would mean handing it
+ * between screens — through navigation params, a store, or storage, each of
+ * which is a place it must never be. Keeping the steps local means the code
+ * lives in one component's state, for as long as that component is mounted, and
+ * nowhere else.
  *
- *   verifying the code activates the business and issues a permanent auth code.
- *   It does not sign the vendor in.
+ * The boundary this screen holds:
  *
- * So nothing here dispatches, writes storage, or routes into the application.
- * `verifyVendorOtp` returns a `VendorAuthCode`, not a `SessionPayload` — the
- * type system enforces it, and this screen must not work around that. A session
- * is created only when the vendor confirms the code they were shown, which is
- * the next step.
+ *   verifyVendorOtp        → VendorAuthCode   (activates the business)
+ *   verifyVendorAuthCode   → SessionPayload   (signs the vendor in)
  *
- * The auth code is a standing credential. It stays in the mutation state of the
- * hook that fetched it, is never rendered here, and never reaches Redux,
- * storage, logs, analytics or navigation params.
- *
- * Onboarding is identified by `registrationId` throughout. The phone number is
- * never the identity: knowing a number must not be enough to resume someone
- * else's registration.
+ * Verifying the phone does not sign anyone in. Only confirmation does, and it
+ * does so through the existing thunk — so the session is persisted and published
+ * exactly like every other sign in, and RootNavigator swaps the tree on its own.
+ * Nothing here navigates into the application.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
+import { getClipboard } from '@/core/clipboard/Clipboard';
+import { createLogger } from '@/core/logger/Logger';
 import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { OtpVerificationForm } from '@/features/auth/components/OtpVerificationForm';
-import { useRequestVendorOtp, useVerifyVendorOtp } from '@/features/auth/hooks/useAuth';
+import { VendorAuthCodeConfirmation } from '@/features/auth/components/VendorAuthCodeConfirmation';
+import { VendorAuthCodeDisplay } from '@/features/auth/components/VendorAuthCodeDisplay';
+import {
+  useConfirmVendorAuthCode,
+  useRegenerateVendorAuthCode,
+  useRequestVendorOtp,
+  useVerifyVendorOtp,
+} from '@/features/auth/hooks/useAuth';
 import type { AuthStackParamList } from '@/navigation/types';
-import { Card, Icon, Screen, Text } from '@/shared/components';
+import { Screen, Text } from '@/shared/components';
+import type { VendorAuthCode } from '@/shared/services/types/AuthService';
 import { useTheme } from '@/shared/theme';
 
 const COPY = AUTH_COPY.vendorOtp;
+
+const log = createLogger('VendorOnboarding');
+
+/** Where the vendor is in onboarding. Local, and gone when the screen unmounts. */
+type OnboardingStep = 'otp' | 'authCodeDisplay' | 'authCodeConfirm';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'VendorOtp'>;
 
@@ -43,77 +57,168 @@ export function VendorOtpScreen({ route, navigation }: Props) {
   const theme = useTheme();
   const { registrationId, challenge } = route.params;
 
-  const {
-    mutate: verifyOtp,
-    data: issuedCode,
-    error: verifyError,
-    isSubmitting: isVerifying,
-  } = useVerifyVendorOtp();
+  const [step, setStep] = useState<OnboardingStep>('otp');
 
-  const {
-    mutate: requestOtp,
-    error: resendError,
-    isSubmitting: isResending,
-  } = useRequestVendorOtp();
+  /**
+   * The credential, for as long as this screen is mounted.
+   *
+   * Regeneration replaces it outright rather than keeping a history: the
+   * previous code is revoked the moment a new one is issued, and holding a dead
+   * credential serves nothing.
+   */
+  const [authCode, setAuthCode] = useState<VendorAuthCode | null>(null);
 
-  const verify = useCallback(
-    (code: string) => verifyOtp(registrationId, code),
+  const { mutate: verifyOtp, error: verifyOtpError, isSubmitting: isVerifyingOtp } =
+    useVerifyVendorOtp();
+
+  const { mutate: requestOtp, error: resendError, isSubmitting: isResending } =
+    useRequestVendorOtp();
+
+  const { mutate: regenerate, error: regenerateError, isSubmitting: isRegenerating } =
+    useRegenerateVendorAuthCode();
+
+  const { mutate: confirmCode, error: confirmError, isSubmitting: isConfirming } =
+    useConfirmVendorAuthCode();
+
+  /**
+   * Once a code has been issued, going back would return to registration and
+   * risk a second registration for a vendor already activated — orphaning this
+   * one. The steps after the code exists are therefore a one-way door.
+   *
+   * This guards the gesture and the Android back button, which are the only ways
+   * back: the stack shows no header.
+   */
+  const isCommitted = authCode !== null;
+
+  useEffect(() => {
+    navigation.setOptions({ gestureEnabled: !isCommitted });
+
+    if (!isCommitted) {
+      return undefined;
+    }
+
+    return navigation.addListener('beforeRemove', event => {
+      event.preventDefault();
+      log.info('Blocked leaving vendor onboarding after activation');
+    });
+  }, [navigation, isCommitted]);
+
+  /* Step one: the one-time code --------------------------------------------- */
+
+  const handleVerifyOtp = useCallback(
+    async (code: string) => {
+      const issued = await verifyOtp(registrationId, code);
+
+      if (issued) {
+        // Activation, not authentication. There is no session at this point and
+        // nothing is dispatched or persisted.
+        setAuthCode(issued);
+        setStep('authCodeDisplay');
+      }
+    },
     [verifyOtp, registrationId],
   );
 
-  // Re-sends against the same onboarding. It cannot start a new registration:
-  // this operation takes a registrationId, not business details.
-  const resend = useCallback(() => requestOtp(registrationId), [requestOtp, registrationId]);
+  // Takes a handle, not business details, so it cannot start a new registration.
+  const handleResendOtp = useCallback(
+    () => requestOtp(registrationId),
+    [requestOtp, registrationId],
+  );
 
-  const changeDetails = useCallback(() => {
+  const handleChangeDetails = useCallback(() => {
     navigation.goBack();
   }, [navigation]);
 
-  if (issuedCode) {
-    return (
-      <Screen scrollable testID="vendor-otp-screen">
-        <View style={[styles.body, { gap: theme.spacing.xxl }]}>
-          <Card style={[styles.confirmation, { gap: theme.spacing.md }]}>
-            <Icon name="verified" size="xxl" color="success" />
-            <Text variant="h2" align="center">
-              {COPY.verifiedTitle}
-            </Text>
-            <Text variant="body" color="textSecondary" align="center">
-              {COPY.verifiedBody}
-            </Text>
-          </Card>
+  /* Step two: the code is shown --------------------------------------------- */
 
-          {/*
-            The auth code display is the next sub-stage, and it is the only thing
-            allowed to render the code. `issuedCode` is held in the hook's
-            mutation state and is deliberately not shown here.
+  const handleCopy = useCallback(async (): Promise<boolean> => {
+    if (!authCode) {
+      return false;
+    }
 
-            How it reaches that screen is an open decision: it must not travel in
-            navigation params. The likely answer is that display and confirmation
-            become states of a screen mounted here, so the credential never
-            leaves the component that received it.
-          */}
-        </View>
-      </Screen>
-    );
-  }
+    try {
+      // Copying is all this does. It proves nothing and authenticates nobody.
+      await getClipboard().copy(authCode.code);
+      return true;
+    } catch {
+      // The failure is reported to the vendor by the display component. It is
+      // not logged, because the only interesting detail would be the value.
+      return false;
+    }
+  }, [authCode]);
+
+  const handleContinueToConfirm = useCallback(() => {
+    setStep('authCodeConfirm');
+  }, []);
+
+  /* Step three: the vendor confirms it -------------------------------------- */
+
+  const handleConfirm = useCallback(
+    // Nothing is done with the session. The thunk behind this hook persists and
+    // publishes it, and RootNavigator reacts — so this screen never routes into
+    // the vendor application.
+    (enteredCode: string) => confirmCode(registrationId, enteredCode),
+    [confirmCode, registrationId],
+  );
+
+  const handleRegenerate = useCallback(() => {
+    void (async () => {
+      const replacement = await regenerate(registrationId);
+
+      if (replacement) {
+        // The previous code stopped working the moment this resolved, so the
+        // vendor is sent back to see, save and confirm the new one explicitly.
+        setAuthCode(replacement);
+        setStep('authCodeDisplay');
+      }
+    })();
+  }, [regenerate, registrationId]);
+
+  const handleShowCodeAgain = useCallback(() => {
+    setStep('authCodeDisplay');
+  }, []);
+
+  /* Render ------------------------------------------------------------------ */
 
   return (
     <Screen scrollable keyboardAvoiding testID="vendor-otp-screen">
       <View style={[styles.body, { gap: theme.spacing.xxl }]}>
-        <Text variant="h1">{COPY.title}</Text>
+        {step === 'otp' ? (
+          <>
+            <Text variant="h1">{COPY.title}</Text>
 
-        <OtpVerificationForm
-          challenge={challenge}
-          copy={COPY}
-          onVerify={verify}
-          onResend={resend}
-          onChangeDestination={changeDetails}
-          isVerifying={isVerifying}
-          isResending={isResending}
-          error={verifyError ?? resendError}
-          testIDPrefix="vendor-otp"
-        />
+            <OtpVerificationForm
+              challenge={challenge}
+              copy={COPY}
+              onVerify={handleVerifyOtp}
+              onResend={handleResendOtp}
+              onChangeDestination={handleChangeDetails}
+              isVerifying={isVerifyingOtp}
+              isResending={isResending}
+              error={verifyOtpError ?? resendError}
+              testIDPrefix="vendor-otp"
+            />
+          </>
+        ) : null}
+
+        {step === 'authCodeDisplay' && authCode ? (
+          <VendorAuthCodeDisplay
+            code={authCode.code}
+            onCopy={handleCopy}
+            onContinue={handleContinueToConfirm}
+          />
+        ) : null}
+
+        {step === 'authCodeConfirm' ? (
+          <VendorAuthCodeConfirmation
+            onConfirm={handleConfirm}
+            onRegenerate={handleRegenerate}
+            onBack={handleShowCodeAgain}
+            isConfirming={isConfirming}
+            isRegenerating={isRegenerating}
+            error={confirmError ?? regenerateError}
+          />
+        ) : null}
       </View>
     </Screen>
   );
@@ -123,8 +228,5 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
     justifyContent: 'center',
-  },
-  confirmation: {
-    alignItems: 'center',
   },
 });

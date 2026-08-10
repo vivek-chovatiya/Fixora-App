@@ -100,12 +100,38 @@ export const AUTH_COPY = Object.freeze({
     changeAction: 'Change registration details',
     expiredTitle: 'Code expired',
 
-    verifiedTitle: 'Business verified',
-    /**
-     * Says nothing about the auth code itself. The code exists at this point but
-     * is not shown until the display step, which owns how it is presented.
-     */
-    verifiedBody: 'Your number is verified and your business is active.',
+  }),
+
+  /**
+   * The auth code steps.
+   *
+   * The wording avoids "approved" throughout. Nothing was reviewed and nobody
+   * approved anything — the number was verified and the business activated
+   * automatically (PROJECT_BIBLE.md section 7A.2). It also avoids implying the
+   * vendor is signed in, because they are not until the code is confirmed.
+   */
+  vendorAuthCode: Object.freeze({
+    displayTitle: 'Phone verified',
+    displayBody:
+      'Your business is active. This is your authentication code — you will need it every time you sign in.',
+    displayWarning: 'Save it somewhere safe. It is shown here once, and it does not expire.',
+    codeLabel: 'Your authentication code',
+    copy: 'Copy code',
+    copied: 'Copied',
+    copyHint: 'Copies your authentication code to the clipboard',
+    copyFailed: 'We could not copy the code. Please write it down instead.',
+    continueAction: 'I have saved it',
+    continueHint: 'Continues to confirm the code you just saved',
+
+    confirmTitle: 'Confirm your code',
+    confirmBody: 'Enter the authentication code you just saved.',
+    confirmLabel: 'Authentication code',
+    confirmPlaceholder: 'Enter your code',
+    confirmAction: 'Continue',
+    confirmHint: 'Confirms your code and signs you in',
+    regenerate: 'Regenerate code',
+    regenerateHint: 'Replaces your code with a new one. The current code stops working.',
+    back: 'Show my code again',
   }),
 });
 
