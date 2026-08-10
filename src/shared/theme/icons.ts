@@ -44,6 +44,9 @@ export const icons = Object.freeze({
   call: 'phone-outline',
   logout: 'logout',
   settings: 'cog-outline',
+  /** Password reveal toggle. */
+  visibilityOn: 'eye-outline',
+  visibilityOff: 'eye-off-outline',
 
   // Media
   camera: 'camera-outline',
