@@ -17,7 +17,6 @@ import React from 'react';
 import { useAppSelector } from '@/app/hooks';
 import { selectAuthStatus, selectCurrentUser } from '@/features/auth/state/authSlice';
 import { SplashScreen } from '@/features/auth/screens/SplashScreen';
-import { VendorApprovalScreen } from '@/features/vendor/screens/VendorApprovalScreen';
 import { AuthNavigator } from '@/navigation/AuthNavigator';
 import { CustomerNavigator } from '@/navigation/CustomerNavigator';
 import { VendorNavigator } from '@/navigation/VendorNavigator';
@@ -34,11 +33,8 @@ export function RootNavigator() {
     return <AuthNavigator />;
   }
 
-  if (user.role === 'vendor') {
-    // A vendor must not receive service requests before approval
-    // (PROJECT_BIBLE.md section 29).
-    return user.vendorApproval === 'approved' ? <VendorNavigator /> : <VendorApprovalScreen />;
-  }
-
-  return <CustomerNavigator />;
+  // No approval gate: vendor onboarding activates the vendor on phone
+  // verification, and a session only exists once they have confirmed their auth
+  // code, so any vendor holding a session is active (PROJECT_BIBLE.md 7A).
+  return user.role === 'vendor' ? <VendorNavigator /> : <CustomerNavigator />;
 }

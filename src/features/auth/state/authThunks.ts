@@ -78,7 +78,7 @@ export async function signInCustomer(
 }
 
 /**
- * Completes vendor sign in with the permanent code issued after approval.
+ * Signs a returning vendor in with their phone and permanent auth code.
  *
  * The code is passed straight to the service and never retained here, logged, or
  * attached to any error.
@@ -86,9 +86,28 @@ export async function signInCustomer(
 export async function signInVendor(
   dispatch: Dispatch,
   phone: string,
-  vendorCode: string,
+  authCode: string,
 ): Promise<SessionPayload> {
-  const session = await getService('auth').signInVendor(phone, vendorCode);
+  const session = await getService('auth').signInVendor(phone, authCode);
+  await establishSession(dispatch, session);
+  return session;
+}
+
+/**
+ * Final step of vendor onboarding: the vendor confirms the auth code they were
+ * shown, and only then is a session created.
+ *
+ * The earlier onboarding calls — register, request code, verify code, regenerate
+ * — deliberately have no thunk. None of them establishes a session, so they stay
+ * screen-local through their hooks. In particular the generated auth code must
+ * never reach Redux, so nothing that returns it is dispatched.
+ */
+export async function confirmVendorAuthCode(
+  dispatch: Dispatch,
+  registrationId: string,
+  authCode: string,
+): Promise<SessionPayload> {
+  const session = await getService('auth').verifyVendorAuthCode(registrationId, authCode);
   await establishSession(dispatch, session);
   return session;
 }

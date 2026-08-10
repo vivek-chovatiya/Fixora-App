@@ -16,6 +16,7 @@ import {
 } from '@/core/storage/SessionStorage';
 import { authReducer } from '@/features/auth/state/authSlice';
 import {
+  confirmVendorAuthCode,
   restoreSession,
   signInCustomer,
   signInVendor,
@@ -50,9 +51,10 @@ const VENDOR_SESSION: SessionPayload = {
     lastName: 'Kumar',
     phone: '9000000001',
     role: 'vendor',
-    vendorApproval: 'approved',
   },
 };
+
+const VENDOR_AUTH_CODE = 'FX-ABCD-2345';
 
 function createMemoryStorage(initial: PersistedSession | null = null) {
   let value = initial;
@@ -73,13 +75,21 @@ function createStore() {
 }
 
 function createStubAuthService(overrides: Partial<AuthService> = {}): AuthService {
+  const challenge = {
+    maskedDestination: '••••••3210',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    resendAfterSeconds: 30,
+  };
+  const issuedCode = { code: VENDOR_AUTH_CODE, issuedAt: new Date().toISOString() };
+
   return {
-    requestCustomerOtp: jest.fn(async () => ({
-      maskedDestination: '••••••3210',
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      resendAfterSeconds: 30,
-    })),
+    requestCustomerOtp: jest.fn(async () => challenge),
     verifyCustomerOtp: jest.fn(async () => CUSTOMER_SESSION),
+    registerVendor: jest.fn(async () => ({ registrationId: 'reg_1', challenge })),
+    requestVendorOtp: jest.fn(async () => challenge),
+    verifyVendorOtp: jest.fn(async () => issuedCode),
+    regenerateVendorAuthCode: jest.fn(async () => issuedCode),
+    verifyVendorAuthCode: jest.fn(async () => VENDOR_SESSION),
     signInVendor: jest.fn(async () => VENDOR_SESSION),
     signOut: jest.fn(async () => undefined),
     ...overrides,
@@ -165,28 +175,75 @@ describe('signInCustomer', () => {
 });
 
 describe('signInVendor', () => {
-  it('establishes an approved vendor session', async () => {
+  it('establishes a vendor session', async () => {
     const { storage, peek } = createMemoryStorage();
     setSessionStorage(storage);
     registerService('auth', createStubAuthService());
     const store = createStore();
 
-    await signInVendor(store.dispatch, '9000000001', 'FX-VENDOR-APPROVED');
+    await signInVendor(store.dispatch, '9000000001', VENDOR_AUTH_CODE);
 
     expect(peek()).toEqual(VENDOR_SESSION);
     expect(store.getState().auth.user?.role).toBe('vendor');
-    expect(store.getState().auth.user?.vendorApproval).toBe('approved');
   });
 
-  it('does not retain the vendor code anywhere in state', async () => {
+  it('does not retain the auth code anywhere in state', async () => {
     const { storage } = createMemoryStorage();
     setSessionStorage(storage);
     registerService('auth', createStubAuthService());
     const store = createStore();
 
-    await signInVendor(store.dispatch, '9000000001', 'FX-VENDOR-APPROVED');
+    await signInVendor(store.dispatch, '9000000001', VENDOR_AUTH_CODE);
 
-    expect(JSON.stringify(store.getState())).not.toContain('FX-VENDOR-APPROVED');
+    expect(JSON.stringify(store.getState())).not.toContain(VENDOR_AUTH_CODE);
+  });
+});
+
+describe('confirmVendorAuthCode', () => {
+  it('is the step that creates the session', async () => {
+    const { storage, peek } = createMemoryStorage();
+    setSessionStorage(storage);
+    const service = createStubAuthService();
+    registerService('auth', service);
+    const store = createStore();
+
+    await confirmVendorAuthCode(store.dispatch, 'reg_1', VENDOR_AUTH_CODE);
+
+    expect(service.verifyVendorAuthCode).toHaveBeenCalledWith('reg_1', VENDOR_AUTH_CODE);
+    expect(peek()).toEqual(VENDOR_SESSION);
+    expect(store.getState().auth.status).toBe('authenticated');
+  });
+
+  it('keeps the generated auth code out of Redux', async () => {
+    const { storage } = createMemoryStorage();
+    setSessionStorage(storage);
+    registerService('auth', createStubAuthService());
+    const store = createStore();
+
+    await confirmVendorAuthCode(store.dispatch, 'reg_1', VENDOR_AUTH_CODE);
+
+    expect(JSON.stringify(store.getState())).not.toContain(VENDOR_AUTH_CODE);
+  });
+
+  it('leaves the vendor unauthenticated when the code is wrong', async () => {
+    const { storage, peek } = createMemoryStorage();
+    setSessionStorage(storage);
+    registerService(
+      'auth',
+      createStubAuthService({
+        verifyVendorAuthCode: jest.fn(async () => {
+          throw new AppError({ kind: 'validation', userMessage: 'That code is not correct.' });
+        }),
+      }),
+    );
+    const store = createStore();
+
+    await expect(
+      confirmVendorAuthCode(store.dispatch, 'reg_1', 'FX-WRON-GXXX'),
+    ).rejects.toBeInstanceOf(AppError);
+
+    expect(peek()).toBeNull();
+    expect(store.getState().auth.status).toBe('bootstrapping');
   });
 });
 
@@ -236,6 +293,11 @@ describe('ServiceRegistry', () => {
 
     expect(typeof auth.requestCustomerOtp).toBe('function');
     expect(typeof auth.verifyCustomerOtp).toBe('function');
+    expect(typeof auth.registerVendor).toBe('function');
+    expect(typeof auth.requestVendorOtp).toBe('function');
+    expect(typeof auth.verifyVendorOtp).toBe('function');
+    expect(typeof auth.verifyVendorAuthCode).toBe('function');
+    expect(typeof auth.regenerateVendorAuthCode).toBe('function');
     expect(typeof auth.signInVendor).toBe('function');
     expect(typeof auth.signOut).toBe('function');
   });

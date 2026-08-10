@@ -14,13 +14,7 @@
 
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-import type {
-  AuthStatus,
-  AuthUser,
-  SessionPayload,
-  UserRole,
-  VendorApprovalStatus,
-} from '@/features/auth/types';
+import type { AuthStatus, AuthUser, SessionPayload, UserRole } from '@/features/auth/types';
 
 export interface AuthState {
   status: AuthStatus;
@@ -92,7 +86,3 @@ export const selectIsAuthenticated = (state: HasAuth): boolean =>
   state.auth.status === 'authenticated';
 
 export const selectUserRole = (state: HasAuth): UserRole | null => state.auth.user?.role ?? null;
-
-/** Undefined for customers, who have no approval concept. */
-export const selectVendorApproval = (state: HasAuth): VendorApprovalStatus | undefined =>
-  state.auth.user?.vendorApproval;

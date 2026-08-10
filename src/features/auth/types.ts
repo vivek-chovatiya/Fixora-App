@@ -12,12 +12,6 @@
 /** Determines which application the user sees after sign in. */
 export type UserRole = 'customer' | 'vendor';
 
-/**
- * Vendor onboarding state (PROJECT_BIBLE.md section 29). A vendor must not
- * receive service requests until approved.
- */
-export type VendorApprovalStatus = 'pending' | 'approved' | 'rejected';
-
 export interface AuthUser {
   id: string;
   firstName: string;
@@ -30,9 +24,20 @@ export interface AuthUser {
   /** The identifier for both roles. */
   phone: string;
   role: UserRole;
-  /** Vendors only. Always undefined for customers. */
-  vendorApproval?: VendorApprovalStatus;
 }
+
+/*
+ * There is deliberately no vendor approval status here.
+ *
+ * Vendor onboarding no longer involves manual administrator approval: verifying
+ * the registration code activates the vendor automatically, and a session only
+ * exists once the vendor has confirmed their permanent auth code. A vendor
+ * holding a session is therefore always active, so a status field could only
+ * ever hold one value.
+ *
+ * Onboarding progress is screen-local state during registration, not session
+ * state — see PROJECT_BIBLE.md section 7A.
+ */
 
 /**
  * A established session. Defined here rather than in the slice so that services

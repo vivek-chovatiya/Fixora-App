@@ -1,28 +1,44 @@
 /**
  * MockAuthService
  *
- * Simulates the approved authentication UX so the UI can be built before the
- * backend exists. It is a stand-in for backend judgement, never a security
- * boundary: when the real service lands, every decision made here moves server
- * side and this file is deleted.
+ * Simulates the approved authentication flows so the UI can be built before the
+ * backend exists. It stands in for backend judgement, never for security: when
+ * the real service lands, every decision here moves server side and this file is
+ * deleted.
  *
- * The vendor code is treated as a standing credential throughout. It is never
- * logged, never echoed into an error, and never stored beyond the call.
+ * The vendor auth code is treated as a standing credential throughout. It is
+ * never logged, never echoed into an error, and never stored anywhere but this
+ * in-memory simulation.
+ *
+ * Vendor onboarding follows the approved sequence, and the ordering matters:
+ *
+ *   register → verify one-time code → vendor activated + auth code issued
+ *            → vendor confirms auth code → session
+ *
+ * Verifying the one-time code proves the phone number. It does not sign the
+ * vendor in. Only `verifyVendorAuthCode` produces a session.
  */
 
 import { createLogger } from '@/core/logger/Logger';
-import type { SessionPayload } from '@/features/auth/types';
+import type { AuthUser, SessionPayload } from '@/features/auth/types';
 import {
   MOCK_MIN_PHONE_DIGITS,
   MOCK_OTP_CODE,
   MOCK_OTP_RESEND_AFTER_SECONDS,
   MOCK_OTP_TTL_SECONDS,
   findMockAccount,
+  generateMockVendorAuthCode,
   maskPhone,
   normalisePhone,
 } from '@/shared/services/mock/mockAuthData';
-import { simulateNetwork } from '@/shared/services/mock/mockUtils';
-import type { AuthService, OtpChallenge } from '@/shared/services/types/AuthService';
+import { mockId, simulateNetwork } from '@/shared/services/mock/mockUtils';
+import type {
+  AuthService,
+  OtpChallenge,
+  VendorAuthCode,
+  VendorRegistration,
+  VendorRegistrationDetails,
+} from '@/shared/services/types/AuthService';
 import { AppError } from '@/shared/types/error';
 
 const log = createLogger('MockAuthService');
@@ -31,12 +47,30 @@ interface IssuedChallenge {
   expiresAtMs: number;
 }
 
+interface VendorOnboarding {
+  phone: string;
+  user: AuthUser;
+  challenge: IssuedChallenge;
+  otpVerified: boolean;
+  /** Current code. Regeneration replaces it, which is what revokes the old one. */
+  authCode: string | null;
+}
+
+/** A vendor who finished onboarding during this app process. */
+interface ActiveVendor {
+  user: AuthUser;
+  authCode: string;
+}
+
 export class MockAuthService implements AuthService {
-  /**
-   * Codes issued this session, by normalised phone. In memory only — a restart
-   * clears them, which matches a real service expiring them.
-   */
-  private readonly challenges = new Map<string, IssuedChallenge>();
+  /** Customer one-time codes, by normalised phone. */
+  private readonly customerChallenges = new Map<string, IssuedChallenge>();
+
+  /** In-progress vendor onboardings, by registration id. */
+  private readonly onboardings = new Map<string, VendorOnboarding>();
+
+  /** Vendors activated this process, by normalised phone. */
+  private readonly activeVendors = new Map<string, ActiveVendor>();
 
   /**
    * Injectable clock. Expiry is time-dependent behaviour, and a test that had to
@@ -44,69 +78,30 @@ export class MockAuthService implements AuthService {
    */
   constructor(private readonly now: () => number = () => Date.now()) {}
 
+  /* Customer ------------------------------------------------------------- */
+
   async requestCustomerOtp(phone: string): Promise<OtpChallenge> {
     return simulateNetwork(() => {
-      const digits = normalisePhone(phone);
+      const digits = this.requirePlausiblePhone(phone);
 
-      if (digits.length < MOCK_MIN_PHONE_DIGITS) {
-        throw new AppError({
-          kind: 'validation',
-          message: 'Phone number too short for a mock challenge',
-          userMessage: 'Enter a valid phone number.',
-        });
-      }
+      // Succeeds whether or not the number is registered. Answering that would
+      // let anyone enumerate customers, and it is the backend's call anyway.
+      this.customerChallenges.set(digits, { expiresAtMs: this.expiryFromNow() });
+      log.info('Mock customer code issued', { phone: maskPhone(digits) });
 
-      // Succeeds whether or not the number is registered. Answering that
-      // question here would let anyone enumerate customers, and it is the
-      // backend's to answer regardless.
-      this.challenges.set(digits, {
-        expiresAtMs: this.now() + MOCK_OTP_TTL_SECONDS * 1000,
-      });
-
-      log.info('Mock OTP issued', { phone: maskPhone(digits) });
-
-      return {
-        maskedDestination: maskPhone(digits),
-        expiresAt: new Date(this.now() + MOCK_OTP_TTL_SECONDS * 1000).toISOString(),
-        resendAfterSeconds: MOCK_OTP_RESEND_AFTER_SECONDS,
-      };
+      return this.buildChallenge(digits);
     });
   }
 
   async verifyCustomerOtp(phone: string, code: string): Promise<SessionPayload> {
     return simulateNetwork(() => {
       const digits = normalisePhone(phone);
-      const challenge = this.challenges.get(digits);
+      const challenge = this.customerChallenges.get(digits);
 
-      if (!challenge) {
-        throw new AppError({
-          kind: 'validation',
-          message: 'No mock challenge issued for this number',
-          userMessage: 'Request a code before verifying.',
-        });
-      }
-
-      if (this.now() > challenge.expiresAtMs) {
-        this.challenges.delete(digits);
-        throw new AppError({
-          kind: 'unauthorized',
-          message: 'Mock challenge expired',
-          userMessage: 'That code has expired. Request a new one.',
-        });
-      }
-
-      if (code !== MOCK_OTP_CODE) {
-        // The attempt is not consumed, so a mistyped digit does not force the
-        // user to request a fresh code.
-        throw new AppError({
-          kind: 'validation',
-          message: 'Mock code mismatch',
-          userMessage: 'That code is not correct. Please check and try again.',
-        });
-      }
+      this.assertChallengeUsable(challenge, () => this.customerChallenges.delete(digits));
+      this.assertOtpMatches(code);
 
       const account = findMockAccount(digits);
-
       if (!account || account.user.role !== 'customer') {
         throw new AppError({
           kind: 'notFound',
@@ -115,73 +110,262 @@ export class MockAuthService implements AuthService {
         });
       }
 
-      this.challenges.delete(digits);
+      this.customerChallenges.delete(digits);
       log.info('Mock customer session issued', { phone: maskPhone(digits) });
 
-      return this.createSession(account.user.id, account.user);
+      return this.createSession(account.user);
     });
   }
 
-  async signInVendor(phone: string, vendorCode: string): Promise<SessionPayload> {
+  /* Vendor onboarding ---------------------------------------------------- */
+
+  async registerVendor(details: VendorRegistrationDetails): Promise<VendorRegistration> {
     return simulateNetwork(() => {
-      const account = findMockAccount(phone);
+      const digits = this.requirePlausiblePhone(details.phone);
 
-      // Generic failure for an unknown number: telling the caller which vendors
-      // exist is information they have not earned.
-      if (!account || account.user.role !== 'vendor') {
+      if (this.findActiveVendor(digits)) {
         throw new AppError({
-          kind: 'unauthorized',
-          message: 'No mock vendor account for this number',
-          userMessage: 'Those sign-in details were not recognised.',
+          kind: 'conflict',
+          message: 'Mock vendor already registered',
+          userMessage: 'An account already exists for this number. Try signing in instead.',
         });
       }
 
-      // Approval is checked before the code because an unapproved vendor has
-      // never been issued one, and "your account is under verification" is far
-      // more useful to them than "invalid code". The backend will make the final
-      // call on this trade-off.
-      if (account.user.vendorApproval !== 'approved') {
-        throw new AppError({
-          kind: 'forbidden',
-          message: 'Mock vendor is not approved',
-          userMessage:
-            account.user.vendorApproval === 'rejected'
-              ? 'Your vendor application was not approved. Please contact support.'
-              : 'Your account is still under verification. You will be able to sign in once it is approved.',
-        });
-      }
+      const registrationId = mockId('reg');
 
-      if (!account.vendorCode || vendorCode !== account.vendorCode) {
-        // Deliberately says nothing about the code itself, and the attempted
-        // value is never included.
-        throw new AppError({
-          kind: 'unauthorized',
-          message: 'Mock vendor code mismatch',
-          userMessage: 'Those sign-in details were not recognised.',
-        });
-      }
+      this.onboardings.set(registrationId, {
+        phone: digits,
+        user: {
+          id: mockId('usr_vendor'),
+          firstName: details.ownerFirstName,
+          lastName: details.ownerLastName,
+          email: details.email,
+          phone: digits,
+          role: 'vendor',
+        },
+        challenge: { expiresAtMs: this.expiryFromNow() },
+        otpVerified: false,
+        authCode: null,
+      });
 
-      log.info('Mock vendor session issued', { phone: maskPhone(account.phone) });
+      log.info('Mock vendor registration started', { phone: maskPhone(digits) });
 
-      return this.createSession(account.user.id, account.user);
+      return { registrationId, challenge: this.buildChallenge(digits) };
     });
   }
+
+  async requestVendorOtp(registrationId: string): Promise<OtpChallenge> {
+    return simulateNetwork(() => {
+      const onboarding = this.requireOnboarding(registrationId);
+
+      onboarding.challenge = { expiresAtMs: this.expiryFromNow() };
+      log.info('Mock vendor code re-issued', { phone: maskPhone(onboarding.phone) });
+
+      return this.buildChallenge(onboarding.phone);
+    });
+  }
+
+  async verifyVendorOtp(registrationId: string, code: string): Promise<VendorAuthCode> {
+    return simulateNetwork(() => {
+      const onboarding = this.requireOnboarding(registrationId);
+
+      this.assertChallengeUsable(onboarding.challenge, () => {
+        onboarding.challenge = { expiresAtMs: 0 };
+      });
+      this.assertOtpMatches(code);
+
+      // Verification activates the vendor. There is no administrator approval
+      // step in the approved flow.
+      onboarding.otpVerified = true;
+      onboarding.authCode = generateMockVendorAuthCode();
+
+      // The code itself is never logged.
+      log.info('Mock vendor activated and auth code issued', {
+        phone: maskPhone(onboarding.phone),
+      });
+
+      return { code: onboarding.authCode, issuedAt: new Date(this.now()).toISOString() };
+    });
+  }
+
+  async regenerateVendorAuthCode(registrationId: string): Promise<VendorAuthCode> {
+    return simulateNetwork(() => {
+      const onboarding = this.requireOnboarding(registrationId);
+      this.assertPhoneVerified(onboarding);
+
+      // Replacing the value is what revokes the previous one: every check
+      // compares against the current code only.
+      onboarding.authCode = generateMockVendorAuthCode();
+      log.info('Mock vendor auth code regenerated', { phone: maskPhone(onboarding.phone) });
+
+      return { code: onboarding.authCode, issuedAt: new Date(this.now()).toISOString() };
+    });
+  }
+
+  async verifyVendorAuthCode(registrationId: string, authCode: string): Promise<SessionPayload> {
+    return simulateNetwork(() => {
+      const onboarding = this.requireOnboarding(registrationId);
+      this.assertPhoneVerified(onboarding);
+
+      if (!onboarding.authCode || authCode.trim() !== onboarding.authCode) {
+        // Says nothing about the expected value, and never echoes the attempt.
+        throw new AppError({
+          kind: 'validation',
+          message: 'Mock vendor auth code mismatch',
+          userMessage: 'That code is not correct. Please check and try again.',
+        });
+      }
+
+      this.activeVendors.set(onboarding.phone, {
+        user: onboarding.user,
+        authCode: onboarding.authCode,
+      });
+      this.onboardings.delete(registrationId);
+
+      log.info('Mock vendor session issued', { phone: maskPhone(onboarding.phone) });
+
+      return this.createSession(onboarding.user);
+    });
+  }
+
+  /* Vendor sign in ------------------------------------------------------- */
+
+  async signInVendor(phone: string, authCode: string): Promise<SessionPayload> {
+    return simulateNetwork(() => {
+      const digits = normalisePhone(phone);
+      const vendor = this.findActiveVendor(digits);
+
+      // An unknown number and a wrong code fail identically, so neither reveals
+      // which vendors exist.
+      if (!vendor || authCode.trim() !== vendor.authCode) {
+        throw new AppError({
+          kind: 'unauthorized',
+          message: 'Mock vendor sign in rejected',
+          userMessage: 'Those sign-in details were not recognised.',
+        });
+      }
+
+      log.info('Mock vendor session issued', { phone: maskPhone(digits) });
+
+      return this.createSession(vendor.user);
+    });
+  }
+
+  /* Common --------------------------------------------------------------- */
 
   async signOut(): Promise<void> {
     return simulateNetwork(() => {
-      this.challenges.clear();
+      // Outstanding challenges die with the session. Activated vendors do not:
+      // signing out is not the same as losing an account.
+      this.customerChallenges.clear();
       log.info('Mock session invalidated');
     });
+  }
+
+  /* Internals ------------------------------------------------------------ */
+
+  private requirePlausiblePhone(phone: string): string {
+    const digits = normalisePhone(phone);
+    if (digits.length < MOCK_MIN_PHONE_DIGITS) {
+      throw new AppError({
+        kind: 'validation',
+        message: 'Phone number too short for a mock challenge',
+        userMessage: 'Enter a valid phone number.',
+      });
+    }
+    return digits;
+  }
+
+  private requireOnboarding(registrationId: string): VendorOnboarding {
+    const onboarding = this.onboardings.get(registrationId);
+    if (!onboarding) {
+      throw new AppError({
+        kind: 'notFound',
+        message: 'No mock vendor registration for this id',
+        userMessage: 'That registration is no longer available. Please start again.',
+      });
+    }
+    return onboarding;
+  }
+
+  private assertPhoneVerified(onboarding: VendorOnboarding): void {
+    if (!onboarding.otpVerified) {
+      throw new AppError({
+        kind: 'forbidden',
+        message: 'Mock vendor phone not verified',
+        userMessage: 'Verify your phone number before continuing.',
+      });
+    }
+  }
+
+  private assertChallengeUsable(
+    challenge: IssuedChallenge | undefined,
+    expire: () => void,
+  ): asserts challenge is IssuedChallenge {
+    if (!challenge) {
+      throw new AppError({
+        kind: 'validation',
+        message: 'No mock challenge issued',
+        userMessage: 'Request a code before verifying.',
+      });
+    }
+
+    if (this.now() > challenge.expiresAtMs) {
+      expire();
+      throw new AppError({
+        kind: 'unauthorized',
+        message: 'Mock challenge expired',
+        userMessage: 'That code has expired. Request a new one.',
+      });
+    }
+  }
+
+  /**
+   * A wrong code does not consume the challenge, so a mistyped digit does not
+   * force the user to request a fresh one.
+   */
+  private assertOtpMatches(code: string): void {
+    if (code.trim() !== MOCK_OTP_CODE) {
+      throw new AppError({
+        kind: 'validation',
+        message: 'Mock code mismatch',
+        userMessage: 'That code is not correct. Please check and try again.',
+      });
+    }
+  }
+
+  /** Seeded vendors and vendors activated this process resolve the same way. */
+  private findActiveVendor(digits: string): ActiveVendor | undefined {
+    const activated = this.activeVendors.get(digits);
+    if (activated) {
+      return activated;
+    }
+
+    const seeded = findMockAccount(digits);
+    if (seeded?.user.role === 'vendor' && seeded.vendorAuthCode) {
+      return { user: seeded.user, authCode: seeded.vendorAuthCode };
+    }
+
+    return undefined;
+  }
+
+  private expiryFromNow(): number {
+    return this.now() + MOCK_OTP_TTL_SECONDS * 1000;
+  }
+
+  private buildChallenge(digits: string): OtpChallenge {
+    return {
+      maskedDestination: maskPhone(digits),
+      expiresAt: new Date(this.expiryFromNow()).toISOString(),
+      resendAfterSeconds: MOCK_OTP_RESEND_AFTER_SECONDS,
+    };
   }
 
   /**
    * Opaque token. Its only contract is that it is a string the client stores and
    * replays; nothing in the app may parse it.
    */
-  private createSession(userId: string, user: SessionPayload['user']): SessionPayload {
-    return {
-      token: `mock_token_${userId}_${this.now()}`,
-      user,
-    };
+  private createSession(user: AuthUser): SessionPayload {
+    return { token: `mock_token_${user.id}_${this.now()}`, user };
   }
 }
