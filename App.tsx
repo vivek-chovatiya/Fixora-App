@@ -1,43 +1,49 @@
 /**
- * Sample React Native App
- * https://github.com/facebook/react-native
+ * App
  *
- * @format
+ * The provider stack, and nothing else. Anything needing a hook from these
+ * providers lives in AppRoot.
+ *
+ * Provider order matters:
+ * - GestureHandlerRootView must wrap everything that can gesture.
+ * - SafeAreaProvider must be above the navigators, which read insets.
+ * - ThemeProvider must be above AppRoot, which themes the navigation container.
+ * - Redux must be above AppRoot, which dispatches the session restore.
  */
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+import React from 'react';
+import { StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Provider as ReduxProvider } from 'react-redux';
+
+import { AppRoot } from '@/app/AppRoot';
+import { bootstrapApp } from '@/app/bootstrap';
+import { store } from '@/app/store';
+import { ThemeProvider } from '@/shared/theme';
+
+// Runs at import, before the first render, so no component can resolve a service
+// or issue a request before the registry and HTTP client are wired. Failing here
+// is intentional: a misconfigured registry should stop the app immediately
+// rather than surface as a confusing error inside a screen.
+bootstrapApp();
 
 function App() {
-  const isDarkMode = useColorScheme() === 'dark';
-
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
-    </SafeAreaProvider>
-  );
-}
-
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
-
-  return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
-      />
-    </View>
+    <ReduxProvider store={store}>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <GestureHandlerRootView style={styles.root}>
+            <AppRoot />
+          </GestureHandlerRootView>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </ReduxProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
   },
 });
