@@ -17,14 +17,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { AppConfig } from '@/core/config/AppConfig';
 import { createLogger } from '@/core/logger/Logger';
-import type { AuthUser } from '@/features/auth/types';
+import type { SessionPayload } from '@/features/auth/types';
 
 const log = createLogger('SessionStorage');
 
-export interface PersistedSession {
-  token: string;
-  user: AuthUser;
-}
+/**
+ * Alias, not a second model. What is persisted is exactly what the app holds in
+ * state, so there is one session shape across storage, services and Redux.
+ */
+export type PersistedSession = SessionPayload;
 
 export interface SessionStorage {
   read(): Promise<PersistedSession | null>;

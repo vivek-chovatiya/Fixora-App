@@ -22,11 +22,25 @@ export interface AuthUser {
   id: string;
   firstName: string;
   lastName: string;
-  email: string;
+  /**
+   * Optional: both roles now authenticate by phone, so a user can exist without
+   * an email. Required here would force a placeholder value on every session.
+   */
+  email?: string;
+  /** The identifier for both roles. */
   phone: string;
   role: UserRole;
   /** Vendors only. Always undefined for customers. */
   vendorApproval?: VendorApprovalStatus;
+}
+
+/**
+ * A established session. Defined here rather than in the slice so that services
+ * and storage can depend on the auth domain without importing Redux.
+ */
+export interface SessionPayload {
+  token: string;
+  user: AuthUser;
 }
 
 /**

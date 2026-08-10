@@ -14,17 +14,18 @@
 
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-import type { AuthStatus, AuthUser, UserRole, VendorApprovalStatus } from '@/features/auth/types';
+import type {
+  AuthStatus,
+  AuthUser,
+  SessionPayload,
+  UserRole,
+  VendorApprovalStatus,
+} from '@/features/auth/types';
 
 export interface AuthState {
   status: AuthStatus;
   user: AuthUser | null;
   token: string | null;
-}
-
-export interface SessionPayload {
-  token: string;
-  user: AuthUser;
 }
 
 const initialState: AuthState = {
