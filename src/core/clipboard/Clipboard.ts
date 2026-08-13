@@ -3,20 +3,20 @@
  *
  * Copies text to the device clipboard.
  *
- * An interface with a swappable implementation, following SessionStorage. No
- * screen imports a clipboard module directly, so the one place this is done can
- * change without touching a caller — which matters here, because the default
- * implementation is on borrowed time.
+ * An interface with a swappable implementation, following SessionStorage. This
+ * is the only file in the application permitted to import a clipboard module —
+ * screens and components go through `getClipboard()`, so replacing the
+ * underlying library is a change here and nowhere else.
  *
- * ⚠️ The default uses React Native's built-in Clipboard, which is deprecated and
- * warns on first use: it has moved to `@react-native-clipboard/clipboard` and
- * will be removed from core. Adding that package is a new native dependency, so
- * it is not done here on the way past. When core drops Clipboard, this file is
- * the only thing that changes.
+ * That guarantee has already paid for itself once: the implementation moved from
+ * React Native's deprecated built-in Clipboard to
+ * `@react-native-clipboard/clipboard` without a single caller changing.
  *
  * Nothing copied here is ever logged. The vendor auth code passes through this
  * module, and a log line is exactly the leak the credential rules forbid.
  */
+
+import ReactNativeClipboardModule from '@react-native-clipboard/clipboard';
 
 import { createLogger } from '@/core/logger/Logger';
 
@@ -27,20 +27,19 @@ export interface Clipboard {
   copy(value: string): Promise<void>;
 }
 
-class ReactNativeClipboard implements Clipboard {
+class NativeClipboard implements Clipboard {
   async copy(value: string): Promise<void> {
-    // Required lazily so importing this module does not trigger React Native's
-    // deprecation warning in processes that never copy anything — tests, most
-    // of all.
-    const { Clipboard: NativeClipboard } = require('react-native');
+    // `setString` is synchronous. The interface is async so an implementation
+    // that needs to await something — a permission prompt, a secure paste
+    // buffer — can be swapped in without changing a caller.
+    ReactNativeClipboardModule.setString(value);
 
-    NativeClipboard.setString(value);
     // Length only. The value itself must never reach a log.
     log.info('Copied to clipboard', { length: value.length });
   }
 }
 
-let clipboard: Clipboard = new ReactNativeClipboard();
+let clipboard: Clipboard = new NativeClipboard();
 
 export function getClipboard(): Clipboard {
   return clipboard;

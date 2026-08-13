@@ -521,6 +521,22 @@ describe('VendorOtpScreen — the credential does not escape', () => {
     expect(logged).not.toContain(TYPED_OTP);
   });
 
+  it('is held by the screen alone, not also by the hook that fetched it', async () => {
+    const service = stubAuthService();
+    const { completeOtp, renderer, displayedCode } = await render(service);
+
+    await completeOtp();
+
+    // The screen has it, because it is on the display step showing it...
+    expect(displayedCode()).toBe(ISSUED_CODE.code);
+
+    // ...and no mutation hook is holding a second copy in its own `data`.
+    const retained = renderer.root.findAll(
+      node => typeof node.props?.data === 'object' && node.props?.data !== null,
+    );
+    expect(JSON.stringify(retained.map(node => node.props.data))).not.toContain(ISSUED_CODE.code);
+  });
+
   it('blocks leaving once the business has been activated', async () => {
     const { completeOtp, listeners } = await render(stubAuthService());
 

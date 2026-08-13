@@ -12,6 +12,17 @@
 require('react-native-gesture-handler/jestSetup');
 
 /**
+ * The clipboard package resolves its native module at import time, so any file
+ * importing it fails to load under Jest. The library ships its own mock for
+ * exactly this; tests that care about copying inject a fake through
+ * `setClipboard` instead.
+ */
+jest.mock(
+  '@react-native-clipboard/clipboard',
+  () => require('@react-native-clipboard/clipboard/jest/clipboard-mock.js'),
+);
+
+/**
  * AsyncStorage v3 no longer ships a jest mock, so this provides an in-memory
  * one. Backed by a real Map rather than bare jest.fn()s so SessionStorage's
  * read-after-write behaviour is exercised honestly.

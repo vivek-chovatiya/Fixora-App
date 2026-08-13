@@ -8,8 +8,10 @@
  * onward from verification — a session flips RootNavigator instead, so the stack
  * has no route into the application.
  *
- * Vendor screens and their routes arrive together in a later sub-stage; empty
- * placeholders for them would only be dead code (PROJECT_BIBLE.md section 84).
+ * Vendor authentication is complete alongside it: sign in for returning
+ * vendors, and registration through to auth code confirmation for new ones.
+ * Auth code display and confirmation are states inside VendorOtp rather than
+ * routes, so the credential never travels between screens.
  */
 
 import React from 'react';
@@ -17,6 +19,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { CustomerLoginScreen } from '@/features/auth/screens/CustomerLoginScreen';
 import { CustomerOtpScreen } from '@/features/auth/screens/CustomerOtpScreen';
+import { VendorLoginScreen } from '@/features/auth/screens/VendorLoginScreen';
 import { VendorOtpScreen } from '@/features/auth/screens/VendorOtpScreen';
 import { VendorRegistrationScreen } from '@/features/auth/screens/VendorRegistrationScreen';
 import { createPlaceholder } from '@/navigation/placeholders/PlaceholderScreen';
@@ -31,6 +34,7 @@ export function AuthNavigator() {
     <Stack.Navigator initialRouteName="CustomerLogin" screenOptions={{ headerShown: false }}>
       <Stack.Screen name="CustomerLogin" component={CustomerLoginScreen} />
       <Stack.Screen name="CustomerOtp" component={CustomerOtpScreen} />
+      <Stack.Screen name="VendorLogin" component={VendorLoginScreen} />
       <Stack.Screen name="VendorRegistration" component={VendorRegistrationScreen} />
       <Stack.Screen name="VendorOtp" component={VendorOtpScreen} />
       <Stack.Screen name="Signup" component={SignupScreen} />

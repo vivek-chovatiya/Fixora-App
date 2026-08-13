@@ -93,15 +93,33 @@ export const vendorRegistrationSchema = z.object({
 export type VendorRegistrationForm = z.infer<typeof vendorRegistrationSchema>;
 
 /**
- * Confirmation that the vendor saved their permanent auth code.
+ * The vendor's permanent auth code, as typed by a person.
  *
  * Completeness only. `VendorAuthCode.code` is an opaque string in the contract —
  * the backend owns generation and format — so checking it looks like anything in
  * particular would encode a format the app was never promised, and would reject
- * a valid code the day generation changes.
+ * a valid code the day generation changes. Whether a code is the right one is
+ * never the app's decision.
  */
+const vendorAuthCodeField = z.string().trim().min(1, 'Enter your authentication code.');
+
+/** Confirmation, during onboarding, that the vendor saved the code they were shown. */
 export const vendorAuthCodeSchema = z.object({
-  authCode: z.string().trim().min(1, 'Enter your authentication code.'),
+  authCode: vendorAuthCodeField,
 });
 
 export type VendorAuthCodeForm = z.infer<typeof vendorAuthCodeSchema>;
+
+/**
+ * A returning vendor signing in.
+ *
+ * Both fields are composed rather than restated: the phone rule is the shared
+ * one every flow uses, and the code rule is the same one onboarding confirms
+ * against.
+ */
+export const vendorLoginSchema = z.object({
+  phone: phoneSchema,
+  authCode: vendorAuthCodeField,
+});
+
+export type VendorLoginForm = z.infer<typeof vendorLoginSchema>;

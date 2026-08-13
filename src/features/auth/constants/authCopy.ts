@@ -53,6 +53,24 @@ export const AUTH_COPY = Object.freeze({
     expiredTitle: 'Code expired',
   }),
 
+  vendorLogin: Object.freeze({
+    title: 'Vendor sign in',
+    subtitle: 'Sign in with your phone number and your authentication code.',
+    phoneLabel: 'Phone number',
+    phonePlaceholder: 'Your registered phone number',
+    codeLabel: 'Authentication code',
+    codePlaceholder: 'Your authentication code',
+    /**
+     * States where the code came from without hinting at what it looks like or
+     * offering a recovery route the backend does not yet support.
+     */
+    codeHelper: 'The code you saved when you registered your business.',
+    submit: 'Sign in',
+    submitHint: 'Signs you in to your vendor account',
+    registerPrompt: 'New to Fixora?',
+    registerAction: 'Register your business',
+  }),
+
   vendorRegistration: Object.freeze({
     title: 'Register your business',
     subtitle: 'Tell us about your business. We will send a code to verify your number.',

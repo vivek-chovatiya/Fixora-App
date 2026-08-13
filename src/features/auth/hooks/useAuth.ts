@@ -105,11 +105,19 @@ export function useRequestVendorOtp() {
 }
 
 /**
+ * The auth code is a standing credential, so the hooks that produce one do not
+ * retain it. `mutate` resolves with the code and the calling screen becomes its
+ * single owner, for exactly as long as it needs it — rather than the screen and
+ * the hook each holding a copy.
+ */
+const CREDENTIAL_RESULT = { retainResult: false } as const;
+
+/**
  * Verifies the onboarding code, which activates the vendor and issues their
  * permanent auth code.
  *
- * ⚠️ The result contains the auth code. Hold it in screen state only, long
- * enough for the vendor to copy it. It must not be dispatched, persisted or
+ * ⚠️ The resolved value contains the auth code. Hold it in screen state only,
+ * long enough for the vendor to save it. It must not be dispatched, persisted or
  * logged. This hook deliberately does not sign the vendor in — confirming the
  * code does that.
  */
@@ -120,13 +128,13 @@ export function useVerifyVendorOtp() {
     [],
   );
 
-  return useServiceMutation<[string, string], VendorAuthCode>(verify);
+  return useServiceMutation<[string, string], VendorAuthCode>(verify, CREDENTIAL_RESULT);
 }
 
 /**
  * Issues a replacement auth code and revokes the previous one.
  *
- * Same handling rules as `useVerifyVendorOtp`: the result is sensitive.
+ * Same handling rules as `useVerifyVendorOtp`: the resolved value is sensitive.
  */
 export function useRegenerateVendorAuthCode() {
   const regenerate = useCallback(
@@ -135,7 +143,7 @@ export function useRegenerateVendorAuthCode() {
     [],
   );
 
-  return useServiceMutation<[string], VendorAuthCode>(regenerate);
+  return useServiceMutation<[string], VendorAuthCode>(regenerate, CREDENTIAL_RESULT);
 }
 
 /**

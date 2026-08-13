@@ -38,6 +38,12 @@ export type AuthStackParamList = {
    */
   CustomerOtp: { phone: string; challenge: OtpChallenge };
 
+  /**
+   * Returning vendors. Separate from CustomerLogin because the mechanisms
+   * differ — a one-time code versus a permanent auth code — and a single screen
+   * branching on role would have to decide something it should not.
+   */
+  VendorLogin: undefined;
   VendorRegistration: undefined;
   /**
    * Typed ahead of its screen so registration has a contract to hand off to.
