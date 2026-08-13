@@ -47,6 +47,7 @@ import { normalisePhone } from '@/shared/validation/phone';
 
 const COPY = AUTH_COPY.vendorLogin;
 
+
 type Props = NativeStackScreenProps<AuthStackParamList, 'VendorLogin'>;
 
 export function VendorLoginScreen({ navigation }: Props) {
@@ -81,11 +82,39 @@ export function VendorLoginScreen({ navigation }: Props) {
     navigation.navigate('VendorRegistration');
   }, [navigation]);
 
+  // No session exists at this point, so `unauthorized` cannot mean an expired
+  // one — it means the pair of credentials was refused. Corrected here rather
+  // than in the global kind -> title map, which reads correctly everywhere else.
+  const errorTitle = error?.kind === 'unauthorized' ? COPY.failedTitle : undefined;
+
   return (
-    <Screen scrollable keyboardAvoiding testID="vendor-login-screen">
-      <View style={[styles.body, { gap: theme.spacing.xxl }]}>
+    <Screen
+      scrollable
+      keyboardAvoiding
+      // Centring belongs to the scroll container rather than to a `flex: 1`
+      // child, which cannot grow past the viewport and so has nothing to scroll
+      // once the keyboard shrinks the window.
+      contentContainerStyle={styles.content}
+      testID="vendor-login-screen">
+      <View
+        style={[
+          styles.body,
+          {
+            gap: theme.spacing.xxxl,
+            // The same cap the rest of authentication uses.
+            maxWidth: theme.maxContentWidth,
+          },
+        ]}>
+        {/*
+          The same wordmark treatment as role selection and customer sign in.
+          A returning vendor arrives here by the same route a customer takes to
+          their own sign in, and should not find a differently branded screen.
+        */}
         <View style={{ gap: theme.spacing.xs }}>
-          <Text variant="h1">{COPY.title}</Text>
+          <Text variant="display" color="primary">
+            {AUTH_COPY.brand.wordmark}
+          </Text>
+          <Text variant="h2">{COPY.title}</Text>
           <Text variant="body" color="textSecondary">
             {COPY.subtitle}
           </Text>
@@ -119,6 +148,8 @@ export function VendorLoginScreen({ navigation }: Props) {
             required
             placeholder={COPY.codePlaceholder}
             helperText={COPY.codeHelper}
+            revealLabel={COPY.codeReveal}
+            hideLabel={COPY.codeHide}
             autoCapitalize="characters"
             editable={!isSubmitting}
             returnKeyType="done"
@@ -127,7 +158,12 @@ export function VendorLoginScreen({ navigation }: Props) {
           />
 
           {/* Retry is the submit button; both values survive the failure. */}
-          <ErrorState error={error} fullScreen={false} testID="vendor-login-error" />
+          <ErrorState
+            error={error}
+            title={errorTitle}
+            fullScreen={false}
+            testID="vendor-login-error"
+          />
 
           <PrimaryButton
             fullWidth
@@ -155,8 +191,13 @@ export function VendorLoginScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  body: {
-    flex: 1,
+  content: {
     justifyContent: 'center',
+  },
+  body: {
+    // Deliberately no `flex: 1` — see the note on contentContainerStyle above.
+    // Fills a phone, caps on a tablet.
+    width: '100%',
+    alignSelf: 'center',
   },
 });

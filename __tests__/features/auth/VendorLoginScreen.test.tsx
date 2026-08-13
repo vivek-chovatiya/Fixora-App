@@ -17,6 +17,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 
 import { setSessionStorage, type PersistedSession } from '@/core/storage/SessionStorage';
+import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { authReducer } from '@/features/auth/state/authSlice';
 import { VendorLoginScreen } from '@/features/auth/screens/VendorLoginScreen';
 import type { SessionPayload } from '@/features/auth/types';
@@ -26,6 +27,8 @@ import { registerService, resetServices } from '@/shared/services/ServiceRegistr
 import type { AuthService } from '@/shared/services/types/AuthService';
 import { ThemeProvider } from '@/shared/theme';
 import { AppError } from '@/shared/types/error';
+
+const COPY = AUTH_COPY.vendorLogin;
 
 /** The seeded, already-onboarded vendor from the mock data. */
 const SEEDED_PHONE = '9000000001';
@@ -135,6 +138,7 @@ async function render(service: AuthService) {
     navigate,
     goBack,
     addListener,
+    field,
     fill,
     press,
     signInWith,
@@ -170,18 +174,57 @@ describe('VendorLoginScreen — the form', () => {
     expect(text()).toContain('Vendor sign in');
   });
 
+  it('carries the same wordmark and heading as the rest of authentication', async () => {
+    const { text } = await render(stubAuthService());
+
+    expect(text()).toContain(AUTH_COPY.brand.wordmark);
+    expect(text()).toContain(AUTH_COPY.vendorLogin.title);
+  });
+
+  it('labels both fields and every action for assistive technology', async () => {
+    const { renderer, field } = await render(stubAuthService());
+
+    expect(field('vendor-login-phone').props.accessibilityLabel).toBe(COPY.phoneLabel);
+    expect(field('vendor-login-code').props.accessibilityLabel).toBe(COPY.codeLabel);
+
+    const submit = renderer.root.findByProps({ accessibilityLabel: COPY.submit }).props;
+    expect(submit.accessibilityRole).toBe('button');
+    expect(submit.accessibilityHint).toBe(COPY.submitHint);
+
+    expect(
+      renderer.root.findByProps({ accessibilityLabel: COPY.registerAction }).props
+        .accessibilityRole,
+    ).toBe('button');
+  });
+
   it('masks the auth code as it is typed', async () => {
-    const { renderer } = await render(stubAuthService());
+    const { field } = await render(stubAuthService());
 
-    const input = renderer.root
-      .findAll(
-        node =>
-          node.props.testID === 'vendor-login-code' &&
-          typeof node.props.onChangeText === 'function',
-      )
-      .pop();
+    expect(field('vendor-login-code').props.secureTextEntry).toBe(true);
+  });
 
-    expect(input?.props.secureTextEntry).toBe(true);
+  it('reveals and re-masks the code without altering what is submitted', async () => {
+    const service = stubAuthService();
+    const { field, fill, press } = await render(service);
+
+    await fill('vendor-login-code', SEEDED_CODE);
+
+    // Named, so it is reachable by a screen reader rather than announced as
+    // an anonymous "button".
+    await press(COPY.codeReveal);
+    expect(field('vendor-login-code').props.secureTextEntry).toBe(false);
+    expect(field('vendor-login-code').props.value).toBe(SEEDED_CODE);
+
+    // The name follows the state, so it always describes what pressing does.
+    await press(COPY.codeHide);
+    expect(field('vendor-login-code').props.secureTextEntry).toBe(true);
+    expect(field('vendor-login-code').props.value).toBe(SEEDED_CODE);
+
+    // Revealing is presentation only: the credential reaches the service intact.
+    expect(service.signInVendor).not.toHaveBeenCalled();
+    await fill('vendor-login-phone', TYPED_PHONE);
+    await press(COPY.submit);
+    expect(service.signInVendor).toHaveBeenCalledWith(NORMALISED_PHONE, SEEDED_CODE);
   });
 
   it('never asks for a one-time code', async () => {
@@ -308,6 +351,47 @@ describe('VendorLoginScreen — failure', () => {
     expect(valueOf('vendor-login-phone')).toBe(TYPED_PHONE);
     expect(valueOf('vendor-login-code')).toBe(SEEDED_CODE);
     expect(store.getState().auth.status).not.toBe('authenticated');
+  });
+
+  it('titles a refusal as a failed sign in, not as an expired session', async () => {
+    const service = stubAuthService({
+      signInVendor: jest.fn(async () => {
+        throw new AppError({
+          kind: 'unauthorized',
+          message: 'credentials rejected',
+          userMessage: 'Those sign-in details were not recognised.',
+        });
+      }),
+    });
+    const { signInWith, text } = await render(service);
+
+    await signInWith(TYPED_PHONE, 'FX-WRON-GXXX');
+
+    expect(text()).toContain(COPY.failedTitle);
+    // Nobody is signed in yet, so the global default for `unauthorized` would
+    // claim something expired that never existed.
+    expect(text()).not.toContain('Session expired');
+  });
+
+  it('says nothing about which credential was wrong', async () => {
+    const service = stubAuthService({
+      signInVendor: jest.fn(async () => {
+        throw new AppError({
+          kind: 'unauthorized',
+          userMessage: 'Those sign-in details were not recognised.',
+        });
+      }),
+    });
+    const { signInWith, text } = await render(service);
+
+    await signInWith(TYPED_PHONE, 'FX-WRON-GXXX');
+
+    const shown = text().toLowerCase();
+    // Naming either half would tell an attacker which vendors exist.
+    expect(shown).not.toContain('not registered');
+    expect(shown).not.toContain('no account');
+    expect(shown).not.toContain('wrong code');
+    expect(shown).not.toContain('incorrect code');
   });
 
   it('does not register, re-register or regenerate anything', async () => {

@@ -88,10 +88,24 @@ export const AUTH_COPY = Object.freeze({
      * offering a recovery route the backend does not yet support.
      */
     codeHelper: 'The code you saved when you registered your business.',
+    /** Names what the reveal control acts on, rather than leaving it "button". */
+    codeReveal: 'Show authentication code',
+    codeHide: 'Hide authentication code',
     submit: 'Sign in',
     submitHint: 'Signs you in to your vendor account',
     registerPrompt: 'New to Fixora?',
     registerAction: 'Register your business',
+    /**
+     * Replaces ErrorState's default title for `unauthorized`, which reads
+     * "Session expired". Correct elsewhere in the app, nonsense here: nobody is
+     * signed in yet, so nothing can have expired — the two credentials were
+     * simply not accepted.
+     *
+     * Says nothing about which of the two was wrong. The service does not
+     * distinguish an unknown number from a wrong code, precisely so vendors
+     * cannot be enumerated, and this title must not undo that.
+     */
+    failedTitle: 'Sign in failed',
   }),
 
   vendorRegistration: Object.freeze({

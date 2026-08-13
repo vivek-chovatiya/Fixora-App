@@ -42,6 +42,12 @@ export interface InputProps extends Omit<TextInputProps, 'style' | 'placeholderT
   leftIcon?: IconName;
   rightIcon?: IconName;
   onRightIconPress?: () => void;
+  /**
+   * Accessible name for the right icon when it is pressable. Without one a
+   * screen reader announces only "button", which says nothing about what it
+   * does — an icon is not a name.
+   */
+  rightIconAccessibilityLabel?: string;
   /** Appends a marker to the label and flags the field to assistive tech. */
   required?: boolean;
   containerStyle?: StyleProp<ViewStyle>;
@@ -55,6 +61,7 @@ const InputComponent = forwardRef<TextInput, InputProps>(function InputBase(
     leftIcon,
     rightIcon,
     onRightIconPress,
+    rightIconAccessibilityLabel,
     required = false,
     containerStyle,
     editable = true,
@@ -140,6 +147,7 @@ const InputComponent = forwardRef<TextInput, InputProps>(function InputBase(
             <Pressable
               onPress={onRightIconPress}
               accessibilityRole="button"
+              accessibilityLabel={rightIconAccessibilityLabel}
               hitSlop={theme.spacing.sm}>
               <Icon name={rightIcon} size="md" color="textSecondary" />
             </Pressable>
@@ -223,17 +231,32 @@ export const PhoneInput = memo(
   }),
 );
 
-export type PasswordInputProps = Omit<
-  InputProps,
-  'secureTextEntry' | 'rightIcon' | 'onRightIconPress'
->;
+export interface PasswordInputProps
+  extends Omit<
+    InputProps,
+    'secureTextEntry' | 'rightIcon' | 'onRightIconPress' | 'rightIconAccessibilityLabel'
+  > {
+  /**
+   * Accessible name for the reveal control in each of its two states. The
+   * defaults are deliberately bare: a field holding something other than a
+   * password should name what it is revealing.
+   */
+  revealLabel?: string;
+  hideLabel?: string;
+}
 
 /**
  * Owns its reveal state. This is presentation state belonging to one field, so
  * lifting it to the form would only add wiring (CLAUDE.md section 12).
+ *
+ * Revealing is presentation and nothing else: the value is untouched, and the
+ * toggle neither submits nor validates.
  */
 export const PasswordInput = memo(
-  forwardRef<TextInput, PasswordInputProps>(function PasswordInputBase(props, ref) {
+  forwardRef<TextInput, PasswordInputProps>(function PasswordInputBase(
+    { revealLabel = 'Show', hideLabel = 'Hide', ...props },
+    ref,
+  ) {
     const [isVisible, setIsVisible] = useState(false);
 
     const toggle = useCallback(() => {
@@ -248,6 +271,7 @@ export const PasswordInput = memo(
         autoCorrect={false}
         rightIcon={isVisible ? 'visibilityOff' : 'visibilityOn'}
         onRightIconPress={toggle}
+        rightIconAccessibilityLabel={isVisible ? hideLabel : revealLabel}
         {...props}
       />
     );
