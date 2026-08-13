@@ -263,12 +263,14 @@ describe('VendorOtpScreen — the one-time code step', () => {
 
   it('honours the cooldown the challenge specified', async () => {
     const service = stubAuthService();
-    const { press, text } = await render(service, {
+    const { renderer, text } = await render(service, {
       challenge: { ...CHALLENGE, resendAfterSeconds: 30 },
     });
 
+    // The remaining time is shown as readable status, and there is no resend
+    // control to press until it reaches zero.
     expect(text()).toContain('Resend code in 30s');
-    await press('Resend code in 30s');
+    expect(renderer.root.findAllByProps({ accessibilityLabel: 'Resend code' })).toHaveLength(0);
 
     expect(service.requestVendorOtp).not.toHaveBeenCalled();
   });

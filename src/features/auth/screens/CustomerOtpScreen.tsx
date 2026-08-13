@@ -36,7 +36,12 @@ export function CustomerOtpScreen({ route, navigation }: Props) {
   const theme = useTheme();
   const { phone, challenge } = route.params;
 
-  const { mutate: verifyCode, error: verifyError, isSubmitting: isVerifying } = useCustomerSignIn();
+  const {
+    mutate: verifyCode,
+    error: verifyError,
+    isSubmitting: isVerifying,
+    reset: forgetVerifyFailure,
+  } = useCustomerSignIn();
 
   const {
     mutate: requestOtp,
@@ -51,16 +56,47 @@ export function CustomerOtpScreen({ route, navigation }: Props) {
     [verifyCode, phone],
   );
 
-  const resend = useCallback(() => requestOtp(phone), [requestOtp, phone]);
+  const resend = useCallback(async () => {
+    const next = await requestOtp(phone);
+
+    if (next) {
+      // A replacement is on its way, so "that code is not correct" now describes
+      // an attempt against a code that no longer exists. Left alone it sits
+      // under a freshly restarted countdown and reads as a new failure. Only
+      // the message is dropped — the typed code stays, because clearing a field
+      // the user may still be reading from is its own annoyance.
+      forgetVerifyFailure();
+    }
+
+    return next;
+  }, [requestOtp, phone, forgetVerifyFailure]);
 
   const changeNumber = useCallback(() => {
     navigation.goBack();
   }, [navigation]);
 
   return (
-    <Screen scrollable keyboardAvoiding testID="customer-otp-screen">
-      <View style={[styles.body, { gap: theme.spacing.xxl }]}>
-        <Text variant="h1">{COPY.title}</Text>
+    <Screen
+      scrollable
+      keyboardAvoiding
+      // Centring belongs to the scroll container rather than to a `flex: 1`
+      // child, which could not grow past the viewport and so clipped its
+      // overflow with nothing to scroll once the keyboard appeared.
+      contentContainerStyle={styles.content}
+      testID="customer-otp-screen">
+      {/*
+        Wordmark, heading and supporting line form one group at the tightest
+        spacing, exactly as on sign in — this screen is the second half of that
+        flow and should read as a continuation of it rather than a new place.
+        The supporting line lives inside the form because the masked destination
+        it names is replaced by a successful resend.
+      */}
+      <View
+        style={[styles.body, { gap: theme.spacing.xs, maxWidth: theme.maxContentWidth }]}>
+        <Text variant="display" color="primary">
+          {AUTH_COPY.brand.wordmark}
+        </Text>
+        <Text variant="h2">{COPY.title}</Text>
 
         <OtpVerificationForm
           challenge={challenge}
@@ -80,8 +116,13 @@ export function CustomerOtpScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  body: {
-    flex: 1,
+  content: {
     justifyContent: 'center',
+  },
+  body: {
+    // Deliberately no `flex: 1` — see the note on contentContainerStyle above.
+    // Fills a phone, caps on a tablet.
+    width: '100%',
+    alignSelf: 'center',
   },
 });

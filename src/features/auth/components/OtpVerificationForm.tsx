@@ -18,7 +18,7 @@
  */
 
 import React, { useCallback, useState } from 'react';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 
@@ -172,19 +172,35 @@ export function OtpVerificationForm({
       />
 
       {/*
-        Disabled for the cooldown the backend asked for, and while either call is
-        in flight — which is what stops a second request being sent before the
-        first has answered.
+        The cooldown is status, not a disabled action.
+
+        It used to be the label of a disabled button, which dimmed it with
+        `opacity.disabled` — measured at 2.7:1 against the surface, making the
+        one line that says when the user may act the least legible text on the
+        screen. As plain text it inherits full contrast.
+
+        The slot keeps a touch target's height either way, so the button
+        appearing at zero does not shift what is below it. Deliberately not a
+        live region: the value changes every second, and announcing each tick
+        would talk over the user entering their code.
       */}
-      <SecondaryButton
-        fullWidth
-        label={
-          isCoolingDown ? formatCopy(copy.resendIn, { seconds: secondsRemaining }) : copy.resend
-        }
-        onPress={handleResendPress}
-        isLoading={isResending}
-        disabled={isCoolingDown || isVerifying}
-      />
+      <View style={[styles.resend, { minHeight: theme.hitSlop.minTarget }]}>
+        {isCoolingDown ? (
+          <Text variant="body" color="textSecondary" align="center">
+            {formatCopy(copy.resendIn, { seconds: secondsRemaining })}
+          </Text>
+        ) : (
+          // Disabled only while verifying, which is what stops a second request
+          // being sent before the first has answered.
+          <SecondaryButton
+            fullWidth
+            label={copy.resend}
+            onPress={handleResendPress}
+            isLoading={isResending}
+            disabled={isVerifying}
+          />
+        )}
+      </View>
 
       <SecondaryButton
         fullWidth
@@ -195,3 +211,9 @@ export function OtpVerificationForm({
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  resend: {
+    justifyContent: 'center',
+  },
+});

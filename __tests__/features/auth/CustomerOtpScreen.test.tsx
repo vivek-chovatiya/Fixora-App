@@ -14,6 +14,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 
 import { setSessionStorage, type PersistedSession } from '@/core/storage/SessionStorage';
+import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { authReducer } from '@/features/auth/state/authSlice';
 import { CustomerOtpScreen } from '@/features/auth/screens/CustomerOtpScreen';
 import type { SessionPayload } from '@/features/auth/types';
@@ -72,12 +73,15 @@ function memoryStorage() {
     clear: jest.fn(async () => {
       value = null;
     }),
+    peek: () => value,
   };
 }
 
 async function render(service: AuthService, challenge: OtpChallenge = CHALLENGE) {
   registerService('auth', service);
-  setSessionStorage(memoryStorage());
+
+  const storage = memoryStorage();
+  setSessionStorage(storage);
 
   const store = configureStore({ reducer: { auth: authReducer } });
   const goBack = jest.fn();
@@ -114,13 +118,34 @@ async function render(service: AuthService, challenge: OtpChallenge = CHALLENGE)
     });
   };
 
+  /** The host text input, not the wrappers that forward the same testID to it. */
+  const codeField = () => {
+    const [field] = renderer.root.findAll(
+      node =>
+        typeof node.type === 'string' &&
+        node.props.testID === 'customer-otp-code' &&
+        typeof node.props.onChangeText === 'function',
+    );
+    return field.props;
+  };
+
+  const button = (accessibilityLabel: string) =>
+    renderer.root.findByProps({ accessibilityLabel }).props;
+
+  const hasButton = (accessibilityLabel: string) =>
+    renderer.root.findAllByProps({ accessibilityLabel }).length > 0;
+
   return {
     renderer,
     store,
+    storage,
     goBack,
     navigate,
     type,
     press,
+    codeField,
+    button,
+    hasButton,
     text: () => textOf(renderer.toJSON()),
     verifyButton: () => renderer.root.findByProps({ accessibilityLabel: 'Verify' }).props,
   };
@@ -145,6 +170,30 @@ afterEach(() => {
 });
 
 describe('CustomerOtpScreen — what the user sees', () => {
+  it('continues the sign-in flow, with its heading from central copy', async () => {
+    const { text } = await render(stubAuthService());
+
+    expect(text()).toContain(AUTH_COPY.brand.wordmark);
+    expect(text()).toContain(AUTH_COPY.customerOtp.title);
+  });
+
+  it('labels the field and every action for assistive technology', async () => {
+    const { codeField, button } = await render(stubAuthService());
+
+    expect(codeField().accessibilityLabel).toBe(AUTH_COPY.customerOtp.codeLabel);
+
+    const verify = button(AUTH_COPY.customerOtp.submit);
+    expect(verify.accessibilityRole).toBe('button');
+    expect(verify.accessibilityHint).toBe(AUTH_COPY.customerOtp.submitHint);
+    expect(verify.accessibilityState).toEqual(
+      expect.objectContaining({ disabled: false, busy: false }),
+    );
+
+    // Resend and change-number are reachable as buttons in their own right.
+    expect(button(AUTH_COPY.customerOtp.resend).accessibilityRole).toBe('button');
+    expect(button(AUTH_COPY.customerOtp.changeAction).accessibilityRole).toBe('button');
+  });
+
   it('shows the masked destination the service returned, never the raw number', async () => {
     const { text } = await render(stubAuthService());
 
@@ -291,6 +340,31 @@ describe('CustomerOtpScreen — resend', () => {
     expect(text()).toContain('••••••1111');
   });
 
+  it('drops the previous failure once a replacement code has been sent', async () => {
+    const failure = new AppError({
+      kind: 'validation',
+      message: 'code mismatch',
+      userMessage: 'That code is not correct. Please check and try again.',
+    });
+    const service = stubAuthService({
+      verifyCustomerOtp: jest.fn(async () => {
+        throw failure;
+      }),
+    });
+    const { type, press, text, codeField } = await render(service);
+
+    await type(TYPED_CODE);
+    await press('Verify');
+    expect(text()).toContain(failure.userMessage);
+
+    await press('Resend code');
+
+    // The message described an attempt against a code that no longer exists.
+    expect(text()).not.toContain(failure.userMessage);
+    // The typed code is left alone; only the stale message goes.
+    expect(codeField().value).toBe(TYPED_CODE);
+  });
+
   it('will not send a second request while the first is unanswered', async () => {
     let release!: (challenge: OtpChallenge) => void;
     const service = stubAuthService({
@@ -316,17 +390,138 @@ describe('CustomerOtpScreen — resend', () => {
 
   it('honours the cooldown the backend asked for rather than one of its own', async () => {
     const service = stubAuthService();
-    const { press, text } = await render(service, { ...CHALLENGE, resendAfterSeconds: 30 });
+    const { renderer, text } = await render(service, { ...CHALLENGE, resendAfterSeconds: 30 });
 
+    // The remaining time is readable status rather than a dimmed button label,
+    // and there is nothing to press until it reaches zero.
     expect(text()).toContain('Resend code in 30s');
-
-    await press('Resend code in 30s');
+    expect(renderer.root.findAllByProps({ accessibilityLabel: 'Resend code' })).toHaveLength(0);
 
     expect(service.requestCustomerOtp).not.toHaveBeenCalled();
   });
 });
 
+describe('CustomerOtpScreen — one operation at a time', () => {
+  it('sends one verification however many times the button is pressed', async () => {
+    let release!: (session: SessionPayload) => void;
+    const service = stubAuthService({
+      verifyCustomerOtp: jest.fn(
+        () =>
+          new Promise<SessionPayload>(resolve => {
+            release = resolve;
+          }),
+      ),
+    });
+    const { type, press } = await render(service);
+
+    await type(TYPED_CODE);
+    await press('Verify');
+    await press('Verify');
+    await press('Verify');
+
+    expect(service.verifyCustomerOtp).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      release(SESSION);
+    });
+  });
+
+  it('will not resend while a verification is unanswered', async () => {
+    let release!: (session: SessionPayload) => void;
+    const service = stubAuthService({
+      verifyCustomerOtp: jest.fn(
+        () =>
+          new Promise<SessionPayload>(resolve => {
+            release = resolve;
+          }),
+      ),
+    });
+    const { type, press, button } = await render(service);
+
+    await type(TYPED_CODE);
+    await press('Verify');
+
+    expect(button('Resend code').accessibilityState.disabled).toBe(true);
+    await press('Resend code');
+    expect(service.requestCustomerOtp).not.toHaveBeenCalled();
+
+    await act(async () => {
+      release(SESSION);
+    });
+  });
+
+  it('will not verify while a resend is unanswered', async () => {
+    let release!: (challenge: OtpChallenge) => void;
+    const service = stubAuthService({
+      requestCustomerOtp: jest.fn(
+        () =>
+          new Promise<OtpChallenge>(resolve => {
+            release = resolve;
+          }),
+      ),
+    });
+    const { type, press, verifyButton } = await render(service);
+
+    await type(TYPED_CODE);
+    await press('Resend code');
+
+    expect(verifyButton().accessibilityState.disabled).toBe(true);
+    await press('Verify');
+    expect(service.verifyCustomerOtp).not.toHaveBeenCalled();
+
+    await act(async () => {
+      release(CHALLENGE);
+    });
+  });
+
+  it('stays usable after a resend fails', async () => {
+    const service = stubAuthService({
+      requestCustomerOtp: jest.fn(async () => {
+        throw new AppError({ kind: 'network', message: 'socket hang up' });
+      }),
+    });
+    const { type, press, text, store, codeField } = await render(service);
+
+    await type(TYPED_CODE);
+    await press('Resend code');
+
+    expect(text()).toContain('No connection');
+    expect(text()).not.toContain('socket hang up');
+    // The typed code survived, and verifying still works.
+    expect(codeField().value).toBe(TYPED_CODE);
+
+    await press('Verify');
+    expect(service.verifyCustomerOtp).toHaveBeenCalledWith(PHONE, TYPED_CODE);
+    expect(store.getState().auth.status).toBe('authenticated');
+  });
+});
+
 describe('CustomerOtpScreen — the code never leaks', () => {
+  it('is never written to the device, not even alongside the session', async () => {
+    const { type, press, storage } = await render(stubAuthService());
+
+    await type(TYPED_CODE);
+    await press('Verify');
+
+    // A session was persisted, and the code used to obtain it was not part of it.
+    expect(storage.write).toHaveBeenCalled();
+    expect(JSON.stringify(storage.peek())).not.toContain(TYPED_CODE);
+  });
+
+  it('is not sent anywhere by requesting a replacement', async () => {
+    const service = stubAuthService();
+    const { type, press, store, storage } = await render(service);
+
+    await type(TYPED_CODE);
+    await press('Resend code');
+
+    // Resending asks for a new code with the number alone. It proves nothing,
+    // so it must not authenticate and must not carry the typed code.
+    expect(service.requestCustomerOtp).toHaveBeenCalledWith(PHONE);
+    expect(store.getState().auth.status).not.toBe('authenticated');
+    expect(storage.write).not.toHaveBeenCalled();
+  });
+
   it('is not written to logs, even when verification fails', async () => {
     const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => {});
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
