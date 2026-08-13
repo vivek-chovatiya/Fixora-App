@@ -16,7 +16,6 @@
 import React, { memo, type ReactNode } from 'react';
 import {
   KeyboardAvoidingView,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -95,9 +94,14 @@ function ScreenComponent({
       {keyboardAvoiding ? (
         <KeyboardAvoidingView
           style={styles.fill}
-          // Android resizes the window itself; adding padding on top of that
-          // double-counts the keyboard and leaves a gap above it.
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          // Padding on both platforms. `windowSoftInputMode="adjustResize"` used
+          // to make this unnecessary on Android, but edge-to-edge — which the
+          // platform now enforces from Android 15 regardless of the
+          // `edgeToEdgeEnabled` build flag — stops the window being resized and
+          // hands the keyboard over as an inset instead. Leaving the behaviour
+          // unset there made this component a no-op: the keyboard simply covered
+          // whatever was beneath it, submit buttons included.
+          behavior="padding">
           {body}
         </KeyboardAvoidingView>
       ) : (

@@ -73,6 +73,11 @@ function ErrorStateComponent({
   return (
     <View
       testID={testID}
+      // A failure that appears mid-form is silent to a screen reader otherwise:
+      // nothing moves focus to it, so it reads as unrelated content the user has
+      // to go looking for. Not `accessible`, which would collapse the block into
+      // one node and take the retry button out of the focus order.
+      accessibilityLiveRegion="polite"
       style={[
         styles.container,
         fullScreen && styles.fullScreen,
