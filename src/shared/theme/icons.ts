@@ -66,6 +66,10 @@ export const icons = Object.freeze({
   verified: 'shield-check-outline',
 
   // Domain-neutral
+  /** A person using the app to request services. */
+  customer: 'account-circle-outline',
+  /** A business offering them. Not a category — categories come from the backend. */
+  business: 'storefront-outline',
   location: 'map-marker-outline',
   calendar: 'calendar-outline',
   star: 'star',

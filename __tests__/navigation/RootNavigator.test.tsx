@@ -86,12 +86,16 @@ describe('RootNavigator', () => {
     expect(text()).not.toContain('Sign in');
   });
 
-  it('shows customer sign in once no session is found', async () => {
+  it('shows role selection once no session is found', async () => {
     const { dispatch, text } = await render();
 
     await dispatch(sessionAbsent());
 
-    expect(text()).toContain('Sign in');
+    // The auth stack opens on role selection, which is what makes both
+    // applications reachable.
+    expect(text()).toContain('Welcome to Fixora');
+    expect(text()).toContain('Customer');
+    expect(text()).toContain('Vendor');
   });
 
   it('swaps to the customer application when a session appears', async () => {
@@ -100,8 +104,9 @@ describe('RootNavigator', () => {
 
     await dispatch(signedIn(CUSTOMER_SESSION));
 
-    // The sign-in form is gone: the auth stack is unmounted, not merely covered.
-    expect(text()).not.toContain('Sign in');
+    // The auth stack is unmounted, not merely covered — an authenticated user is
+    // never shown role selection.
+    expect(text()).not.toContain('Welcome to Fixora');
     expect(text()).toContain('Home');
   });
 
@@ -113,16 +118,30 @@ describe('RootNavigator', () => {
 
     expect(text()).toContain('Dashboard');
     expect(text()).not.toContain('Home');
+    expect(text()).not.toContain('Welcome to Fixora');
   });
 
-  it('returns to sign in when the session ends', async () => {
+  it('decides by the session role, not by anything chosen before signing in', async () => {
+    const { dispatch, text } = await render();
+    await dispatch(sessionAbsent());
+
+    // Role selection is on screen and its only effect is navigation. What
+    // actually decides the application is the role inside the session.
+    expect(text()).toContain('Welcome to Fixora');
+
+    await dispatch(signedIn(VENDOR_SESSION));
+
+    expect(text()).toContain('Dashboard');
+  });
+
+  it('returns to role selection when the session ends', async () => {
     const { dispatch, text } = await render();
     await dispatch(sessionAbsent());
     await dispatch(signedIn(CUSTOMER_SESSION));
 
     await dispatch(signedOut());
 
-    expect(text()).toContain('Sign in');
+    expect(text()).toContain('Welcome to Fixora');
     expect(text()).not.toContain('Home');
   });
 });

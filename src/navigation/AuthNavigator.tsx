@@ -4,6 +4,10 @@
  * The pre-authentication stack. Mounted only while nobody is signed in, so no
  * authenticated screen is reachable from here.
  *
+ * It opens on role selection, which is what makes both applications reachable.
+ * The selection routes and nothing more: the authenticated role comes from the
+ * session, never from what was tapped here.
+ *
  * Customer sign in is complete: phone, then one-time code. Nothing navigates
  * onward from verification — a session flips RootNavigator instead, so the stack
  * has no route into the application.
@@ -17,6 +21,7 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
+import { AuthEntryScreen } from '@/features/auth/screens/AuthEntryScreen';
 import { CustomerLoginScreen } from '@/features/auth/screens/CustomerLoginScreen';
 import { CustomerOtpScreen } from '@/features/auth/screens/CustomerOtpScreen';
 import { VendorLoginScreen } from '@/features/auth/screens/VendorLoginScreen';
@@ -31,7 +36,8 @@ const SignupScreen = createPlaceholder('Create Account', 'PROJECT_BIBLE section 
 
 export function AuthNavigator() {
   return (
-    <Stack.Navigator initialRouteName="CustomerLogin" screenOptions={{ headerShown: false }}>
+    <Stack.Navigator initialRouteName="AuthEntry" screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="AuthEntry" component={AuthEntryScreen} />
       <Stack.Screen name="CustomerLogin" component={CustomerLoginScreen} />
       <Stack.Screen name="CustomerOtp" component={CustomerOtpScreen} />
       <Stack.Screen name="VendorLogin" component={VendorLoginScreen} />

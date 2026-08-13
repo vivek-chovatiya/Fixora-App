@@ -24,11 +24,24 @@ import type { OtpChallenge } from '@/shared/services/types/AuthService';
  * deciding.
  *
  * There is no password reset route. Neither role has a password: customers use a
- * one-time code, and vendor recovery is auth code regeneration (section 7A.2).
+ * one-time code, and a vendor uses the auth code they saved.
+ *
+ * There is no vendor recovery route either, and its absence is deliberate.
+ * `regenerateVendorAuthCode` is keyed by `registrationId`, which a returning
+ * vendor does not have — so the current contract cannot express "I lost my
+ * code" safely. Inventing a phone-only regeneration would turn a lost phone into
+ * account takeover. It needs a backend operation before it can need a route.
  *
  * The remaining vendor routes are added with their screens, not ahead of them.
  */
 export type AuthStackParamList = {
+  /**
+   * Role selection, and the stack's entry point. The choice made here is a
+   * navigation decision only — the authenticated role comes from the session,
+   * so nothing selected here is carried as a param or trusted afterwards.
+   */
+  AuthEntry: undefined;
+
   CustomerLogin: undefined;
   /**
    * `phone` travels with the challenge because `verifyCustomerOtp(phone, code)`

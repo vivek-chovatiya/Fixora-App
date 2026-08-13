@@ -23,6 +23,17 @@ export const AUTH_COPY = Object.freeze({
     tagline: 'Local services, requested in a few taps.',
   }),
 
+  authEntry: Object.freeze({
+    title: 'Welcome to Fixora',
+    subtitle: 'Choose how you want to continue.',
+    customerTitle: 'Customer',
+    customerDescription: 'Find and request local services.',
+    customerHint: 'Continue as a customer',
+    vendorTitle: 'Vendor',
+    vendorDescription: 'Manage your service business and jobs.',
+    vendorHint: 'Continue as a vendor',
+  }),
+
   customerLogin: Object.freeze({
     title: 'Sign in',
     subtitle: 'Enter your phone number and we will send you a verification code.',
