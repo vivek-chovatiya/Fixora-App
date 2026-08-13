@@ -18,7 +18,7 @@
  */
 
 import React, { useCallback } from 'react';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
@@ -101,9 +101,18 @@ export function VendorRegistrationScreen({ navigation }: Props) {
 
   return (
     <Screen scrollable keyboardAvoiding testID="vendor-registration-screen">
-      <View style={{ gap: theme.spacing.xxl }}>
+      {/*
+        Top-aligned rather than centred, unlike the short auth screens: a form
+        this long always exceeds the viewport, so centring it would only push
+        the first field under the fold.
+      */}
+      <View
+        style={[styles.body, { gap: theme.spacing.xxl, maxWidth: theme.maxContentWidth }]}>
         <View style={{ gap: theme.spacing.xs }}>
-          <Text variant="h1">{COPY.title}</Text>
+          <Text variant="display" color="primary">
+            {AUTH_COPY.brand.wordmark}
+          </Text>
+          <Text variant="h2">{COPY.title}</Text>
           <Text variant="body" color="textSecondary">
             {COPY.subtitle}
           </Text>
@@ -212,3 +221,11 @@ export function VendorRegistrationScreen({ navigation }: Props) {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  body: {
+    // Fills a phone, caps on a tablet.
+    width: '100%',
+    alignSelf: 'center',
+  },
+});

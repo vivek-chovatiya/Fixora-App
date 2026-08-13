@@ -16,7 +16,7 @@
 import React, { memo, useCallback } from 'react';
 import { Pressable, StyleSheet, View, type PressableStateCallbackType } from 'react-native';
 
-import { DynamicIcon } from '@/shared/components/Icon';
+import { DynamicIcon, Icon } from '@/shared/components/Icon';
 import { ErrorState } from '@/shared/components/ErrorState';
 import { Loader } from '@/shared/components/Loader';
 import { Text } from '@/shared/components/Text';
@@ -141,9 +141,39 @@ function CategoryChipComponent({ category, selected, disabled, onPress }: Catego
         size="sm"
         color={selected ? 'primary' : 'textTertiary'}
       />
-      <Text variant="label" color={selected ? 'primary' : 'textSecondary'}>
-        {category.name}
-      </Text>
+
+      {/*
+        `numberOfLines={1}` is load-bearing, not cosmetic.
+
+        Inside this wrapping row the label was measured at its full width — the
+        chip came out the right size — but line-broken against a narrower one.
+        "Appliance Repair" put "Repair" on a second line that the height, already
+        computed for one, then clipped: the vendor saw "Appliance", with no
+        ellipsis and a gap where the rest belonged. A category name is backend
+        data, so half of it names a service that does not exist.
+
+        Letting it shrink did not help, nor did giving it a resolved width to
+        break against, nor allowing two lines — each still broke, and the extra
+        line was still clipped. Forbidding the break is what fixes it, and it
+        costs nothing: with no width forced on the chip, the chip is sized to the
+        whole name, so the tail is never reached. The ellipsis only appears for a
+        name wider than the row itself, where an honest "…" beats a word
+        silently cut in half.
+      */}
+      <View style={styles.labelBox}>
+        <Text
+          variant="label"
+          color={selected ? 'primary' : 'textSecondary'}
+          numberOfLines={1}>
+          {category.name}
+        </Text>
+      </View>
+
+      {/*
+        Selection is never carried by colour alone: the mark appears, the border
+        changes, and the checkbox role reports it to a screen reader.
+      */}
+      {selected ? <Icon name="selected" size="sm" color="primary" /> : null}
     </Pressable>
   );
 }
@@ -157,6 +187,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth * 2,
+    // A name longer than the row can never push the chip past the screen edge.
+    maxWidth: '100%',
+  },
+  labelBox: {
+    flexShrink: 1,
   },
 });
 

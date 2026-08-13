@@ -166,6 +166,93 @@ describe('VendorRegistrationScreen — the form', () => {
   });
 });
 
+describe('VendorRegistrationScreen — the services field', () => {
+  it('names every service from the data, not from anything written here', async () => {
+    const { text } = await render(stubAuthService());
+
+    CATEGORIES.forEach(category => {
+      expect(text()).toContain(category.name);
+      // The identifier is the payload, never something the vendor reads.
+      expect(text()).not.toContain(category.id);
+    });
+  });
+
+  it('renders a long name in full rather than cutting it short', async () => {
+    // "Appliance Repair" rendered as "Appliance" at 360dp: the label broke onto
+    // a second line the chip's height then clipped. The chip is sized to the
+    // whole name, so the name must survive intact however long it is.
+    const long: ServiceCategory[] = [
+      { id: 'cat_long', name: 'Appliance Repair and Installation', iconGlyph: 'wrench-outline' },
+    ];
+    const { renderer } = await render(stubAuthService(), {
+      listServiceCategories: jest.fn(async () => long),
+    });
+
+    const [label] = renderer.root.findAll(
+      node => node.props.numberOfLines === 1 && typeof node.props.children === 'string',
+    );
+
+    expect(label.props.children).toBe(long[0].name);
+  });
+
+  it('reports selection to assistive technology, not by colour alone', async () => {
+    const { renderer, press } = await render(stubAuthService());
+
+    const chip = (name: string) =>
+      renderer.root.findAll(
+        node => node.props.accessibilityLabel === name && node.props.accessibilityRole === 'checkbox',
+      )[0].props;
+
+    expect(chip(CATEGORIES[0].name).accessibilityState).toEqual(
+      expect.objectContaining({ checked: false }),
+    );
+
+    await press(CATEGORIES[0].name);
+
+    expect(chip(CATEGORIES[0].name).accessibilityState).toEqual(
+      expect.objectContaining({ checked: true }),
+    );
+    // Unrelated options are untouched: this is a multi-select, not a radio group.
+    expect(chip(CATEGORIES[1].name).accessibilityState).toEqual(
+      expect.objectContaining({ checked: false }),
+    );
+  });
+
+  it('lets the vendor retry when the services fail to load', async () => {
+    const listServiceCategories = jest
+      .fn<Promise<ServiceCategory[]>, []>()
+      .mockRejectedValueOnce(new AppError({ kind: 'network', message: 'socket hang up' }))
+      .mockResolvedValueOnce(CATEGORIES);
+
+    const { renderer, text, press } = await render(stubAuthService(), { listServiceCategories });
+
+    expect(text()).toContain('No connection');
+    expect(text()).not.toContain('socket hang up');
+
+    await press('Try again');
+
+    expect(text()).toContain(CATEGORIES[0].name);
+    expect(renderer.root.findAllByProps({ accessibilityLabel: 'Try again' })).toHaveLength(0);
+  });
+
+  it('shows no options, and blocks submission, when there are none', async () => {
+    const service = stubAuthService();
+    const { text, fill, submit } = await render(service, {
+      listServiceCategories: jest.fn(async () => []),
+    });
+
+    await fill('vendor-business-name', VALID.businessName);
+    await fill('vendor-first-name', VALID.ownerFirstName);
+    await fill('vendor-last-name', VALID.ownerLastName);
+    await fill('vendor-phone', VALID.phone);
+    await submit();
+
+    // Nothing selectable means nothing valid to send.
+    expect(service.registerVendor).not.toHaveBeenCalled();
+    expect(text()).toContain('service');
+  });
+});
+
 describe('VendorRegistrationScreen — validation', () => {
   it('reports every missing required field at once', async () => {
     const service = stubAuthService();

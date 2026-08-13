@@ -54,6 +54,12 @@ export const icons = Object.freeze({
   image: 'image-outline',
   upload: 'tray-arrow-up',
 
+  /**
+   * A chosen item in a multi-select. Distinct from `success`, which reports
+   * that an operation completed — selecting something completes nothing.
+   */
+  selected: 'check',
+
   // Status and feedback
   success: 'check-circle-outline',
   warning: 'alert-outline',
