@@ -42,6 +42,12 @@ const palette = {
    */
   gray450: '#8A94A3',
   gray500: '#6B7280',
+  /**
+   * A step between 500 and 600, for tertiary text on a light background.
+   * gray500 clears the contrast floor on white but not on the tinted fill of a
+   * disabled input, and gray600 is already spoken for by secondary text.
+   */
+  gray550: '#5B6472',
   gray600: '#4B5563',
   gray700: '#374151',
   gray800: '#1F2937',
@@ -101,7 +107,16 @@ export const lightColors: ColorTokens = {
 
   textPrimary: palette.gray900,
   textSecondary: palette.gray600,
-  textTertiary: palette.gray500,
+  /**
+   * Not gray500, which reads at 4.4:1 on surfaceAlt — the fill behind a
+   * disabled input, and so exactly where placeholders and helper text land.
+   * Darkening to gray600 would have cleared it too, but gray600 is what
+   * secondary text uses: tertiary would have become the same color, and every
+   * place that deliberately separates the two would have lost the distinction.
+   * The midpoint keeps three visible tiers and clears the floor on all three
+   * light surfaces.
+   */
+  textTertiary: palette.gray550,
   textDisabled: palette.gray400,
   textInverse: palette.white,
 
@@ -137,11 +152,12 @@ export const darkColors: ColorTokens = {
   textPrimary: palette.gray50,
   textSecondary: palette.gray400,
   /**
-   * Not gray500, which is the light-mode value. Inheriting it here left
-   * placeholders, helper text, captions and section overlines at 4.2:1 on the
-   * page background and 3.0:1 on a disabled input — under the 4.5:1 needed for
-   * normal text, and worst exactly where the text is smallest. One step lighter
-   * clears it on all three dark surfaces while staying a step below secondary.
+   * The dark counterpart to gray550, and derived the same way. gray500 sat here
+   * first and left placeholders, helper text, captions and section overlines at
+   * 4.2:1 on the page background and 3.0:1 on a disabled input — under the 4.5:1
+   * needed for normal text, and worst exactly where the text is smallest. One
+   * step lighter clears it on all three dark surfaces while staying a step below
+   * secondary.
    */
   textTertiary: palette.gray450,
   textDisabled: palette.gray600,
