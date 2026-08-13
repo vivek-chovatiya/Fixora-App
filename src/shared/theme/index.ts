@@ -10,12 +10,11 @@
 
 export { getTheme, lightTheme, darkTheme, type AppTheme, type ThemeMode } from './theme';
 
-export {
-  ThemeProvider,
-  useTheme,
-  useThemePreference,
-  type ThemePreference,
-} from './ThemeProvider';
+/**
+ * No preference API is exported, and none exists. The theme follows the system
+ * appearance, so there is nothing for a screen to set.
+ */
+export { ThemeProvider, useTheme } from './ThemeProvider';
 
 export { type ColorTokens, type ColorTone, lightColors, darkColors } from './colors';
 export { spacing, screenPadding, hitSlop, type SpacingToken } from './spacing';

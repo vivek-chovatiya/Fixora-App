@@ -1,81 +1,47 @@
 /**
  * ThemeProvider
  *
- * Supplies the active theme to the component tree and owns the light/dark
- * preference.
+ * Supplies the active theme to the component tree.
  *
- * Theme preference is held here rather than in the Redux store: it is presentation
- * state consumed through context by every component, which is exactly what
- * context is for. Promoting it to global state would add indirection without
- * adding capability.
+ * The theme follows the device's appearance setting and nothing else. There is
+ * no preference to hold, persist, override or toggle — the product decision is
+ * that the operating system decides, and this file is where that decision is
+ * enforced rather than merely defaulted to.
+ *
+ * `useColorScheme` is read here and nowhere else in the application, so no
+ * screen can reach around this and form its own opinion about light and dark.
+ * Components ask for values, never for the mode.
+ *
+ * The switch is live: `useColorScheme` re-renders on an appearance change, and
+ * the Android activity lists `uiMode` in `configChanges`, so changing the system
+ * theme repaints the running app instead of recreating it. A half-filled form
+ * survives the switch.
  */
 
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type PropsWithChildren,
-} from 'react';
+import React, { createContext, useContext, type PropsWithChildren } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { getTheme, type AppTheme, type ThemeMode } from './theme';
 
-/** `system` follows the device setting; the others pin the theme. */
-export type ThemePreference = 'system' | ThemeMode;
+const ThemeContext = createContext<AppTheme | undefined>(undefined);
 
-interface ThemeContextValue {
-  theme: AppTheme;
-  mode: ThemeMode;
-  preference: ThemePreference;
-  setPreference: (preference: ThemePreference) => void;
-}
+export function ThemeProvider({ children }: PropsWithChildren) {
+  // Anything that is not explicitly dark is light, including `null` — which is
+  // what the platform reports when it has no preference to give.
+  const mode: ThemeMode = useColorScheme() === 'dark' ? 'dark' : 'light';
 
-const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
-
-export function ThemeProvider({
-  children,
-  initialPreference = 'system',
-}: PropsWithChildren<{ initialPreference?: ThemePreference }>) {
-  const systemScheme = useColorScheme();
-  const [preference, setPreference] = useState<ThemePreference>(initialPreference);
-
-  const mode: ThemeMode =
-    preference === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : preference;
-
-  const handleSetPreference = useCallback((next: ThemePreference) => {
-    setPreference(next);
-  }, []);
-
-  const value = useMemo<ThemeContextValue>(
-    () => ({
-      theme: getTheme(mode),
-      mode,
-      preference,
-      setPreference: handleSetPreference,
-    }),
-    [mode, preference, handleSetPreference],
-  );
-
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
-}
-
-function useThemeContext(): ThemeContextValue {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme must be used within a ThemeProvider.');
-  }
-  return context;
+  // `getTheme` returns one of two frozen module-level objects, so the value's
+  // identity is already stable per mode and memoising it here would buy nothing.
+  return <ThemeContext.Provider value={getTheme(mode)}>{children}</ThemeContext.Provider>;
 }
 
 /** Primary hook. Every component reads its visual values from here. */
 export function useTheme(): AppTheme {
-  return useThemeContext().theme;
-}
+  const theme = useContext(ThemeContext);
 
-/** For the settings screen, where the user chooses their preference. */
-export function useThemePreference() {
-  const { mode, preference, setPreference } = useThemeContext();
-  return { mode, preference, setPreference };
+  if (!theme) {
+    throw new Error('useTheme must be used within a ThemeProvider.');
+  }
+
+  return theme;
 }
