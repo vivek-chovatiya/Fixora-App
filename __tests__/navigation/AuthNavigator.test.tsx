@@ -32,19 +32,25 @@ afterEach(() => {
 });
 
 describe('AuthNavigator', () => {
-  it('registers a screen for every route a user must reach', () => {
+  it('registers exactly the approved routes, and nothing else', () => {
+    // Asserted exactly rather than loosely: an extra route is as much a defect
+    // as a missing one — it is a screen someone can reach that nobody agreed to.
+    expect(registeredRoutes()).toEqual([
+      'AuthEntry',
+      'CustomerLogin',
+      'CustomerOtp',
+      'VendorLogin',
+      'VendorRegistration',
+      'VendorOtp',
+    ]);
+  });
+
+  it('has no customer signup route: verifying a phone is what creates the account', () => {
     const routes = registeredRoutes();
 
-    expect(routes).toEqual(
-      expect.arrayContaining([
-        'AuthEntry',
-        'CustomerLogin',
-        'CustomerOtp',
-        'VendorLogin',
-        'VendorRegistration',
-        'VendorOtp',
-      ]),
-    );
+    expect(routes).not.toContain('Signup');
+    expect(routes).not.toContain('CustomerSignup');
+    expect(routes).not.toContain('Register');
   });
 
   it('opens on role selection, so both applications are reachable', async () => {

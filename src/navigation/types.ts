@@ -26,6 +26,11 @@ import type { OtpChallenge } from '@/shared/services/types/AuthService';
  * There is no password reset route. Neither role has a password: customers use a
  * one-time code, and a vendor uses the auth code they saved.
  *
+ * There is no customer signup route either. A customer account is created by the
+ * backend on first successful phone verification, so signing up and signing in
+ * are the same three taps — a separate screen would collect details nobody has
+ * yet asked for and add a step to the shortest path in the product.
+ *
  * There is no vendor recovery route either, and its absence is deliberate.
  * `regenerateVendorAuthCode` is keyed by `registrationId`, which a returning
  * vendor does not have — so the current contract cannot express "I lost my
@@ -67,8 +72,6 @@ export type AuthStackParamList = {
    * one-time code and no auth code ever travels in params.
    */
   VendorOtp: { registrationId: string; challenge: OtpChallenge };
-
-  Signup: undefined;
 };
 
 /** Customer bottom tabs (PROJECT_BIBLE.md section 26). */

@@ -308,7 +308,13 @@ those answers so the UI can be built; simulation never becomes the rule.
 
 # 9. CUSTOMER SIGNUP
 
-**Screen:** Create Account
+> **Removed by section 7A.** There is no customer signup screen. Verifying a
+> phone number for the first time is what creates the account, so signing up and
+> signing in are the same three taps. The field list below is retained only as
+> the record of what a profile screen may later collect — it is not a screen to
+> build, and the `Signup` route has been deleted.
+
+**Screen:** ~~Create Account~~ (removed)
 
 Fields depend on the finalized backend contract. Minimum expected:
 
@@ -322,7 +328,9 @@ Fields depend on the finalized backend contract. Minimum expected:
 **Actions:** Create Account, Back to Login
 
 ```text
-Signup → Account Created → Login / Auto Login → Customer Home
+~~Signup → Account Created → Login / Auto Login → Customer Home~~
+
+Login (phone) → One-time code → Account created if new → Customer Home
 ```
 
 ---
@@ -1139,8 +1147,7 @@ If these workflows work reliably, **Phase 1 has achieved its goal**.
 # 57. PHASE 1 LAUNCH CHECKLIST
 
 **Customer**
-- [ ] Signup
-- [ ] Login
+- [ ] Login (phone + one-time code; creates the account on first verification)
 - [ ] Profile
 - [ ] Categories
 - [ ] Sub Categories
@@ -1154,8 +1161,8 @@ If these workflows work reliably, **Phase 1 has achieved its goal**.
 - [ ] Review
 
 **Vendor**
-- [ ] Signup
-- [ ] Login
+- [ ] Registration
+- [ ] Login (phone + permanent auth code)
 - [ ] Auth Code display, copy and confirmation (§7A.2)
 - [ ] Dashboard
 - [ ] Profile

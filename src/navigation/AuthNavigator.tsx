@@ -8,9 +8,11 @@
  * The selection routes and nothing more: the authenticated role comes from the
  * session, never from what was tapped here.
  *
- * Customer sign in is complete: phone, then one-time code. Nothing navigates
- * onward from verification — a session flips RootNavigator instead, so the stack
- * has no route into the application.
+ * Customer sign in is complete: phone, then one-time code. There is no separate
+ * signup — the account is created on first successful verification, so the two
+ * are the same flow. Nothing navigates onward from verification either: a
+ * session flips RootNavigator instead, so the stack has no route into the
+ * application.
  *
  * Vendor authentication is complete alongside it: sign in for returning
  * vendors, and registration through to auth code confirmation for new ones.
@@ -27,12 +29,9 @@ import { CustomerOtpScreen } from '@/features/auth/screens/CustomerOtpScreen';
 import { VendorLoginScreen } from '@/features/auth/screens/VendorLoginScreen';
 import { VendorOtpScreen } from '@/features/auth/screens/VendorOtpScreen';
 import { VendorRegistrationScreen } from '@/features/auth/screens/VendorRegistrationScreen';
-import { createPlaceholder } from '@/navigation/placeholders/PlaceholderScreen';
 import type { AuthStackParamList } from '@/navigation/types';
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();
-
-const SignupScreen = createPlaceholder('Create Account', 'PROJECT_BIBLE section 9');
 
 export function AuthNavigator() {
   return (
@@ -43,7 +42,6 @@ export function AuthNavigator() {
       <Stack.Screen name="VendorLogin" component={VendorLoginScreen} />
       <Stack.Screen name="VendorRegistration" component={VendorRegistrationScreen} />
       <Stack.Screen name="VendorOtp" component={VendorOtpScreen} />
-      <Stack.Screen name="Signup" component={SignupScreen} />
     </Stack.Navigator>
   );
 }
