@@ -15,8 +15,9 @@
  * sign in, which is the correct outcome — nothing they chose here follows them
  * past authentication.
  *
- * Registration is deliberately absent: a new vendor reaches it from VendorLogin,
- * so there is one path to it rather than two.
+ * Registration is deliberately absent as an action: a new vendor reaches it from
+ * VendorLogin, so there is one path to it rather than two. The footer note says
+ * where it is without becoming a third thing to tap.
  */
 
 import React, { useCallback } from 'react';
@@ -35,6 +36,8 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'AuthEntry'>;
 export function AuthEntryScreen({ navigation }: Props) {
   const theme = useTheme();
 
+  // Stable because Card is memoised: new function identities on every render
+  // would defeat that for no reason.
   const goToCustomerLogin = useCallback(() => {
     navigation.navigate('CustomerLogin');
   }, [navigation]);
@@ -45,35 +48,55 @@ export function AuthEntryScreen({ navigation }: Props) {
 
   return (
     <Screen scrollable testID="auth-entry-screen">
-      <View style={[styles.body, { gap: theme.spacing.xxxl }]}>
-        <View style={{ gap: theme.spacing.xs }}>
-          <Text variant="h1" color="primary">
-            {COPY.title}
-          </Text>
-          <Text variant="body" color="textSecondary">
-            {COPY.subtitle}
-          </Text>
+      <View
+        style={[
+          styles.body,
+          {
+            // Centres and caps the column, so the screen reads the same on a
+            // small phone and a tablet rather than stretching across one.
+            maxWidth: theme.maxContentWidth,
+          },
+        ]}>
+        {/*
+          The choice is centred in the space above the footer, and the footer
+          sits at the bottom. Centring everything together left the note
+          stranded mid-screen with a large void beneath it.
+        */}
+        <View style={[styles.main, { gap: theme.spacing.xxxl }]}>
+          <View style={{ gap: theme.spacing.xs }}>
+            <Text variant="display" color="primary">
+              {AUTH_COPY.brand.wordmark}
+            </Text>
+            <Text variant="h2">{COPY.title}</Text>
+            <Text variant="body" color="textSecondary">
+              {COPY.subtitle}
+            </Text>
+          </View>
+
+          <View style={{ gap: theme.spacing.lg }}>
+            <RoleOption
+              icon="customer"
+              title={COPY.customerTitle}
+              description={COPY.customerDescription}
+              hint={COPY.customerHint}
+              onPress={goToCustomerLogin}
+              testID="auth-entry-customer"
+            />
+
+            <RoleOption
+              icon="business"
+              title={COPY.vendorTitle}
+              description={COPY.vendorDescription}
+              hint={COPY.vendorHint}
+              onPress={goToVendorLogin}
+              testID="auth-entry-vendor"
+            />
+          </View>
         </View>
 
-        <View style={{ gap: theme.spacing.lg }}>
-          <RoleOption
-            icon="customer"
-            title={COPY.customerTitle}
-            description={COPY.customerDescription}
-            hint={COPY.customerHint}
-            onPress={goToCustomerLogin}
-            testID="auth-entry-customer"
-          />
-
-          <RoleOption
-            icon="business"
-            title={COPY.vendorTitle}
-            description={COPY.vendorDescription}
-            hint={COPY.vendorHint}
-            onPress={goToVendorLogin}
-            testID="auth-entry-vendor"
-          />
-        </View>
+        <Text variant="caption" color="textTertiary" align="center">
+          {COPY.registerNote}
+        </Text>
       </View>
     </Screen>
   );
@@ -92,14 +115,36 @@ interface RoleOptionProps {
  * Local to this screen on purpose. Two options that differ only in their words
  * do not justify a shared component, and there is no second place in the app
  * that picks a role.
+ *
+ * Card supplies the surface, radius, shadow, pressed state and button role, so
+ * none of that is restated here. Bordered as well as raised because a soft
+ * shadow all but disappears against a dark background.
  */
 function RoleOption({ icon, title, description, hint, onPress, testID }: RoleOptionProps) {
   const theme = useTheme();
 
   return (
-    <Card onPress={onPress} accessibilityLabel={title} accessibilityHint={hint} testID={testID}>
+    <Card
+      onPress={onPress}
+      bordered
+      accessibilityLabel={title}
+      accessibilityHint={hint}
+      testID={testID}>
       <View style={[styles.option, { gap: theme.spacing.lg }]}>
-        <Icon name={icon} size="xl" color="primary" />
+        <View
+          style={[
+            styles.iconTile,
+            {
+              backgroundColor: theme.colors.primarySubtle,
+              borderRadius: theme.radius.full,
+              // Sized from the touch-target floor so the row alone is already a
+              // comfortable target before the card's padding is counted.
+              width: theme.hitSlop.minTarget,
+              height: theme.hitSlop.minTarget,
+            },
+          ]}>
+          <Icon name={icon} size="lg" color="primary" />
+        </View>
 
         <View style={[styles.optionText, { gap: theme.spacing.xxs }]}>
           <Text variant="h3">{title}</Text>
@@ -108,6 +153,7 @@ function RoleOption({ icon, title, description, hint, onPress, testID }: RoleOpt
           </Text>
         </View>
 
+        {/* Affordance only — the title and description already carry the meaning. */}
         <Icon name="forward" size="md" color="textTertiary" />
       </View>
     </Card>
@@ -117,11 +163,21 @@ function RoleOption({ icon, title, description, hint, onPress, testID }: RoleOpt
 const styles = StyleSheet.create({
   body: {
     flex: 1,
+    // Fills a phone, caps on a tablet.
+    width: '100%',
+    alignSelf: 'center',
+  },
+  main: {
+    flex: 1,
     justifyContent: 'center',
   },
   option: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  iconTile: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   optionText: {
     flex: 1,

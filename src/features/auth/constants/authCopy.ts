@@ -19,12 +19,19 @@
 
 export const AUTH_COPY = Object.freeze({
   brand: Object.freeze({
+    /**
+     * The product name as it is written in the interface. Kept here rather than
+     * read from AppConfig.app.name, which is the bundle's identity and not
+     * necessarily what a user should be shown.
+     */
+    wordmark: 'Fixora',
     /** Temporary product copy. Replace when marketing copy is agreed. */
     tagline: 'Local services, requested in a few taps.',
   }),
 
   authEntry: Object.freeze({
-    title: 'Welcome to Fixora',
+    /** The wordmark carries the product name, so the heading does not repeat it. */
+    title: 'Welcome',
     subtitle: 'Choose how you want to continue.',
     customerTitle: 'Customer',
     customerDescription: 'Find and request local services.',
@@ -32,6 +39,11 @@ export const AUTH_COPY = Object.freeze({
     vendorTitle: 'Vendor',
     vendorDescription: 'Manage your service business and jobs.',
     vendorHint: 'Continue as a vendor',
+    /**
+     * Points a new vendor at the one path to registration rather than adding a
+     * second entry point to this screen.
+     */
+    registerNote: 'New vendors can register from vendor sign in.',
   }),
 
   customerLogin: Object.freeze({

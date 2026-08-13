@@ -119,14 +119,36 @@ afterEach(() => {
 });
 
 describe('AuthEntryScreen', () => {
-  it('offers both applications', async () => {
+  it('offers both applications, each with a name and an explanation', async () => {
     const { renderer, text } = await render();
 
-    expect(text()).toContain('Welcome to Fixora');
     expect(renderer.root.findByProps({ testID: 'auth-entry-customer' })).toBeDefined();
     expect(renderer.root.findByProps({ testID: 'auth-entry-vendor' })).toBeDefined();
+
+    // Each option is readable as text, so the icon is never the only thing
+    // carrying its meaning.
     expect(text()).toContain('Customer');
+    expect(text()).toContain('Find and request local services.');
     expect(text()).toContain('Vendor');
+    expect(text()).toContain('Manage your service business and jobs.');
+  });
+
+  it('presents both options as buttons with labels and hints', async () => {
+    const { renderer } = await render();
+
+    ['Customer', 'Vendor'].forEach(label => {
+      // The pressable itself, not the Card wrapper that forwards the label.
+      const [option] = renderer.root.findAll(
+        node =>
+          node.props.accessibilityLabel === label && node.props.accessibilityRole === 'button',
+      );
+
+      expect(option).toBeDefined();
+      expect(option.props.accessibilityHint).toEqual(expect.any(String));
+      expect(option.props.accessibilityState).toEqual(
+        expect.objectContaining({ disabled: false }),
+      );
+    });
   });
 
   it('sends a customer to customer sign in', async () => {

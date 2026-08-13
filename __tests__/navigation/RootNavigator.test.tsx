@@ -63,7 +63,14 @@ async function render() {
     });
   };
 
-  return { renderer, dispatch, text: () => textOf(renderer.toJSON()) };
+  /**
+   * Keyed on the screen's testID rather than its copy: which navigator is
+   * mounted is the assertion, and rewording a heading should not fail it.
+   */
+  const showsAuthEntry = () =>
+    renderer.root.findAll(node => node.props.testID === 'auth-entry-screen').length > 0;
+
+  return { renderer, dispatch, showsAuthEntry, text: () => textOf(renderer.toJSON()) };
 }
 
 function textOf(node: ReactTestRendererJSON | ReactTestRendererJSON[] | null): string {
@@ -87,47 +94,47 @@ describe('RootNavigator', () => {
   });
 
   it('shows role selection once no session is found', async () => {
-    const { dispatch, text } = await render();
+    const { dispatch, text, showsAuthEntry } = await render();
 
     await dispatch(sessionAbsent());
 
     // The auth stack opens on role selection, which is what makes both
     // applications reachable.
-    expect(text()).toContain('Welcome to Fixora');
+    expect(showsAuthEntry()).toBe(true);
     expect(text()).toContain('Customer');
     expect(text()).toContain('Vendor');
   });
 
   it('swaps to the customer application when a session appears', async () => {
-    const { dispatch, text } = await render();
+    const { dispatch, text, showsAuthEntry } = await render();
     await dispatch(sessionAbsent());
 
     await dispatch(signedIn(CUSTOMER_SESSION));
 
     // The auth stack is unmounted, not merely covered — an authenticated user is
     // never shown role selection.
-    expect(text()).not.toContain('Welcome to Fixora');
+    expect(showsAuthEntry()).toBe(false);
     expect(text()).toContain('Home');
   });
 
   it('sends a vendor to the vendor application, never the customer one', async () => {
-    const { dispatch, text } = await render();
+    const { dispatch, text, showsAuthEntry } = await render();
     await dispatch(sessionAbsent());
 
     await dispatch(signedIn(VENDOR_SESSION));
 
     expect(text()).toContain('Dashboard');
     expect(text()).not.toContain('Home');
-    expect(text()).not.toContain('Welcome to Fixora');
+    expect(showsAuthEntry()).toBe(false);
   });
 
   it('decides by the session role, not by anything chosen before signing in', async () => {
-    const { dispatch, text } = await render();
+    const { dispatch, text, showsAuthEntry } = await render();
     await dispatch(sessionAbsent());
 
     // Role selection is on screen and its only effect is navigation. What
     // actually decides the application is the role inside the session.
-    expect(text()).toContain('Welcome to Fixora');
+    expect(showsAuthEntry()).toBe(true);
 
     await dispatch(signedIn(VENDOR_SESSION));
 
@@ -135,13 +142,13 @@ describe('RootNavigator', () => {
   });
 
   it('returns to role selection when the session ends', async () => {
-    const { dispatch, text } = await render();
+    const { dispatch, text, showsAuthEntry } = await render();
     await dispatch(sessionAbsent());
     await dispatch(signedIn(CUSTOMER_SESSION));
 
     await dispatch(signedOut());
 
-    expect(text()).toContain('Welcome to Fixora');
+    expect(showsAuthEntry()).toBe(true);
     expect(text()).not.toContain('Home');
   });
 });

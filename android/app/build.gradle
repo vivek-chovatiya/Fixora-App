@@ -3,6 +3,26 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 /**
+ * Bundles the icon font into the APK.
+ *
+ * Without this, every Icon renders as an empty box: the glyph names resolve, the
+ * component renders, and nothing fails — the font simply is not on the device.
+ * No test can catch it, because the font is a packaging concern rather than a
+ * rendering one.
+ *
+ * Only the family the theme actually uses is bundled. The package ships around
+ * twenty, and shipping the rest would add weight for icons the app cannot name.
+ * If ICON_SET in src/shared/theme/icons.ts ever changes, change it here too.
+ */
+// The property name is all lowercase; fonts.gradle reads `project.vectoricons`
+// and silently falls back to every font if it is spelled any other way.
+project.ext.vectoricons = [
+    iconFontNames: ["MaterialCommunityIcons.ttf"]
+]
+
+apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
+
+/**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
  */

@@ -12,7 +12,7 @@
  */
 
 import { animation } from './animation';
-import { breakpoints, gridColumns } from './breakpoints';
+import { breakpoints, gridColumns, maxContentWidth } from './breakpoints';
 import { darkColors, lightColors, type ColorTokens } from './colors';
 import { elevation } from './elevation';
 import { iconSize, icons } from './icons';
@@ -40,6 +40,7 @@ export interface AppTheme {
   zIndex: typeof zIndex;
   breakpoints: typeof breakpoints;
   gridColumns: typeof gridColumns;
+  maxContentWidth: typeof maxContentWidth;
   icons: typeof icons;
   iconSize: typeof iconSize;
 }
@@ -62,6 +63,7 @@ function createTheme(mode: ThemeMode): AppTheme {
     zIndex,
     breakpoints,
     gridColumns,
+    maxContentWidth,
     icons,
     iconSize,
   });
