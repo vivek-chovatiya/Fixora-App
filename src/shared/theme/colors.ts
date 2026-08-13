@@ -35,6 +35,12 @@ const palette = {
   gray200: '#E5E7EB',
   gray300: '#D1D5DB',
   gray400: '#9CA3AF',
+  /**
+   * A step between 400 and 500, for tertiary text on a dark background.
+   * gray500 is legible enough on white but falls to 3.0:1 against the dark
+   * surfaces, and gray400 is already spoken for by secondary text.
+   */
+  gray450: '#8A94A3',
   gray500: '#6B7280',
   gray600: '#4B5563',
   gray700: '#374151',
@@ -130,7 +136,14 @@ export const darkColors: ColorTokens = {
 
   textPrimary: palette.gray50,
   textSecondary: palette.gray400,
-  textTertiary: palette.gray500,
+  /**
+   * Not gray500, which is the light-mode value. Inheriting it here left
+   * placeholders, helper text, captions and section overlines at 4.2:1 on the
+   * page background and 3.0:1 on a disabled input — under the 4.5:1 needed for
+   * normal text, and worst exactly where the text is smallest. One step lighter
+   * clears it on all three dark surfaces while staying a step below secondary.
+   */
+  textTertiary: palette.gray450,
   textDisabled: palette.gray600,
   textInverse: palette.gray950,
 
