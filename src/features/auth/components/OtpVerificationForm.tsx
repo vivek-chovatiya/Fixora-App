@@ -15,6 +15,9 @@
  * operations and their state, which is what keeps the flows' different outcomes
  * out of here — and keeps the auth code, which this component never sees, in the
  * screen that asked for it.
+ *
+ * The field is VerificationCodeInput, so both flows get the same cells and the
+ * same orbit without either screen owning a frame of it.
  */
 
 import React, { useCallback, useState } from 'react';
@@ -24,8 +27,10 @@ import { Controller, useForm } from 'react-hook-form';
 
 import { AppConfig } from '@/core/config/AppConfig';
 import { formatCopy } from '@/features/auth/constants/authCopy';
+import { VerificationCodeInput } from '@/features/auth/components/verification/VerificationCodeInput';
+import type { VerificationStatus } from '@/features/auth/components/verification/VerificationScene';
 import { otpSchema, type OtpForm } from '@/features/auth/validation/authSchemas';
-import { ErrorState, Input, PrimaryButton, SecondaryButton, Text } from '@/shared/components';
+import { ErrorState, PrimaryButton, SecondaryButton, Text } from '@/shared/components';
 import { useCountdown } from '@/shared/hooks/useCountdown';
 import type { OtpChallenge } from '@/shared/services/types/AuthService';
 import { useTheme } from '@/shared/theme';
@@ -48,8 +53,14 @@ export interface OtpVerificationFormProps {
   /** The challenge this attempt started from. Replaced by a successful resend. */
   challenge: OtpChallenge;
   copy: OtpFormCopy;
-  /** Verifies the code. The result belongs to the caller; this never inspects it. */
-  onVerify: (code: string) => Promise<unknown>;
+  /**
+   * Verifies the code.
+   *
+   * Resolves true only when the code was accepted. The result itself belongs to
+   * the caller and is never inspected here — this component needs to know that
+   * it succeeded, so it can show the verified state, and nothing more.
+   */
+  onVerify: (code: string) => Promise<boolean>;
   /** Requests a replacement. Resolves null on failure, per useServiceMutation. */
   onResend: () => Promise<OtpChallenge | null>;
   /** Returns to wherever the destination was entered. */
@@ -78,6 +89,15 @@ export function OtpVerificationForm({
   // stays local rather than becoming a global for one consumer.
   const [challenge, setChallenge] = useState(initialChallenge);
 
+  /**
+   * Whether the code was accepted.
+   *
+   * Held here because the caller's reaction to success — a session, an auth code
+   * — usually replaces this screen, and the verified state has to be something
+   * this component can show on its own rather than something it waits to be told.
+   */
+  const [isVerified, setIsVerified] = useState(false);
+
   const {
     secondsRemaining,
     isRunning: isCoolingDown,
@@ -93,7 +113,11 @@ export function OtpVerificationForm({
 
   const submit = useCallback(
     async ({ code }: OtpForm) => {
-      await onVerify(code.trim());
+      const accepted = await onVerify(code.trim());
+
+      if (accepted) {
+        setIsVerified(true);
+      }
     },
     [onVerify],
   );
@@ -133,21 +157,20 @@ export function OtpVerificationForm({
       <Controller
         control={control}
         name="code"
-        render={({ field: { onChange, onBlur, value }, fieldState: { error: fieldError } }) => (
-          <Input
-            label={copy.codeLabel}
-            required
-            placeholder={copy.codePlaceholder}
+        render={({ field: { onChange, value }, fieldState: { error: fieldError } }) => (
+          <VerificationCodeInput
             value={value}
             onChangeText={onChange}
-            onBlur={onBlur}
+            length={AppConfig.otp.length}
+            status={resolveStatus({
+              value,
+              length: AppConfig.otp.length,
+              isVerifying,
+              isVerified,
+            })}
+            accessibilityLabel={copy.codeLabel}
             error={fieldError?.message}
-            editable={!isBusy}
-            keyboardType="number-pad"
-            autoComplete="one-time-code"
-            textContentType="oneTimeCode"
-            maxLength={AppConfig.otp.length}
-            returnKeyType="done"
+            editable={!isBusy && !isVerified}
             onSubmitEditing={handleVerifyPress}
             testID={`${testIDPrefix}-code`}
           />
@@ -167,7 +190,7 @@ export function OtpVerificationForm({
         label={copy.submit}
         onPress={handleVerifyPress}
         isLoading={isVerifying}
-        disabled={isResending}
+        disabled={isResending || isVerified}
         accessibilityHint={copy.submitHint}
       />
 
@@ -197,7 +220,7 @@ export function OtpVerificationForm({
             label={copy.resend}
             onPress={handleResendPress}
             isLoading={isResending}
-            disabled={isVerifying}
+            disabled={isVerifying || isVerified}
           />
         )}
       </View>
@@ -206,10 +229,38 @@ export function OtpVerificationForm({
         fullWidth
         label={copy.changeAction}
         onPress={onChangeDestination}
-        disabled={isBusy}
+        disabled={isBusy || isVerified}
       />
     </View>
   );
+}
+
+/**
+ * Which beat of the animation the code is on.
+ *
+ * `entered` is the completed-but-unsent state, and it is what makes the row curl
+ * on the final keystroke rather than on the network call.
+ */
+function resolveStatus({
+  value,
+  length,
+  isVerifying,
+  isVerified,
+}: {
+  value: string;
+  length: number;
+  isVerifying: boolean;
+  isVerified: boolean;
+}): VerificationStatus {
+  if (isVerified) {
+    return 'verified';
+  }
+
+  if (isVerifying) {
+    return 'verifying';
+  }
+
+  return value.length >= length ? 'entered' : 'idle';
 }
 
 const styles = StyleSheet.create({

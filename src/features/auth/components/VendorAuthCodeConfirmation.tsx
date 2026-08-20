@@ -10,6 +10,14 @@
  *
  * Validation is completeness only, for the same reason: the code is opaque, so
  * the app has no format to check against.
+ *
+ * That opacity is also why this step keeps a plain field rather than the cells
+ * the one-time code steps use. Cells have to be drawn before anything is typed,
+ * which means committing to a length — and a length is precisely what the
+ * contract does not promise. It shares the verification animation instead: once
+ * the code is sent, the characters the vendor typed curl onto the same ring the
+ * other two flows use, so the experience matches without the app inventing a
+ * shape for a credential it is meant to treat as opaque.
  */
 
 import React, { useCallback } from 'react';
@@ -22,6 +30,7 @@ import {
   vendorAuthCodeSchema,
   type VendorAuthCodeForm,
 } from '@/features/auth/validation/authSchemas';
+import { VerificationScene } from '@/features/auth/components/verification/VerificationScene';
 import { ErrorState, Input, PrimaryButton, SecondaryButton, Text } from '@/shared/components';
 import { useTheme } from '@/shared/theme';
 import type { AppError } from '@/shared/types/error';
@@ -83,23 +92,37 @@ export function VendorAuthCodeConfirmation({
         <Controller
           control={control}
           name="authCode"
-          render={({ field: { onChange, onBlur, value }, fieldState: { error: fieldError } }) => (
-            <Input
-              label={COPY.confirmLabel}
-              required
-              placeholder={COPY.confirmPlaceholder}
-              value={value}
-              onChangeText={onChange}
-              onBlur={onBlur}
-              error={fieldError?.message}
-              editable={!isBusy}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              returnKeyType="done"
-              onSubmitEditing={handleConfirmPress}
-              testID="vendor-auth-code-input"
-            />
-          )}
+          render={({ field: { onChange, onBlur, value }, fieldState: { error: fieldError } }) =>
+            isConfirming ? (
+              /*
+                The field steps aside for the animation rather than sitting
+                disabled beneath it. What orbits is the characters the vendor
+                actually typed, so this is the same code being checked and not a
+                decoration playing over it.
+              */
+              <VerificationScene
+                status="verifying"
+                characters={Array.from(value)}
+                testID="vendor-auth-code-scene"
+              />
+            ) : (
+              <Input
+                label={COPY.confirmLabel}
+                required
+                placeholder={COPY.confirmPlaceholder}
+                value={value}
+                onChangeText={onChange}
+                onBlur={onBlur}
+                error={fieldError?.message}
+                editable={!isBusy}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                returnKeyType="done"
+                onSubmitEditing={handleConfirmPress}
+                testID="vendor-auth-code-input"
+              />
+            )
+          }
         />
 
         {/* Retry is the confirm button; the typed value survives a failure. */}

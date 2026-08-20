@@ -50,9 +50,15 @@ export function CustomerOtpScreen({ route, navigation }: Props) {
   } = useRequestCustomerOtp();
 
   const verify = useCallback(
-    // Nothing is done with the result. Success is published through auth state
-    // by the thunk behind this hook, and RootNavigator reacts to it.
-    (code: string) => verifyCode(phone, code),
+    async (code: string) => {
+      // The session itself is not used here. It is published through auth state
+      // by the thunk behind this hook, and RootNavigator reacts to it. Only
+      // whether it arrived is reported back, so the field can show the code it
+      // was given as verified rather than guessing from the absence of an error.
+      const session = await verifyCode(phone, code);
+
+      return session !== null;
+    },
     [verifyCode, phone],
   );
 

@@ -119,6 +119,10 @@ export function VendorOtpScreen({ route, navigation }: Props) {
         setAuthCode(issued);
         setStep('authCodeDisplay');
       }
+
+      // Reports acceptance, not the credential. The code itself stays in this
+      // screen's state, and the form that asked is never handed it.
+      return issued !== null;
     },
     [verifyOtp, registrationId],
   );
