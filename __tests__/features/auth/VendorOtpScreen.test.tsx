@@ -171,10 +171,27 @@ async function render(
   const displayedCode = (): string =>
     textOf(renderer.root.findByProps({ testID: 'vendor-auth-code-value' }).props.children);
 
-  /** Verifies the phone, landing on the auth code display. */
+  /**
+   * Verifies the phone, landing on the auth code display.
+   *
+   * The step change now waits for the verified state to have been on screen, so
+   * arriving takes a timer as well as a press. Every test that needs the code
+   * step behind it goes through here, which is why the wait lives in one place.
+   */
   const completeOtp = async () => {
     await type('vendor-otp-code', TYPED_OTP);
     await press('Verify');
+    await settleVerified();
+  };
+
+  /** Runs out the verified hold, and anything the service scheduled behind it. */
+  const settleVerified = async () => {
+    await act(async () => {
+      jest.advanceTimersByTime(1_000);
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(1_000);
+    });
   };
 
   return {
@@ -192,6 +209,7 @@ async function render(
     button,
     displayedCode,
     completeOtp,
+    settleVerified,
   };
 }
 
@@ -208,7 +226,14 @@ function textOf(node: unknown): string {
   return textOf((node as ReactTestRendererJSON).children);
 }
 
+beforeEach(() => {
+  // The verified state is held by a timer, so the tests drive the clock rather
+  // than waiting on it.
+  jest.useFakeTimers();
+});
+
 afterEach(() => {
+  jest.useRealTimers();
   resetServices();
   jest.restoreAllMocks();
 });
@@ -372,6 +397,57 @@ describe('VendorOtpScreen — the one-time code step', () => {
 
     expect(text()).toContain(failure.userMessage);
     expect(text()).not.toContain('expected 123456');
+  });
+});
+
+describe('VendorOtpScreen — the verified moment', () => {
+  it('holds on the code step long enough for the verified state to be seen', async () => {
+    const service = stubAuthService();
+    const { type, press, text, settleVerified } = await render(service);
+
+    await type('vendor-otp-code', TYPED_OTP);
+    await press('Verify');
+
+    // Verification has already happened — the service was called and answered.
+    expect(service.verifyVendorOtp).toHaveBeenCalledWith(REGISTRATION_ID, TYPED_OTP);
+    // ...but the screen is still on the code step, showing the verified state
+    // rather than the auth code. Without the hold this assertion fails, because
+    // the step changed on the same frame the animation would have started.
+    expect(text()).not.toContain('Phone verified');
+
+    await settleVerified();
+
+    expect(text()).toContain('Phone verified');
+  });
+
+  it('waits to move on, without waiting to take the credential', async () => {
+    const { type, press, listeners } = await render(stubAuthService());
+
+    await type('vendor-otp-code', TYPED_OTP);
+    await press('Verify');
+
+    // The business is active from the moment the code was issued, so the door
+    // back to registration is shut during the hold and not after it.
+    const preventDefault = jest.fn();
+    listeners.get('beforeRemove')?.({ preventDefault });
+    expect(preventDefault).toHaveBeenCalled();
+  });
+
+  it('does not hold, or move on, when the code was rejected', async () => {
+    const service = stubAuthService({
+      verifyVendorOtp: jest.fn(async () => {
+        throw new AppError({ kind: 'validation', message: 'wrong', userMessage: 'Not correct.' });
+      }),
+    });
+    const { type, press, text, settleVerified } = await render(service);
+
+    await type('vendor-otp-code', TYPED_OTP);
+    await press('Verify');
+    await settleVerified();
+
+    // A failure must not reach the display step by simply waiting.
+    expect(text()).not.toContain('Phone verified');
+    expect(text()).toContain('Not correct.');
   });
 });
 
@@ -648,13 +724,14 @@ describe('VendorOtpScreen — regeneration against the real mock service', () =>
       serviceCategoryIds: ['cat_electrician'],
     });
 
-    const { type, press, displayedCode, text, store } = await render(service, {
+    const { type, press, displayedCode, text, store, settleVerified } = await render(service, {
       registrationId: registration.registrationId,
       challenge: registration.challenge,
     });
 
     await type('vendor-otp-code', MOCK_OTP_CODE);
     await press('Verify');
+    await settleVerified();
 
     const firstCode = displayedCode();
     expect(firstCode).toEqual(expect.any(String));

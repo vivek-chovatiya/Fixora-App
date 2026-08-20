@@ -116,8 +116,12 @@ export function VendorOtpScreen({ route, navigation }: Props) {
       if (issued) {
         // Activation, not authentication. There is no session at this point and
         // nothing is dispatched or persisted.
+        //
+        // The code is taken now rather than after the animation: it exists from
+        // this moment, and `isCommitted` is what closes the door back to
+        // registration. Waiting would leave a window where the business is
+        // active and the back gesture still says otherwise.
         setAuthCode(issued);
-        setStep('authCodeDisplay');
       }
 
       // Reports acceptance, not the credential. The code itself stays in this
@@ -126,6 +130,18 @@ export function VendorOtpScreen({ route, navigation }: Props) {
     },
     [verifyOtp, registrationId],
   );
+
+  /**
+   * Moving on is what waits, not the verification and not the credential.
+   *
+   * Nothing here is a session: verifying the phone activates the business and
+   * returns a code, so this step is free to hold on screen for a moment without
+   * any of the questions a delayed sign in would raise. The other two flows do
+   * not have that freedom.
+   */
+  const handleOtpVerified = useCallback(() => {
+    setStep('authCodeDisplay');
+  }, []);
 
   // Takes a handle, not business details, so it cannot start a new registration.
   const handleResendOtp = useCallback(async () => {
@@ -230,6 +246,7 @@ export function VendorOtpScreen({ route, navigation }: Props) {
               onVerify={handleVerifyOtp}
               onResend={handleResendOtp}
               onChangeDestination={handleChangeDetails}
+              onVerified={handleOtpVerified}
               isVerifying={isVerifyingOtp}
               isResending={isResending}
               error={verifyOtpError ?? resendError}

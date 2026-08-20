@@ -20,7 +20,7 @@
  * same orbit without either screen owning a frame of it.
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
@@ -65,6 +65,14 @@ export interface OtpVerificationFormProps {
   onResend: () => Promise<OtpChallenge | null>;
   /** Returns to wherever the destination was entered. */
   onChangeDestination: () => void;
+  /**
+   * Called once the verified state has been on screen long enough to see.
+   *
+   * Callers that replace this screen on success should do it here rather than
+   * the moment `onVerify` resolves, which lands on the same frame the animation
+   * would have started. Must be stable, or the wait restarts on every render.
+   */
+  onVerified?: () => void;
   isVerifying: boolean;
   isResending: boolean;
   /** Whichever of the two operations last failed. */
@@ -78,6 +86,7 @@ export function OtpVerificationForm({
   onVerify,
   onResend,
   onChangeDestination,
+  onVerified,
   isVerifying,
   isResending,
   error,
@@ -97,6 +106,27 @@ export function OtpVerificationForm({
    * this component can show on its own rather than something it waits to be told.
    */
   const [isVerified, setIsVerified] = useState(false);
+
+  /**
+   * How long the verified state stays before the caller moves on.
+   *
+   * Long enough to register as an answer, short enough not to feel like the app
+   * has stalled after the work is already done. Composed from existing tokens
+   * rather than a new one: it is the settle animation plus a beat to read it.
+   */
+  const verifiedHoldMs = theme.animation.duration.slow + theme.animation.duration.fast;
+
+  useEffect(() => {
+    if (!isVerified || !onVerified) {
+      return undefined;
+    }
+
+    const timer = setTimeout(onVerified, verifiedHoldMs);
+
+    // Cleared on unmount, so a caller that leaves for its own reasons — a tree
+    // swap, a back gesture — is never called after it has gone.
+    return () => clearTimeout(timer);
+  }, [isVerified, onVerified, verifiedHoldMs]);
 
   const {
     secondsRemaining,
