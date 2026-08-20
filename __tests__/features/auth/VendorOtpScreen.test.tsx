@@ -17,6 +17,7 @@ import { Provider } from 'react-redux';
 
 import { setClipboard } from '@/core/clipboard/Clipboard';
 import { setSessionStorage, type PersistedSession } from '@/core/storage/SessionStorage';
+import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { authReducer } from '@/features/auth/state/authSlice';
 import { VendorOtpScreen } from '@/features/auth/screens/VendorOtpScreen';
 import type { SessionPayload } from '@/features/auth/types';
@@ -152,6 +153,20 @@ async function render(
 
   const text = () => textOf(renderer.toJSON());
 
+  /** The host text input, not the wrappers that forward the same testID to it. */
+  const codeField = () => {
+    const [field] = renderer.root.findAll(
+      node =>
+        typeof node.type === 'string' &&
+        node.props.testID === 'vendor-otp-code' &&
+        typeof node.props.onChangeText === 'function',
+    );
+    return field.props;
+  };
+
+  const button = (accessibilityLabel: string) =>
+    renderer.root.findByProps({ accessibilityLabel }).props;
+
   /** The code as the vendor reads it off the screen. */
   const displayedCode = (): string =>
     textOf(renderer.root.findByProps({ testID: 'vendor-auth-code-value' }).props.children);
@@ -173,6 +188,8 @@ async function render(
     type,
     press,
     text,
+    codeField,
+    button,
     displayedCode,
     completeOtp,
   };
@@ -211,6 +228,45 @@ function captureLogs() {
       .map(entry => JSON.stringify(entry))
       .join(' ');
 }
+
+describe('VendorOtpScreen — what the vendor sees', () => {
+  it('leads with the wordmark, under its own vendor heading', async () => {
+    const { text } = await render(stubAuthService());
+
+    expect(text()).toContain(AUTH_COPY.brand.wordmark);
+    expect(text()).toContain(AUTH_COPY.vendorOtp.title);
+
+    // Shares the customer screen's shape, not its words: this step verifies a
+    // business number and issues a credential rather than signing anyone in.
+    expect(text()).not.toContain(AUTH_COPY.customerOtp.submitHint);
+  });
+
+  it('labels the field and every action for assistive technology', async () => {
+    const { codeField, button } = await render(stubAuthService());
+
+    expect(codeField().accessibilityLabel).toBe(AUTH_COPY.vendorOtp.codeLabel);
+
+    const verify = button(AUTH_COPY.vendorOtp.submit);
+    expect(verify.accessibilityRole).toBe('button');
+    expect(verify.accessibilityHint).toBe(AUTH_COPY.vendorOtp.submitHint);
+    expect(verify.accessibilityState).toEqual(
+      expect.objectContaining({ disabled: false, busy: false }),
+    );
+
+    expect(button(AUTH_COPY.vendorOtp.resend).accessibilityRole).toBe('button');
+    expect(button(AUTH_COPY.vendorOtp.changeAction).accessibilityRole).toBe('button');
+  });
+
+  it('leaves the steps after it to the auth-code UI', async () => {
+    const { completeOtp, text } = await render(stubAuthService());
+
+    await completeOtp();
+
+    // The header belongs to the code step. Carrying it into the auth-code steps
+    // would be restyling them, which is a separate piece of work.
+    expect(text()).not.toContain(AUTH_COPY.vendorOtp.title);
+  });
+});
 
 describe('VendorOtpScreen — the one-time code step', () => {
   it('renders against the masked destination, never the raw number', async () => {
@@ -259,6 +315,30 @@ describe('VendorOtpScreen — the one-time code step', () => {
 
     expect(service.requestVendorOtp).toHaveBeenCalledWith(REGISTRATION_ID);
     expect(service.registerVendor).not.toHaveBeenCalled();
+  });
+
+  it('drops the previous failure once a replacement code has been sent', async () => {
+    const failure = new AppError({
+      kind: 'validation',
+      message: 'code mismatch',
+      userMessage: 'That code is not correct. Please check and try again.',
+    });
+    const service = stubAuthService({
+      verifyVendorOtp: jest.fn(async () => {
+        throw failure;
+      }),
+    });
+    const { completeOtp, press, text, codeField } = await render(service);
+
+    await completeOtp();
+    expect(text()).toContain(failure.userMessage);
+
+    await press('Resend code');
+
+    // The message described an attempt against a code that no longer exists.
+    expect(text()).not.toContain(failure.userMessage);
+    // The typed code is left alone; only the stale message goes.
+    expect(codeField().value).toBe(TYPED_OTP);
   });
 
   it('honours the cooldown the challenge specified', async () => {

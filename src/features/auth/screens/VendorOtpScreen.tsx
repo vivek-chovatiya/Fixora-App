@@ -68,8 +68,12 @@ export function VendorOtpScreen({ route, navigation }: Props) {
    */
   const [authCode, setAuthCode] = useState<VendorAuthCode | null>(null);
 
-  const { mutate: verifyOtp, error: verifyOtpError, isSubmitting: isVerifyingOtp } =
-    useVerifyVendorOtp();
+  const {
+    mutate: verifyOtp,
+    error: verifyOtpError,
+    isSubmitting: isVerifyingOtp,
+    reset: forgetVerifyFailure,
+  } = useVerifyVendorOtp();
 
   const { mutate: requestOtp, error: resendError, isSubmitting: isResending } =
     useRequestVendorOtp();
@@ -120,10 +124,19 @@ export function VendorOtpScreen({ route, navigation }: Props) {
   );
 
   // Takes a handle, not business details, so it cannot start a new registration.
-  const handleResendOtp = useCallback(
-    () => requestOtp(registrationId),
-    [requestOtp, registrationId],
-  );
+  const handleResendOtp = useCallback(async () => {
+    const next = await requestOtp(registrationId);
+
+    if (next) {
+      // A replacement is on its way, so "that code is not correct" now describes
+      // an attempt against a code that no longer exists. Left alone it sits
+      // under a freshly restarted countdown and reads as a new failure. Only
+      // the message is dropped — the typed code stays, as on customer sign in.
+      forgetVerifyFailure();
+    }
+
+    return next;
+  }, [requestOtp, registrationId, forgetVerifyFailure]);
 
   const handleChangeDetails = useCallback(() => {
     navigation.goBack();
@@ -181,11 +194,31 @@ export function VendorOtpScreen({ route, navigation }: Props) {
   /* Render ------------------------------------------------------------------ */
 
   return (
-    <Screen scrollable keyboardAvoiding testID="vendor-otp-screen">
-      <View style={[styles.body, { gap: theme.spacing.xxl }]}>
+    <Screen
+      scrollable
+      keyboardAvoiding
+      // Centring belongs to the scroll container rather than to a `flex: 1`
+      // child, which could not grow past the viewport and so clipped its
+      // overflow with nothing to scroll once the keyboard appeared.
+      contentContainerStyle={styles.content}
+      testID="vendor-otp-screen">
+      <View
+        style={[styles.body, { gap: theme.spacing.xs, maxWidth: theme.maxContentWidth }]}>
         {step === 'otp' ? (
           <>
-            <Text variant="h1">{COPY.title}</Text>
+            {/*
+              Wordmark and heading at the tightest spacing, as on every other
+              auth screen — the vendor arrives here from registration and should
+              read this as the next step of it rather than a new place.
+
+              They belong to this step rather than to the screen. The two steps
+              after it are the auth-code UI, which is its own task; giving them a
+              header here would be redesigning them ahead of it.
+            */}
+            <Text variant="display" color="primary">
+              {AUTH_COPY.brand.wordmark}
+            </Text>
+            <Text variant="h2">{COPY.title}</Text>
 
             <OtpVerificationForm
               challenge={challenge}
@@ -225,8 +258,13 @@ export function VendorOtpScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  body: {
-    flex: 1,
+  content: {
     justifyContent: 'center',
+  },
+  body: {
+    // Deliberately no `flex: 1` — see the note on contentContainerStyle above.
+    // Fills a phone, caps on a tablet.
+    width: '100%',
+    alignSelf: 'center',
   },
 });
