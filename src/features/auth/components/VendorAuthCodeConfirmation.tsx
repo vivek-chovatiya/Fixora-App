@@ -20,25 +20,39 @@
  * shape for a credential it is meant to treat as opaque.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View } from 'react-native';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 
 import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import {
+  VENDOR_AUTH_CODE_MAX_LENGTH,
   vendorAuthCodeSchema,
   type VendorAuthCodeForm,
 } from '@/features/auth/validation/authSchemas';
 import { VerificationScene } from '@/features/auth/components/verification/VerificationScene';
-import { ErrorState, Input, PrimaryButton, SecondaryButton, Text } from '@/shared/components';
+import {
+  Input,
+  PrimaryButton,
+  SecondaryButton,
+  Text,
+  useErrorToast,
+} from '@/shared/components';
 import { useTheme } from '@/shared/theme';
 import type { AppError } from '@/shared/types/error';
 
 const COPY = AUTH_COPY.vendorAuthCode;
 
 export interface VendorAuthCodeConfirmationProps {
-  onConfirm: (authCode: string) => Promise<unknown>;
+  /**
+   * Confirms the code. Resolves true only when it was accepted.
+   *
+   * The session it produces belongs to the caller and is never inspected here;
+   * this component needs to know that it succeeded, so it can show the verified
+   * state, and nothing more.
+   */
+  onConfirm: (authCode: string) => Promise<boolean>;
   onRegenerate: () => void;
   onBack: () => void;
   isConfirming: boolean;
@@ -57,6 +71,19 @@ export function VendorAuthCodeConfirmation({
 }: VendorAuthCodeConfirmationProps) {
   const theme = useTheme();
 
+  // Retry is the confirm button; the typed value survives a failure.
+  useErrorToast(error);
+
+  /**
+   * Whether the code was accepted.
+   *
+   * The session that follows replaces this screen, so the verified state has to
+   * be something this component can show on its own. It needs no timer of its
+   * own: the auth layer holds the publish back for exactly as long as this is
+   * worth looking at.
+   */
+  const [isVerified, setIsVerified] = useState(false);
+
   const { control, handleSubmit } = useForm<VendorAuthCodeForm>({
     resolver: zodResolver(vendorAuthCodeSchema),
     defaultValues: { authCode: '' },
@@ -66,7 +93,11 @@ export function VendorAuthCodeConfirmation({
 
   const submit = useCallback(
     async ({ authCode }: VendorAuthCodeForm) => {
-      await onConfirm(authCode.trim());
+      const accepted = await onConfirm(authCode.trim());
+
+      if (accepted) {
+        setIsVerified(true);
+      }
     },
     [onConfirm],
   );
@@ -77,7 +108,7 @@ export function VendorAuthCodeConfirmation({
     void onSubmit();
   }, [onSubmit]);
 
-  const isBusy = isConfirming || isRegenerating;
+  const isBusy = isConfirming || isRegenerating || isVerified;
 
   return (
     <View style={{ gap: theme.spacing.xxl }}>
@@ -93,15 +124,16 @@ export function VendorAuthCodeConfirmation({
           control={control}
           name="authCode"
           render={({ field: { onChange, onBlur, value }, fieldState: { error: fieldError } }) =>
-            isConfirming ? (
+            isConfirming || isVerified ? (
               /*
                 The field steps aside for the animation rather than sitting
                 disabled beneath it. What orbits is the characters the vendor
                 actually typed, so this is the same code being checked and not a
-                decoration playing over it.
+                decoration playing over it — and what settles into the hub at the
+                end is that same code, accepted.
               */
               <VerificationScene
-                status="verifying"
+                status={isVerified ? 'verified' : 'verifying'}
                 characters={Array.from(value)}
                 testID="vendor-auth-code-scene"
               />
@@ -115,6 +147,9 @@ export function VendorAuthCodeConfirmation({
                 onBlur={onBlur}
                 error={fieldError?.message}
                 editable={!isBusy}
+                // The same ceiling the returning-vendor form uses, so one field
+                // cannot accept a code the other would refuse.
+                maxLength={VENDOR_AUTH_CODE_MAX_LENGTH}
                 autoCapitalize="characters"
                 autoCorrect={false}
                 returnKeyType="done"
@@ -125,15 +160,12 @@ export function VendorAuthCodeConfirmation({
           }
         />
 
-        {/* Retry is the confirm button; the typed value survives a failure. */}
-        <ErrorState error={error} fullScreen={false} testID="vendor-auth-code-error" />
-
         <PrimaryButton
           fullWidth
           label={COPY.confirmAction}
           onPress={handleConfirmPress}
           isLoading={isConfirming}
-          disabled={isRegenerating}
+          disabled={isRegenerating || isVerified}
           accessibilityHint={COPY.confirmHint}
         />
 
@@ -149,7 +181,7 @@ export function VendorAuthCodeConfirmation({
           label={COPY.regenerate}
           onPress={onRegenerate}
           isLoading={isRegenerating}
-          disabled={isConfirming}
+          disabled={isConfirming || isVerified}
           accessibilityHint={COPY.regenerateHint}
         />
       </View>

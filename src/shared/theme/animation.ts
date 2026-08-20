@@ -38,6 +38,27 @@ export const duration = Object.freeze({
    * flows that verify something.
    */
   verify: 1400,
+  /**
+   * How long a verified state stays on screen before the flow moves on.
+   *
+   * The settle animation (`slow`) plus a beat to read it (`fast`). Written out
+   * rather than composed because two very different places have to agree on it:
+   * the form that shows the verified state, and the auth layer that holds a
+   * session publish back so the screen showing it survives long enough to be
+   * seen. Composed in one and hard-coded in the other, they would drift.
+   */
+  verifiedHold: 440,
+  /**
+   * How long a toast rests on screen before it withdraws itself.
+   *
+   * A dwell rather than a transition, which is why it dwarfs everything above
+   * it. It is here anyway because section 11 admits no loose timing value, and
+   * because a toast that outlives its neighbour by a second reads as a bug.
+   *
+   * Long enough to read a sentence twice, since a failure message is usually
+   * read once in surprise and once in earnest.
+   */
+  toast: 4000,
 });
 
 export const easing = Object.freeze({

@@ -15,6 +15,7 @@ import { VendorRegistrationScreen } from '@/features/auth/screens/VendorRegistra
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { AuthService, VendorRegistration } from '@/shared/services/types/AuthService';
 import type { CategoryService, ServiceCategory } from '@/shared/services/types/CategoryService';
+import { ToastProvider } from '@/shared/components';
 import { ThemeProvider } from '@/shared/theme';
 import { AppError } from '@/shared/types/error';
 
@@ -75,7 +76,9 @@ async function render(service: AuthService, categories: CategoryService = stubCa
   await act(async () => {
     renderer = ReactTestRenderer.create(
       <ThemeProvider>
-        <VendorRegistrationScreen navigation={navigation} route={{} as never} />
+        <ToastProvider>
+          <VendorRegistrationScreen navigation={navigation} route={{} as never} />
+        </ToastProvider>
       </ThemeProvider>,
     );
   });

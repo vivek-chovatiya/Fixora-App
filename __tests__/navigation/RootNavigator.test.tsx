@@ -17,6 +17,7 @@ import { Provider } from 'react-redux';
 import { authReducer, sessionAbsent, signedIn, signedOut } from '@/features/auth/state/authSlice';
 import type { SessionPayload } from '@/features/auth/types';
 import { RootNavigator } from '@/navigation/RootNavigator';
+import { ToastProvider } from '@/shared/components';
 import { ThemeProvider } from '@/shared/theme';
 
 const CUSTOMER_SESSION: SessionPayload = {
@@ -49,9 +50,11 @@ async function render() {
     renderer = ReactTestRenderer.create(
       <Provider store={store}>
         <ThemeProvider>
-          <NavigationContainer>
-            <RootNavigator />
-          </NavigationContainer>
+          <ToastProvider>
+            <NavigationContainer>
+              <RootNavigator />
+            </NavigationContainer>
+          </ToastProvider>
         </ThemeProvider>
       </Provider>,
     );

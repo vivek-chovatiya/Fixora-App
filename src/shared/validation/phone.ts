@@ -35,6 +35,39 @@ export function normalisePhone(raw: string): string {
 const ALLOWED_CHARACTERS = /^[\d\s+()-]+$/;
 
 /**
+ * Stops a phone field accepting more than a phone number's worth of digits.
+ *
+ * Counted in digits, not characters, because the field legitimately holds
+ * separators: `+91 98765-43210` is sixteen characters and ten digits, so a plain
+ * `maxLength` would cut a valid number short. Formatting is free; only digits
+ * are rationed.
+ *
+ * It caps and nothing else. Disallowed characters are left where they are so
+ * that `phoneSchema` can still say what is wrong with them — silently deleting
+ * a pasted letter would make that message unreachable and leave the user
+ * looking at a field that quietly ate part of their input.
+ */
+export function capPhoneInput(raw: string): string {
+  const limit = AppConfig.phone.maxDigits;
+
+  let digits = 0;
+  let end = 0;
+
+  for (const character of raw) {
+    if (/\d/.test(character)) {
+      if (digits === limit) {
+        break;
+      }
+      digits += 1;
+    }
+
+    end += character.length;
+  }
+
+  return raw.slice(0, end);
+}
+
+/**
  * The phone field, for any form that collects one.
  *
  * Validates the raw string rather than a normalised one so the message lands on

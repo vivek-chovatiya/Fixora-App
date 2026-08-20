@@ -36,14 +36,14 @@ import type { AuthStackParamList } from '@/navigation/types';
 import {
   ControlledInput,
   EmailInput,
-  ErrorState,
   PhoneInput,
   PrimaryButton,
   Screen,
   Text,
+  useErrorToast,
 } from '@/shared/components';
 import { useTheme } from '@/shared/theme';
-import { normalisePhone } from '@/shared/validation/phone';
+import { capPhoneInput, normalisePhone } from '@/shared/validation/phone';
 
 const COPY = AUTH_COPY.vendorRegistration;
 
@@ -53,6 +53,9 @@ export function VendorRegistrationScreen({ navigation }: Props) {
   const theme = useTheme();
 
   const { mutate: register, error, isSubmitting } = useVendorRegistration();
+
+  // Retry is the submit button: the form keeps every value on failure.
+  useErrorToast(error);
 
   const { control, handleSubmit } = useForm<VendorRegistrationForm>({
     resolver: zodResolver(vendorRegistrationSchema),
@@ -166,6 +169,7 @@ export function VendorRegistrationScreen({ navigation }: Props) {
             control={control}
             name="phone"
             as={PhoneInput}
+            sanitize={capPhoneInput}
             label={COPY.phoneLabel}
             required
             placeholder={COPY.phonePlaceholder}
@@ -206,9 +210,6 @@ export function VendorRegistrationScreen({ navigation }: Props) {
             )}
           />
         </View>
-
-        {/* Retry is the submit button: the form keeps every value on failure. */}
-        <ErrorState error={error} fullScreen={false} testID="vendor-registration-error" />
 
         <PrimaryButton
           fullWidth

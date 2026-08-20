@@ -30,7 +30,18 @@ import {
   resetServices,
 } from '@/shared/services/ServiceRegistry';
 import type { AuthService } from '@/shared/services/types/AuthService';
+import { duration } from '@/shared/theme';
 import { AppError } from '@/shared/types/error';
+
+/**
+ * Lets a scheduled publish fire.
+ *
+ * The flows that end in an animation resolve before they dispatch, so that the
+ * screen showing the verified state is still mounted when it learns it
+ * succeeded. Waiting the hold out is what the user does by watching it.
+ */
+const settlePublish = () =>
+  new Promise<void>(resolve => setTimeout(resolve, duration.verifiedHold + 50));
 
 const CUSTOMER_SESSION: SessionPayload = {
   token: 'token_customer',
@@ -147,7 +158,14 @@ describe('signInCustomer', () => {
 
     await signInCustomer(store.dispatch, '9876543210', '123456');
 
+    // Durable immediately. Killed here, the app restarts signed in.
     expect(peek()).toEqual(CUSTOMER_SESSION);
+    // Not yet published: the verification screen is still showing that the code
+    // was accepted, and publishing would unmount it mid-animation.
+    expect(store.getState().auth.status).not.toBe('authenticated');
+
+    await settlePublish();
+
     expect(store.getState().auth.status).toBe('authenticated');
     expect(store.getState().auth.user?.role).toBe('customer');
   });
@@ -210,7 +228,13 @@ describe('confirmVendorAuthCode', () => {
     await confirmVendorAuthCode(store.dispatch, 'reg_1', VENDOR_AUTH_CODE);
 
     expect(service.verifyVendorAuthCode).toHaveBeenCalledWith('reg_1', VENDOR_AUTH_CODE);
+    // Persisted before it is published, and published only once the vendor has
+    // seen their code accepted.
     expect(peek()).toEqual(VENDOR_SESSION);
+    expect(store.getState().auth.status).not.toBe('authenticated');
+
+    await settlePublish();
+
     expect(store.getState().auth.status).toBe('authenticated');
   });
 

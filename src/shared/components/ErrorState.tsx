@@ -15,34 +15,11 @@ import React, { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { PrimaryButton } from '@/shared/components/Button';
+import { ERROR_PRESENTATION } from '@/shared/components/errorPresentation';
 import { Icon } from '@/shared/components/Icon';
 import { Text } from '@/shared/components/Text';
-import { useTheme, type ColorTokens, type IconName } from '@/shared/theme';
-import { AppError, type AppErrorKind } from '@/shared/types/error';
-
-interface ErrorPresentation {
-  icon: IconName;
-  tone: keyof ColorTokens;
-  title: string;
-}
-
-/**
- * Connection failures get their own treatment because they are the user's to
- * fix, unlike a server fault where retrying is all they can do.
- */
-const PRESENTATION: Readonly<Record<AppErrorKind, ErrorPresentation>> = {
-  network: { icon: 'offline', tone: 'warning', title: 'No connection' },
-  timeout: { icon: 'offline', tone: 'warning', title: 'Taking too long' },
-  unauthorized: { icon: 'warning', tone: 'warning', title: 'Session expired' },
-  forbidden: { icon: 'warning', tone: 'danger', title: 'Not allowed' },
-  notFound: { icon: 'empty', tone: 'neutral', title: 'Not found' },
-  validation: { icon: 'warning', tone: 'warning', title: 'Check your details' },
-  conflict: { icon: 'warning', tone: 'warning', title: 'Already changed' },
-  permission: { icon: 'warning', tone: 'warning', title: 'Permission needed' },
-  server: { icon: 'error', tone: 'danger', title: 'Something went wrong' },
-  cancelled: { icon: 'info', tone: 'neutral', title: 'Cancelled' },
-  unknown: { icon: 'error', tone: 'danger', title: 'Something went wrong' },
-};
+import { useTheme } from '@/shared/theme';
+import { AppError } from '@/shared/types/error';
 
 export interface ErrorStateProps {
   error: AppError | null | undefined;
@@ -68,7 +45,7 @@ function ErrorStateComponent({
     return null;
   }
 
-  const presentation = PRESENTATION[error.kind];
+  const presentation = ERROR_PRESENTATION[error.kind];
 
   return (
     <View

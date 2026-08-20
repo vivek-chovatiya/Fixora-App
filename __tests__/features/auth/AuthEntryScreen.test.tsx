@@ -19,6 +19,7 @@ import { AuthEntryScreen } from '@/features/auth/screens/AuthEntryScreen';
 import { authReducer } from '@/features/auth/state/authSlice';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { AuthService } from '@/shared/services/types/AuthService';
+import { ToastProvider } from '@/shared/components';
 import { ThemeProvider } from '@/shared/theme';
 
 /**
@@ -77,7 +78,9 @@ async function render() {
     renderer = ReactTestRenderer.create(
       <Provider store={store}>
         <ThemeProvider>
-          <AuthEntryScreen navigation={navigation} route={{} as never} />
+          <ToastProvider>
+            <AuthEntryScreen navigation={navigation} route={{} as never} />
+          </ToastProvider>
         </ThemeProvider>
       </Provider>,
     );

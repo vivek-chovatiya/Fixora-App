@@ -40,12 +40,25 @@ export type ControlledInputProps<
   name: FieldPath<TFieldValues>;
   /** Input variant to render. Defaults to the base Input. */
   as?: ComponentType<TInputProps>;
+  /**
+   * Applied to each keystroke before the form sees it.
+   *
+   * For limits a `maxLength` cannot express — a phone number is bounded in
+   * digits while its field also holds separators, so counting characters would
+   * truncate a valid number.
+   *
+   * The rule itself belongs to whatever owns the field's meaning; this only
+   * knows where to apply one. Use it to bound or normalise, never to correct:
+   * rewriting what someone typed makes the schema's message unreachable and the
+   * field feel broken.
+   */
+  sanitize?: (next: string) => string;
 };
 
 export function ControlledInput<
   TFieldValues extends FieldValues,
   TInputProps extends InputProps = InputProps,
->({ control, name, as, ...inputProps }: ControlledInputProps<TFieldValues, TInputProps>) {
+>({ control, name, as, sanitize, ...inputProps }: ControlledInputProps<TFieldValues, TInputProps>) {
   // The variant owns which props it accepts; this component only ever adds the
   // four react-hook-form supplies, and every variant accepts those.
   const Field = (as ?? Input) as ComponentType<InputProps>;
@@ -61,7 +74,7 @@ export function ControlledInput<
           // undefined default value renders as an empty controlled field
           // instead of switching the input to uncontrolled mid-edit.
           value={value === undefined || value === null ? '' : String(value)}
-          onChangeText={onChange}
+          onChangeText={sanitize ? next => onChange(sanitize(next)) : onChange}
           onBlur={onBlur}
           error={error?.message}
         />

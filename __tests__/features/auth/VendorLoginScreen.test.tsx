@@ -25,6 +25,7 @@ import { MockAuthService } from '@/shared/services/mock/MockAuthService';
 import { NO_LATENCY } from '@/shared/services/mock/mockUtils';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { AuthService } from '@/shared/services/types/AuthService';
+import { ToastProvider } from '@/shared/components';
 import { ThemeProvider } from '@/shared/theme';
 import { AppError } from '@/shared/types/error';
 
@@ -99,7 +100,9 @@ async function render(service: AuthService) {
     renderer = ReactTestRenderer.create(
       <Provider store={store}>
         <ThemeProvider>
-          <VendorLoginScreen navigation={navigation} route={{} as never} />
+          <ToastProvider>
+            <VendorLoginScreen navigation={navigation} route={{} as never} />
+          </ToastProvider>
         </ThemeProvider>
       </Provider>,
     );
@@ -353,7 +356,7 @@ describe('VendorLoginScreen — failure', () => {
     expect(store.getState().auth.status).not.toBe('authenticated');
   });
 
-  it('titles a refusal as a failed sign in, not as an expired session', async () => {
+  it('says the details were not recognised, not that a session expired', async () => {
     const service = stubAuthService({
       signInVendor: jest.fn(async () => {
         throw new AppError({
@@ -367,7 +370,8 @@ describe('VendorLoginScreen — failure', () => {
 
     await signInWith(TYPED_PHONE, 'FX-WRON-GXXX');
 
-    expect(text()).toContain(COPY.failedTitle);
+    // The message carries itself, so the toast needs no heading to correct.
+    expect(text()).toContain('Those sign-in details were not recognised.');
     // Nobody is signed in yet, so the global default for `unauthorized` would
     // claim something expired that never existed.
     expect(text()).not.toContain('Session expired');

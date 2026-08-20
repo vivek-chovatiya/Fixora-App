@@ -30,20 +30,24 @@ import { useForm } from 'react-hook-form';
 
 import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { useVendorSignIn } from '@/features/auth/hooks/useAuth';
-import { vendorLoginSchema, type VendorLoginForm } from '@/features/auth/validation/authSchemas';
+import {
+  VENDOR_AUTH_CODE_MAX_LENGTH,
+  vendorLoginSchema,
+  type VendorLoginForm,
+} from '@/features/auth/validation/authSchemas';
 import type { AuthStackParamList } from '@/navigation/types';
 import {
   ControlledInput,
-  ErrorState,
   PasswordInput,
   PhoneInput,
   PrimaryButton,
   Screen,
   SecondaryButton,
   Text,
+  useErrorToast,
 } from '@/shared/components';
 import { useTheme } from '@/shared/theme';
-import { normalisePhone } from '@/shared/validation/phone';
+import { capPhoneInput, normalisePhone } from '@/shared/validation/phone';
 
 const COPY = AUTH_COPY.vendorLogin;
 
@@ -82,10 +86,10 @@ export function VendorLoginScreen({ navigation }: Props) {
     navigation.navigate('VendorRegistration');
   }, [navigation]);
 
-  // No session exists at this point, so `unauthorized` cannot mean an expired
-  // one — it means the pair of credentials was refused. Corrected here rather
-  // than in the global kind -> title map, which reads correctly everywhere else.
-  const errorTitle = error?.kind === 'unauthorized' ? COPY.failedTitle : undefined;
+  // Retry is the submit button; both values survive the failure. The message
+  // carries itself — "Those sign-in details were not recognised" needs no
+  // heading, and says nothing about which of the two was wrong.
+  useErrorToast(error);
 
   return (
     <Screen
@@ -125,6 +129,7 @@ export function VendorLoginScreen({ navigation }: Props) {
             control={control}
             name="phone"
             as={PhoneInput}
+            sanitize={capPhoneInput}
             label={COPY.phoneLabel}
             required
             placeholder={COPY.phonePlaceholder}
@@ -150,19 +155,15 @@ export function VendorLoginScreen({ navigation }: Props) {
             helperText={COPY.codeHelper}
             revealLabel={COPY.codeReveal}
             hideLabel={COPY.codeHide}
+            // A ceiling on absurdity, not on the format. Characters here rather
+            // than digits: the code is opaque, so nothing about its content is
+            // assumed.
+            maxLength={VENDOR_AUTH_CODE_MAX_LENGTH}
             autoCapitalize="characters"
             editable={!isSubmitting}
             returnKeyType="done"
             onSubmitEditing={handleSubmitPress}
             testID="vendor-login-code"
-          />
-
-          {/* Retry is the submit button; both values survive the failure. */}
-          <ErrorState
-            error={error}
-            title={errorTitle}
-            fullScreen={false}
-            testID="vendor-login-error"
           />
 
           <PrimaryButton

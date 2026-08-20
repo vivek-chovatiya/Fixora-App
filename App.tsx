@@ -9,6 +9,9 @@
  * - SafeAreaProvider must be above the navigators, which read insets.
  * - ThemeProvider must be above AppRoot, which themes the navigation container.
  * - Redux must be above AppRoot, which dispatches the session restore.
+ * - ToastProvider must be above the navigators, so a message raised on a screen
+ *   floats over the whole application rather than inside that screen. It sits
+ *   below ThemeProvider, whose values it draws itself with.
  */
 
 import React from 'react';
@@ -20,6 +23,7 @@ import { Provider as ReduxProvider } from 'react-redux';
 import { AppRoot } from '@/app/AppRoot';
 import { bootstrapApp } from '@/app/bootstrap';
 import { store } from '@/app/store';
+import { ToastProvider } from '@/shared/components';
 import { ThemeProvider } from '@/shared/theme';
 
 // Runs at import, before the first render, so no component can resolve a service
@@ -34,7 +38,9 @@ function App() {
       <SafeAreaProvider>
         <ThemeProvider>
           <GestureHandlerRootView style={styles.root}>
-            <AppRoot />
+            <ToastProvider>
+              <AppRoot />
+            </ToastProvider>
           </GestureHandlerRootView>
         </ThemeProvider>
       </SafeAreaProvider>

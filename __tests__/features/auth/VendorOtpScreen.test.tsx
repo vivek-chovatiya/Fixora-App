@@ -30,7 +30,8 @@ import type {
   OtpChallenge,
   VendorAuthCode,
 } from '@/shared/services/types/AuthService';
-import { ThemeProvider } from '@/shared/theme';
+import { Toast, ToastProvider } from '@/shared/components';
+import { duration, ThemeProvider } from '@/shared/theme';
 import { AppError } from '@/shared/types/error';
 
 const REGISTRATION_ID = 'reg_test_1';
@@ -133,7 +134,9 @@ async function render(
     renderer = ReactTestRenderer.create(
       <Provider store={store}>
         <ThemeProvider>
-          <VendorOtpScreen navigation={navigation} route={route} />
+          <ToastProvider>
+            <VendorOtpScreen navigation={navigation} route={route} />
+          </ToastProvider>
         </ThemeProvider>
       </Provider>,
     );
@@ -174,14 +177,27 @@ async function render(
   /**
    * Verifies the phone, landing on the auth code display.
    *
-   * The step change now waits for the verified state to have been on screen, so
-   * arriving takes a timer as well as a press. Every test that needs the code
-   * step behind it goes through here, which is why the wait lives in one place.
+   * The step change waits for the verified state to have been on screen, so
+   * arriving takes a timer as well as a finished code. Every test that needs the
+   * code step behind it goes through here, which is why the wait lives in one
+   * place.
    */
   const completeOtp = async () => {
     await type('vendor-otp-code', TYPED_OTP);
-    await press('Verify');
     await settleVerified();
+  };
+
+  /**
+   * Lets the scheduled session publish fire.
+   *
+   * Confirmation resolves before it dispatches, so the vendor sees their code
+   * accepted while this screen is still mounted. Auth state changes only once
+   * that hold is over.
+   */
+  const settlePublish = async () => {
+    await act(async () => {
+      jest.advanceTimersByTime(duration.verifiedHold + 50);
+    });
   };
 
   /** Runs out the verified hold, and anything the service scheduled behind it. */
@@ -191,6 +207,24 @@ async function render(
     });
     await act(async () => {
       jest.advanceTimersByTime(1_000);
+    });
+  };
+
+  /**
+   * Whether a message is currently on screen.
+   *
+   * Asked of the toast's own state rather than of the rendered text: the exit
+   * animation outlives the dismissal, so the words are still in the tree for a
+   * moment after the toast has been withdrawn.
+   */
+  const isToastShowing = () =>
+    renderer.root.findAllByType(Toast).some(node => node.props.isVisible);
+
+  /** The keyboard's done key, which is the only way to submit a partial code. */
+  const submitEditing = async () => {
+    const { onSubmitEditing } = codeField();
+    await act(async () => {
+      onSubmitEditing();
     });
   };
 
@@ -204,6 +238,9 @@ async function render(
     listeners,
     type,
     press,
+    submitEditing,
+    settlePublish,
+    isToastShowing,
     text,
     codeField,
     button,
@@ -263,20 +300,18 @@ describe('VendorOtpScreen — what the vendor sees', () => {
 
     // Shares the customer screen's shape, not its words: this step verifies a
     // business number and issues a credential rather than signing anyone in.
-    expect(text()).not.toContain(AUTH_COPY.customerOtp.submitHint);
+    expect(text()).not.toContain(AUTH_COPY.customerOtp.title);
   });
 
   it('labels the field and every action for assistive technology', async () => {
-    const { codeField, button } = await render(stubAuthService());
+    const { codeField, button, renderer } = await render(stubAuthService());
 
     expect(codeField().accessibilityLabel).toBe(AUTH_COPY.vendorOtp.codeLabel);
 
-    const verify = button(AUTH_COPY.vendorOtp.submit);
-    expect(verify.accessibilityRole).toBe('button');
-    expect(verify.accessibilityHint).toBe(AUTH_COPY.vendorOtp.submitHint);
-    expect(verify.accessibilityState).toEqual(
-      expect.objectContaining({ disabled: false, busy: false }),
-    );
+    // The hint says what the removed button said by existing, and promises
+    // activation rather than a sign in.
+    expect(codeField().accessibilityHint).toBe(AUTH_COPY.vendorOtp.codeHint);
+    expect(renderer.root.findAllByProps({ accessibilityLabel: 'Verify' })).toHaveLength(0);
 
     expect(button(AUTH_COPY.vendorOtp.resend).accessibilityRole).toBe('button');
     expect(button(AUTH_COPY.vendorOtp.changeAction).accessibilityRole).toBe('button');
@@ -294,10 +329,12 @@ describe('VendorOtpScreen — what the vendor sees', () => {
 });
 
 describe('VendorOtpScreen — the one-time code step', () => {
-  it('renders against the masked destination, never the raw number', async () => {
+  it('restates neither the raw number nor the masked one', async () => {
     const { text, renderer } = await render(stubAuthService());
 
-    expect(text()).toContain(CHALLENGE.maskedDestination);
+    // The supporting line went, and with it the only place the destination
+    // appeared. The raw number was never displayable in the first place.
+    expect(text()).not.toContain(CHALLENGE.maskedDestination);
     expect(text()).not.toContain(VENDOR_PHONE);
     expect(renderer.root.findByProps({ testID: 'vendor-otp-code' }).props.value).toBe('');
   });
@@ -309,17 +346,23 @@ describe('VendorOtpScreen — the one-time code step', () => {
     expect(text()).not.toContain('Phone verified');
   });
 
-  it('rejects an empty or incomplete code locally', async () => {
+  it('does not reach the service until the code is complete', async () => {
     const service = stubAuthService();
-    const { press, type, text } = await render(service);
-
-    await press('Verify');
-    expect(text()).toContain('Enter the code we sent you.');
+    const { type } = await render(service);
 
     await type('vendor-otp-code', '123');
-    await press('Verify');
-    expect(text()).toContain('digits');
 
+    expect(service.verifyVendorOtp).not.toHaveBeenCalled();
+  });
+
+  it('rejects an incomplete code locally when the keyboard submits one', async () => {
+    const service = stubAuthService();
+    const { type, submitEditing, text } = await render(service);
+
+    await type('vendor-otp-code', '123');
+    await submitEditing();
+
+    expect(text()).toContain('digits');
     expect(service.verifyVendorOtp).not.toHaveBeenCalled();
   });
 
@@ -353,15 +396,17 @@ describe('VendorOtpScreen — the one-time code step', () => {
         throw failure;
       }),
     });
-    const { completeOtp, press, text, codeField } = await render(service);
+    const { completeOtp, press, text, codeField, isToastShowing } = await render(service);
 
     await completeOtp();
     expect(text()).toContain(failure.userMessage);
+    expect(isToastShowing()).toBe(true);
 
     await press('Resend code');
 
-    // The message described an attempt against a code that no longer exists.
-    expect(text()).not.toContain(failure.userMessage);
+    // The message described an attempt against a code that no longer exists,
+    // so it is withdrawn rather than left to sit out its dwell.
+    expect(isToastShowing()).toBe(false);
     // The typed code is left alone; only the stale message goes.
     expect(codeField().value).toBe(TYPED_OTP);
   });
@@ -403,10 +448,9 @@ describe('VendorOtpScreen — the one-time code step', () => {
 describe('VendorOtpScreen — the verified moment', () => {
   it('holds on the code step long enough for the verified state to be seen', async () => {
     const service = stubAuthService();
-    const { type, press, text, settleVerified } = await render(service);
+    const { type, text, settleVerified } = await render(service);
 
     await type('vendor-otp-code', TYPED_OTP);
-    await press('Verify');
 
     // Verification has already happened — the service was called and answered.
     expect(service.verifyVendorOtp).toHaveBeenCalledWith(REGISTRATION_ID, TYPED_OTP);
@@ -421,10 +465,9 @@ describe('VendorOtpScreen — the verified moment', () => {
   });
 
   it('waits to move on, without waiting to take the credential', async () => {
-    const { type, press, listeners } = await render(stubAuthService());
+    const { type, listeners } = await render(stubAuthService());
 
     await type('vendor-otp-code', TYPED_OTP);
-    await press('Verify');
 
     // The business is active from the moment the code was issued, so the door
     // back to registration is shut during the hold and not after it.
@@ -439,10 +482,9 @@ describe('VendorOtpScreen — the verified moment', () => {
         throw new AppError({ kind: 'validation', message: 'wrong', userMessage: 'Not correct.' });
       }),
     });
-    const { type, press, text, settleVerified } = await render(service);
+    const { type, text, settleVerified } = await render(service);
 
     await type('vendor-otp-code', TYPED_OTP);
-    await press('Verify');
     await settleVerified();
 
     // A failure must not reach the display step by simply waiting.
@@ -544,14 +586,21 @@ describe('VendorOtpScreen — confirmation creates the session', () => {
 
   it('publishes the session through auth state, without navigating', async () => {
     const service = stubAuthService();
-    const { type, press, store, storage, navigate, goBack } = await reachConfirmation(service);
+    const { type, press, store, storage, navigate, goBack, settlePublish } =
+      await reachConfirmation(service);
 
     await type('vendor-auth-code-input', ISSUED_CODE.code);
     await press('Continue');
 
+    // Durable at once, published after the vendor has seen it accepted. Killed
+    // between the two, the app restarts signed in regardless.
+    expect(storage.peek()).toEqual(VENDOR_SESSION);
+    expect(store.getState().auth.status).not.toBe('authenticated');
+
+    await settlePublish();
+
     expect(store.getState().auth.status).toBe('authenticated');
     expect(store.getState().auth.user?.role).toBe('vendor');
-    expect(storage.peek()).toEqual(VENDOR_SESSION);
 
     // RootNavigator reacts to auth state. The screen must not route itself.
     expect(navigate).not.toHaveBeenCalled();
@@ -641,12 +690,15 @@ describe('VendorOtpScreen — the credential does not escape', () => {
   });
 
   it('survives a successful sign in without entering the session', async () => {
-    const { completeOtp, press, type, store, storage } = await render(stubAuthService());
+    const { completeOtp, press, type, store, storage, settlePublish } = await render(
+      stubAuthService(),
+    );
 
     await completeOtp();
     await press('I have saved it');
     await type('vendor-auth-code-input', ISSUED_CODE.code);
     await press('Continue');
+    await settlePublish();
 
     expect(store.getState().auth.status).toBe('authenticated');
     expect(JSON.stringify(store.getState())).not.toContain(ISSUED_CODE.code);
@@ -724,13 +776,13 @@ describe('VendorOtpScreen — regeneration against the real mock service', () =>
       serviceCategoryIds: ['cat_electrician'],
     });
 
-    const { type, press, displayedCode, text, store, settleVerified } = await render(service, {
+    const { type, press, displayedCode, text, store, settleVerified, settlePublish } =
+      await render(service, {
       registrationId: registration.registrationId,
       challenge: registration.challenge,
     });
 
     await type('vendor-otp-code', MOCK_OTP_CODE);
-    await press('Verify');
     await settleVerified();
 
     const firstCode = displayedCode();
@@ -754,6 +806,7 @@ describe('VendorOtpScreen — regeneration against the real mock service', () =>
     // Only the replacement signs them in.
     await type('vendor-auth-code-input', replacement);
     await press('Continue');
+    await settlePublish();
     expect(store.getState().auth.status).toBe('authenticated');
     expect(store.getState().auth.user?.role).toBe('vendor');
   });

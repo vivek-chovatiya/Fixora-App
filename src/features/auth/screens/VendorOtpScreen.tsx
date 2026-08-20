@@ -190,7 +190,14 @@ export function VendorOtpScreen({ route, navigation }: Props) {
     // Nothing is done with the session. The thunk behind this hook persists and
     // publishes it, and RootNavigator reacts — so this screen never routes into
     // the vendor application.
-    (enteredCode: string) => confirmCode(registrationId, enteredCode),
+    //
+    // Only whether it arrived is reported back, so the field can show the code
+    // it was given as accepted rather than inferring it from silence.
+    async (enteredCode: string) => {
+      const session = await confirmCode(registrationId, enteredCode);
+
+      return session !== null;
+    },
     [confirmCode, registrationId],
   );
 

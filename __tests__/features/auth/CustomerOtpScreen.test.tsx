@@ -20,7 +20,8 @@ import { CustomerOtpScreen } from '@/features/auth/screens/CustomerOtpScreen';
 import type { SessionPayload } from '@/features/auth/types';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { AuthService, OtpChallenge } from '@/shared/services/types/AuthService';
-import { ThemeProvider } from '@/shared/theme';
+import { Toast, ToastProvider } from '@/shared/components';
+import { duration, ThemeProvider } from '@/shared/theme';
 import { AppError } from '@/shared/types/error';
 
 const PHONE = '9876543210';
@@ -98,7 +99,11 @@ async function render(service: AuthService, challenge: OtpChallenge = CHALLENGE)
     renderer = ReactTestRenderer.create(
       <Provider store={store}>
         <ThemeProvider>
-          <CustomerOtpScreen navigation={navigation} route={route} />
+          {/* Failures leave as toasts now, so the layer that shows them is
+              part of what these tests are exercising. */}
+          <ToastProvider>
+            <CustomerOtpScreen navigation={navigation} route={route} />
+          </ToastProvider>
         </ThemeProvider>
       </Provider>,
     );
@@ -135,6 +140,37 @@ async function render(service: AuthService, challenge: OtpChallenge = CHALLENGE)
   const hasButton = (accessibilityLabel: string) =>
     renderer.root.findAllByProps({ accessibilityLabel }).length > 0;
 
+  /** The keyboard's done key, which is the only way to submit a partial code. */
+  const submitEditing = async () => {
+    const { onSubmitEditing } = codeField();
+    await act(async () => {
+      onSubmitEditing();
+    });
+  };
+
+  /**
+   * Lets the scheduled session publish fire.
+   *
+   * Verification resolves before it dispatches, so this screen stays mounted
+   * long enough to show that the code was accepted. Auth state only changes
+   * once that hold is over — which is what the user waits through.
+   */
+  const settlePublish = async () => {
+    await act(async () => {
+      await new Promise<void>(resolve => setTimeout(resolve, duration.verifiedHold + 50));
+    });
+  };
+
+  /**
+   * Whether a message is currently on screen.
+   *
+   * Asked of the toast's own state rather than of the rendered text: the exit
+   * animation outlives the dismissal, so the words are still in the tree for a
+   * moment after the toast has been withdrawn.
+   */
+  const isToastShowing = () =>
+    renderer.root.findAllByType(Toast).some(node => node.props.isVisible);
+
   return {
     renderer,
     store,
@@ -143,11 +179,13 @@ async function render(service: AuthService, challenge: OtpChallenge = CHALLENGE)
     navigate,
     type,
     press,
+    submitEditing,
     codeField,
     button,
     hasButton,
+    settlePublish,
+    isToastShowing,
     text: () => textOf(renderer.toJSON()),
-    verifyButton: () => renderer.root.findByProps({ accessibilityLabel: 'Verify' }).props,
   };
 }
 
@@ -178,27 +216,27 @@ describe('CustomerOtpScreen — what the user sees', () => {
   });
 
   it('labels the field and every action for assistive technology', async () => {
-    const { codeField, button } = await render(stubAuthService());
+    const { codeField, button, hasButton } = await render(stubAuthService());
 
     expect(codeField().accessibilityLabel).toBe(AUTH_COPY.customerOtp.codeLabel);
 
-    const verify = button(AUTH_COPY.customerOtp.submit);
-    expect(verify.accessibilityRole).toBe('button');
-    expect(verify.accessibilityHint).toBe(AUTH_COPY.customerOtp.submitHint);
-    expect(verify.accessibilityState).toEqual(
-      expect.objectContaining({ disabled: false, busy: false }),
-    );
+    // There is no confirming action to discover, so the field has to say that
+    // finishing the code is what sends it.
+    expect(codeField().accessibilityHint).toBe(AUTH_COPY.customerOtp.codeHint);
+    expect(hasButton('Verify')).toBe(false);
 
     // Resend and change-number are reachable as buttons in their own right.
     expect(button(AUTH_COPY.customerOtp.resend).accessibilityRole).toBe('button');
     expect(button(AUTH_COPY.customerOtp.changeAction).accessibilityRole).toBe('button');
   });
 
-  it('shows the masked destination the service returned, never the raw number', async () => {
+  it('shows neither the raw number nor the masked one it was given', async () => {
     const { text } = await render(stubAuthService());
 
-    expect(text()).toContain(CHALLENGE.maskedDestination);
+    // The screen no longer restates where the code went. The raw number was
+    // never displayable; the masked form went with the supporting line.
     expect(text()).not.toContain(PHONE);
+    expect(text()).not.toContain(CHALLENGE.maskedDestination);
   });
 
   it('reveals no code of its own', async () => {
@@ -212,35 +250,50 @@ describe('CustomerOtpScreen — what the user sees', () => {
 });
 
 describe('CustomerOtpScreen — verification', () => {
-  it('rejects an empty code locally', async () => {
+  it('does not reach the service until the code is complete', async () => {
     const service = stubAuthService();
-    const { press, text } = await render(service);
+    const { type } = await render(service);
 
-    await press('Verify');
+    await type('1');
+    await type('12345');
 
+    // Five digits is not a code. Nothing is sent, and nothing is complained
+    // about — the user is still typing.
     expect(service.verifyCustomerOtp).not.toHaveBeenCalled();
-    expect(text()).toContain('Enter the code we sent you.');
   });
 
-  it('rejects an incomplete code locally', async () => {
+  it('rejects an incomplete code locally when the keyboard submits one', async () => {
     const service = stubAuthService();
-    const { type, press, text } = await render(service);
+    const { type, submitEditing, text } = await render(service);
 
     await type('123');
-    await press('Verify');
+    await submitEditing();
 
     expect(service.verifyCustomerOtp).not.toHaveBeenCalled();
     expect(text()).toContain('digits');
   });
 
-  it('signs the customer in through auth state, not by navigating', async () => {
+  it('verifies on the last digit, with no action to confirm it', async () => {
     const service = stubAuthService();
-    const { type, press, store, navigate, goBack } = await render(service);
+    const { type } = await render(service);
 
     await type(TYPED_CODE);
-    await press('Verify');
 
     expect(service.verifyCustomerOtp).toHaveBeenCalledWith(PHONE, TYPED_CODE);
+  });
+
+  it('signs the customer in through auth state, not by navigating', async () => {
+    const service = stubAuthService();
+    const { type, store, navigate, goBack, settlePublish } = await render(service);
+
+    await type(TYPED_CODE);
+
+    expect(service.verifyCustomerOtp).toHaveBeenCalledWith(PHONE, TYPED_CODE);
+
+    // The verified state is on screen first; the tree swaps after it.
+    expect(store.getState().auth.status).not.toBe('authenticated');
+    await settlePublish();
+
     expect(store.getState().auth.status).toBe('authenticated');
     expect(store.getState().auth.user?.role).toBe('customer');
     // RootNavigator reacts to state; the screen must not route anywhere itself.
@@ -259,17 +312,16 @@ describe('CustomerOtpScreen — verification', () => {
         throw failure;
       }),
     });
-    const { type, press, text, store } = await render(service);
+    const { type, text, store } = await render(service);
 
     await type(TYPED_CODE);
-    await press('Verify');
 
     expect(text()).toContain(failure.userMessage);
     expect(text()).not.toContain('expected 123456');
     expect(store.getState().auth.status).not.toBe('authenticated');
   });
 
-  it('titles an expired code correctly rather than claiming the session expired', async () => {
+  it('says the code expired rather than claiming the session did', async () => {
     const service = stubAuthService({
       verifyCustomerOtp: jest.fn(async () => {
         throw new AppError({
@@ -279,17 +331,18 @@ describe('CustomerOtpScreen — verification', () => {
         });
       }),
     });
-    const { type, press, text } = await render(service);
+    const { type, text } = await render(service);
 
     await type(TYPED_CODE);
-    await press('Verify');
 
-    expect(text()).toContain('Code expired');
+    // The message says everything the heading used to, so the toast carries no
+    // heading at all.
+    expect(text()).toContain('That code has expired. Request a new one.');
     // There is no session at this point, so this default would be nonsense.
     expect(text()).not.toContain('Session expired');
   });
 
-  it('locks the verify button while the check is in flight', async () => {
+  it('locks the field while the check is in flight', async () => {
     // Resolved by the test rather than by the stub, so the pending state can be
     // observed instead of guessed at with a timer.
     let release!: (session: SessionPayload) => void;
@@ -301,22 +354,21 @@ describe('CustomerOtpScreen — verification', () => {
           }),
       ),
     });
-    const { type, press, verifyButton } = await render(service);
+    const { type, codeField } = await render(service);
 
+    expect(codeField().editable).toBe(true);
+
+    // `type` flushes the render caused by completing the code and starting the
+    // call, but the call itself is still unresolved when it returns.
     await type(TYPED_CODE);
-    expect(verifyButton().accessibilityState.busy).toBe(false);
-
-    // `press` flushes the render caused by starting the call, but the call
-    // itself is still unresolved when it returns.
-    await press('Verify');
-    expect(verifyButton().accessibilityState.busy).toBe(true);
-    expect(verifyButton().accessibilityState.disabled).toBe(true);
+    expect(codeField().editable).toBe(false);
 
     await act(async () => {
       release(SESSION);
     });
 
-    expect(verifyButton().accessibilityState.busy).toBe(false);
+    // Still locked, because the code was accepted and the screen is leaving.
+    expect(codeField().editable).toBe(false);
   });
 });
 
@@ -330,14 +382,14 @@ describe('CustomerOtpScreen — resend', () => {
     expect(service.requestCustomerOtp).toHaveBeenCalledWith(PHONE);
   });
 
-  it('updates the destination when the replacement challenge masks it differently', async () => {
-    const replacement: OtpChallenge = { ...CHALLENGE, maskedDestination: '••••••1111' };
+  it('takes the cooldown from the replacement rather than reusing the first', async () => {
+    const replacement: OtpChallenge = { ...CHALLENGE, resendAfterSeconds: 45 };
     const service = stubAuthService({ requestCustomerOtp: jest.fn(async () => replacement) });
     const { press, text } = await render(service);
 
     await press('Resend code');
 
-    expect(text()).toContain('••••••1111');
+    expect(text()).toContain('Resend code in 45s');
   });
 
   it('drops the previous failure once a replacement code has been sent', async () => {
@@ -351,16 +403,17 @@ describe('CustomerOtpScreen — resend', () => {
         throw failure;
       }),
     });
-    const { type, press, text, codeField } = await render(service);
+    const { type, press, text, codeField, isToastShowing } = await render(service);
 
     await type(TYPED_CODE);
-    await press('Verify');
     expect(text()).toContain(failure.userMessage);
+    expect(isToastShowing()).toBe(true);
 
     await press('Resend code');
 
-    // The message described an attempt against a code that no longer exists.
-    expect(text()).not.toContain(failure.userMessage);
+    // The message described an attempt against a code that no longer exists,
+    // so it is withdrawn rather than left to sit out its dwell.
+    expect(isToastShowing()).toBe(false);
     // The typed code is left alone; only the stale message goes.
     expect(codeField().value).toBe(TYPED_CODE);
   });
@@ -402,7 +455,7 @@ describe('CustomerOtpScreen — resend', () => {
 });
 
 describe('CustomerOtpScreen — one operation at a time', () => {
-  it('sends one verification however many times the button is pressed', async () => {
+  it('sends one verification however many times the same code is completed', async () => {
     let release!: (session: SessionPayload) => void;
     const service = stubAuthService({
       verifyCustomerOtp: jest.fn(
@@ -412,18 +465,38 @@ describe('CustomerOtpScreen — one operation at a time', () => {
           }),
       ),
     });
-    const { type, press } = await render(service);
+    const { type } = await render(service);
 
     await type(TYPED_CODE);
-    await press('Verify');
-    await press('Verify');
-    await press('Verify');
+    await type(TYPED_CODE);
+    await type(TYPED_CODE);
 
+    // Re-completing the same code is not a new attempt. Without this guard the
+    // absent button would be replaced by something that fires far more often.
     expect(service.verifyCustomerOtp).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       release(SESSION);
     });
+  });
+
+  it('verifies again once a rejected code has been edited', async () => {
+    const service = stubAuthService({
+      verifyCustomerOtp: jest.fn(async () => {
+        throw new AppError({ kind: 'validation', userMessage: 'That code is not correct.' });
+      }),
+    });
+    const { type } = await render(service);
+
+    await type(TYPED_CODE);
+    expect(service.verifyCustomerOtp).toHaveBeenCalledTimes(1);
+
+    // Editing is the only retry there is now, so completing the code again has
+    // to count as a fresh attempt even when the digits are identical.
+    await type(TYPED_CODE.slice(0, 5));
+    await type(TYPED_CODE);
+
+    expect(service.verifyCustomerOtp).toHaveBeenCalledTimes(2);
   });
 
   it('will not resend while a verification is unanswered', async () => {
@@ -439,7 +512,6 @@ describe('CustomerOtpScreen — one operation at a time', () => {
     const { type, press, button } = await render(service);
 
     await type(TYPED_CODE);
-    await press('Verify');
 
     expect(button('Resend code').accessibilityState.disabled).toBe(true);
     await press('Resend code');
@@ -460,13 +532,14 @@ describe('CustomerOtpScreen — one operation at a time', () => {
           }),
       ),
     });
-    const { type, press, verifyButton } = await render(service);
+    const { type, press, codeField } = await render(service);
 
-    await type(TYPED_CODE);
     await press('Resend code');
 
-    expect(verifyButton().accessibilityState.disabled).toBe(true);
-    await press('Verify');
+    // The field is shut while the replacement is in flight, and completing a
+    // code behind that must not slip a verification past it.
+    expect(codeField().editable).toBe(false);
+    await type(TYPED_CODE);
     expect(service.verifyCustomerOtp).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -480,28 +553,30 @@ describe('CustomerOtpScreen — one operation at a time', () => {
         throw new AppError({ kind: 'network', message: 'socket hang up' });
       }),
     });
-    const { type, press, text, store, codeField } = await render(service);
+    const { type, press, text, store, codeField, settlePublish } = await render(service);
 
-    await type(TYPED_CODE);
     await press('Resend code');
 
-    expect(text()).toContain('No connection');
+    // The toast carries the user-facing message. "No connection" was the
+    // heading of the block that used to sit in the layout, and is now nowhere.
+    expect(text()).toContain('No internet connection. Check your network and try again.');
     expect(text()).not.toContain('socket hang up');
-    // The typed code survived, and verifying still works.
-    expect(codeField().value).toBe(TYPED_CODE);
 
-    await press('Verify');
+    // Verifying still works once the failed resend has answered.
+    await type(TYPED_CODE);
+    expect(codeField().value).toBe(TYPED_CODE);
     expect(service.verifyCustomerOtp).toHaveBeenCalledWith(PHONE, TYPED_CODE);
+
+    await settlePublish();
     expect(store.getState().auth.status).toBe('authenticated');
   });
 });
 
 describe('CustomerOtpScreen — the code never leaks', () => {
   it('is never written to the device, not even alongside the session', async () => {
-    const { type, press, storage } = await render(stubAuthService());
+    const { type, storage } = await render(stubAuthService());
 
     await type(TYPED_CODE);
-    await press('Verify');
 
     // A session was persisted, and the code used to obtain it was not part of it.
     expect(storage.write).toHaveBeenCalled();
@@ -512,7 +587,9 @@ describe('CustomerOtpScreen — the code never leaks', () => {
     const service = stubAuthService();
     const { type, press, store, storage } = await render(service);
 
-    await type(TYPED_CODE);
+    // Deliberately incomplete: a finished code would verify itself before the
+    // resend was ever asked for.
+    await type(TYPED_CODE.slice(0, 4));
     await press('Resend code');
 
     // Resending asks for a new code with the number alone. It proves nothing,
@@ -531,10 +608,9 @@ describe('CustomerOtpScreen — the code never leaks', () => {
         throw new AppError({ kind: 'validation', message: 'code mismatch' });
       }),
     });
-    const { type, press } = await render(service);
+    const { type } = await render(service);
 
     await type(TYPED_CODE);
-    await press('Verify');
 
     const logged = [...consoleLog.mock.calls, ...consoleError.mock.calls]
       .flat()
@@ -545,10 +621,9 @@ describe('CustomerOtpScreen — the code never leaks', () => {
   });
 
   it('is not held in Redux after a successful sign in', async () => {
-    const { type, press, store } = await render(stubAuthService());
+    const { type, store } = await render(stubAuthService());
 
     await type(TYPED_CODE);
-    await press('Verify');
 
     expect(JSON.stringify(store.getState())).not.toContain(TYPED_CODE);
   });

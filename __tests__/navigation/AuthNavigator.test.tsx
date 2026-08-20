@@ -16,6 +16,7 @@ import { Provider } from 'react-redux';
 import { authReducer } from '@/features/auth/state/authSlice';
 import { AuthNavigator } from '@/navigation/AuthNavigator';
 import { configureServices, resetServices } from '@/shared/services/ServiceRegistry';
+import { ToastProvider } from '@/shared/components';
 import { ThemeProvider } from '@/shared/theme';
 
 /** Every route the stack registers, in order. */
@@ -62,9 +63,11 @@ describe('AuthNavigator', () => {
       renderer = ReactTestRenderer.create(
         <Provider store={store}>
           <ThemeProvider>
-            <NavigationContainer>
-              <AuthNavigator />
-            </NavigationContainer>
+            <ToastProvider>
+              <NavigationContainer>
+                <AuthNavigator />
+              </NavigationContainer>
+            </ToastProvider>
           </ThemeProvider>
         </Provider>,
       );

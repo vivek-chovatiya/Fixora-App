@@ -26,6 +26,7 @@ import { CustomerLoginScreen } from '@/features/auth/screens/CustomerLoginScreen
 import { authReducer } from '@/features/auth/state/authSlice';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { AuthService } from '@/shared/services/types/AuthService';
+import { ToastProvider } from '@/shared/components';
 import { ThemeProvider } from '@/shared/theme';
 import { AppError } from '@/shared/types/error';
 
@@ -88,7 +89,9 @@ async function render(service: AuthService = stubAuthService()) {
     renderer = ReactTestRenderer.create(
       <Provider store={store}>
         <ThemeProvider>
-          <CustomerLoginScreen navigation={navigation} route={route} />
+          <ToastProvider>
+            <CustomerLoginScreen navigation={navigation} route={route} />
+          </ToastProvider>
         </ThemeProvider>
       </Provider>,
     );

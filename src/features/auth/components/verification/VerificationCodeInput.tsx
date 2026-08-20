@@ -32,6 +32,15 @@ export interface VerificationCodeInputProps {
   status: VerificationStatus;
   /** Announced to assistive technology in place of the drawing. */
   accessibilityLabel: string;
+  /**
+   * How the field behaves, for assistive technology.
+   *
+   * It matters more here than on an ordinary field: there is no confirming
+   * action to discover, so without this a screen-reader user has no way of
+   * learning that the last digit sends the code. Superseded by `error`, since a
+   * failure is the more urgent thing to say.
+   */
+  hint?: string;
   /** Validation message. Rendered below, and tints the cells. */
   error?: string;
   editable?: boolean;
@@ -45,6 +54,7 @@ function VerificationCodeInputComponent({
   length,
   status,
   accessibilityLabel,
+  hint,
   error,
   editable = true,
   onSubmitEditing,
@@ -112,7 +122,7 @@ function VerificationCodeInputComponent({
           caretHidden
           accessibilityLabel={accessibilityLabel}
           accessibilityState={{ disabled: !editable }}
-          accessibilityHint={error}
+          accessibilityHint={error ?? hint}
           style={[StyleSheet.absoluteFill, styles.field]}
           testID={testID}
         />

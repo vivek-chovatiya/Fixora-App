@@ -30,14 +30,14 @@ import { customerPhoneSchema, type CustomerPhoneForm } from '@/features/auth/val
 import type { AuthStackParamList } from '@/navigation/types';
 import {
   ControlledInput,
-  ErrorState,
   PhoneInput,
   PrimaryButton,
   Screen,
   Text,
+  useErrorToast,
 } from '@/shared/components';
 import { useTheme } from '@/shared/theme';
-import { normalisePhone } from '@/shared/validation/phone';
+import { capPhoneInput, normalisePhone } from '@/shared/validation/phone';
 
 const COPY = AUTH_COPY.customerLogin;
 
@@ -47,6 +47,10 @@ export function CustomerLoginScreen({ navigation }: Props) {
   const theme = useTheme();
 
   const { mutate: requestOtp, error, isSubmitting } = useRequestCustomerOtp();
+
+  // The submit button is the retry: the typed number survives the failure, so
+  // trying again is one tap and the message does not need to own any layout.
+  useErrorToast(error);
 
   const { control, handleSubmit } = useForm<CustomerPhoneForm>({
     resolver: zodResolver(customerPhoneSchema),
@@ -128,6 +132,9 @@ export function CustomerLoginScreen({ navigation }: Props) {
             control={control}
             name="phone"
             as={PhoneInput}
+            // Bounded as it is typed rather than only on submit, so the field
+            // cannot hold a number it will refuse.
+            sanitize={capPhoneInput}
             label={COPY.phoneLabel}
             required
             placeholder={COPY.phonePlaceholder}
@@ -136,13 +143,6 @@ export function CustomerLoginScreen({ navigation }: Props) {
             onSubmitEditing={handleSubmitPress}
             testID="customer-login-phone"
           />
-
-          {/*
-            No retry handler: the submit button below is the retry, and a second
-            primary action would compete with it. The typed number survives the
-            failure, so retrying is one tap.
-          */}
-          <ErrorState error={error} fullScreen={false} testID="customer-login-error" />
 
           <PrimaryButton
             fullWidth

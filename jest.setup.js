@@ -23,6 +23,24 @@ jest.mock(
 );
 
 /**
+ * `useSafeAreaInsets` throws rather than guessing when no provider sits above
+ * it, which would make every tree containing a toast wrap itself for a reason
+ * no test is about.
+ *
+ * Only that hook is replaced. The library's own mock swaps the whole module and
+ * takes SafeAreaView with it, which Screen renders — so the rest is left real.
+ */
+jest.mock('react-native-safe-area-context', () => {
+  const actual = jest.requireActual('react-native-safe-area-context');
+  const insets = { top: 0, right: 0, bottom: 0, left: 0 };
+
+  return {
+    ...actual,
+    useSafeAreaInsets: () => insets,
+  };
+});
+
+/**
  * AsyncStorage v3 no longer ships a jest mock, so this provides an in-memory
  * one. Backed by a real Map rather than bare jest.fn()s so SessionStorage's
  * read-after-write behaviour is exercised honestly.

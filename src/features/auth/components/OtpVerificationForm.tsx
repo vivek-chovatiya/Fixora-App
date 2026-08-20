@@ -6,51 +6,51 @@
  * The two flows differ entirely in what verification *means* — a customer gets a
  * session, a vendor gets an auth code — but the step itself is the same: enter a
  * code, verify, resend after a cooldown, or go back and change the number. This
- * component owns that behaviour so the rules live in one place: the cooldown
- * comes from the challenge, a resend is refused while one is in flight, the
- * error surface is single, and an `unauthorized` failure is titled as an expired
- * code rather than an expired session.
+ * component owns that behaviour so the rules live in one place.
+ *
+ * There is no verify button. The code is a known length, so the last digit is
+ * an unambiguous statement that the user has finished, and asking them to
+ * confirm it adds a tap that can only ever be answered one way. What replaces
+ * the button as feedback is the animation the code itself performs.
+ *
+ * A failure is a toast, not a block in the layout. It is transient, it does not
+ * describe the screen, and giving it a place in the flow pushed the resend and
+ * change-number controls below the fold behind an icon the size of a heading.
  *
  * It owns no service call and reaches no hook of its own. Callers pass the two
  * operations and their state, which is what keeps the flows' different outcomes
  * out of here — and keeps the auth code, which this component never sees, in the
  * screen that asked for it.
- *
- * The field is VerificationCodeInput, so both flows get the same cells and the
- * same orbit without either screen owning a frame of it.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 
 import { AppConfig } from '@/core/config/AppConfig';
 import { formatCopy } from '@/features/auth/constants/authCopy';
 import { VerificationCodeInput } from '@/features/auth/components/verification/VerificationCodeInput';
 import type { VerificationStatus } from '@/features/auth/components/verification/VerificationScene';
 import { otpSchema, type OtpForm } from '@/features/auth/validation/authSchemas';
-import { ErrorState, PrimaryButton, SecondaryButton, Text } from '@/shared/components';
+import { SecondaryButton, Text, useErrorToast } from '@/shared/components';
 import { useCountdown } from '@/shared/hooks/useCountdown';
 import type { OtpChallenge } from '@/shared/services/types/AuthService';
 import { useTheme } from '@/shared/theme';
 import type { AppError } from '@/shared/types/error';
 
-/** Copy each flow supplies. `subtitle` takes `{destination}`, `resendIn` `{seconds}`. */
+/** Copy each flow supplies. `resendIn` takes `{seconds}`. */
 export interface OtpFormCopy {
-  subtitle: string;
   codeLabel: string;
-  codePlaceholder: string;
-  submit: string;
-  submitHint: string;
+  /** Tells assistive technology that no confirming action is coming. */
+  codeHint: string;
   resend: string;
   resendIn: string;
   changeAction: string;
-  expiredTitle: string;
 }
 
 export interface OtpVerificationFormProps {
-  /** The challenge this attempt started from. Replaced by a successful resend. */
+  /** The challenge this attempt started from. Supplies the initial cooldown. */
   challenge: OtpChallenge;
   copy: OtpFormCopy;
   /**
@@ -75,13 +75,13 @@ export interface OtpVerificationFormProps {
   onVerified?: () => void;
   isVerifying: boolean;
   isResending: boolean;
-  /** Whichever of the two operations last failed. */
+  /** Whichever of the two operations last failed. Surfaced as a toast. */
   error: AppError | null;
   testIDPrefix: string;
 }
 
 export function OtpVerificationForm({
-  challenge: initialChallenge,
+  challenge,
   copy,
   onVerify,
   onResend,
@@ -94,9 +94,7 @@ export function OtpVerificationForm({
 }: OtpVerificationFormProps) {
   const theme = useTheme();
 
-  // The challenge belongs to this attempt and nothing outside reads it, so it
-  // stays local rather than becoming a global for one consumer.
-  const [challenge, setChallenge] = useState(initialChallenge);
+  const codeLength = AppConfig.otp.length;
 
   /**
    * Whether the code was accepted.
@@ -107,14 +105,16 @@ export function OtpVerificationForm({
    */
   const [isVerified, setIsVerified] = useState(false);
 
+  // Every failure, from either operation, leaves as a toast.
+  useErrorToast(error);
+
   /**
    * How long the verified state stays before the caller moves on.
    *
-   * Long enough to register as an answer, short enough not to feel like the app
-   * has stalled after the work is already done. Composed from existing tokens
-   * rather than a new one: it is the settle animation plus a beat to read it.
+   * The same token the auth layer holds a session publish for, so a flow that
+   * ends in a session and one that ends in a credential pause for equally long.
    */
-  const verifiedHoldMs = theme.animation.duration.slow + theme.animation.duration.fast;
+  const verifiedHoldMs = theme.animation.duration.verifiedHold;
 
   useEffect(() => {
     if (!isVerified || !onVerified) {
@@ -132,7 +132,7 @@ export function OtpVerificationForm({
     secondsRemaining,
     isRunning: isCoolingDown,
     start: startCooldown,
-  } = useCountdown(initialChallenge.resendAfterSeconds);
+  } = useCountdown(challenge.resendAfterSeconds);
 
   const { control, handleSubmit } = useForm<OtpForm>({
     resolver: zodResolver(otpSchema),
@@ -152,38 +152,57 @@ export function OtpVerificationForm({
     [onVerify],
   );
 
-  const onSubmit = handleSubmit(submit);
+  const submitCode = useCallback(() => {
+    void handleSubmit(submit)();
+  }, [handleSubmit, submit]);
 
-  const handleVerifyPress = useCallback(() => {
-    void onSubmit();
-  }, [onSubmit]);
+  const code = useWatch({ control, name: 'code' });
+
+  const isBusy = isVerifying || isResending;
+
+  /**
+   * The code this component has already sent.
+   *
+   * Without it the effect below would fire again on every unrelated render while
+   * a complete code sits in the field — including the render that reports the
+   * failure of the attempt it just made.
+   */
+  const attempted = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (code.length < codeLength) {
+      // Re-arms. Editing the code makes the next completion a new attempt, even
+      // when the user retypes exactly what was there — which is the only way to
+      // retry now that there is no button to press.
+      attempted.current = null;
+      return;
+    }
+
+    // Deliberately not marked as attempted while something else is in flight:
+    // the code has not been sent, so it must stay eligible once the operation
+    // holding it up has answered.
+    if (attempted.current === code || isBusy || isVerified) {
+      return;
+    }
+
+    attempted.current = code;
+    submitCode();
+  }, [code, codeLength, isBusy, isVerified, submitCode]);
 
   const handleResendPress = useCallback(() => {
     void (async () => {
       const next = await onResend();
 
       if (next) {
-        // A replacement may mask the destination differently or set a different
-        // cooldown, so both come from the response rather than being assumed.
-        setChallenge(next);
+        // A replacement may carry a different cooldown, so it comes from the
+        // response rather than being assumed.
         startCooldown(next.resendAfterSeconds);
       }
     })();
   }, [onResend, startCooldown]);
 
-  const isBusy = isVerifying || isResending;
-
-  // No session exists at this point in either flow, so `unauthorized` can only
-  // mean the code was rejected as expired. Corrected here rather than in the
-  // global kind -> title map, which reads correctly everywhere else.
-  const errorTitle = error?.kind === 'unauthorized' ? copy.expiredTitle : undefined;
-
   return (
     <View style={{ gap: theme.spacing.lg }}>
-      <Text variant="body" color="textSecondary">
-        {formatCopy(copy.subtitle, { destination: challenge.maskedDestination })}
-      </Text>
-
       <Controller
         control={control}
         name="code"
@@ -191,37 +210,21 @@ export function OtpVerificationForm({
           <VerificationCodeInput
             value={value}
             onChangeText={onChange}
-            length={AppConfig.otp.length}
+            length={codeLength}
             status={resolveStatus({
               value,
-              length: AppConfig.otp.length,
+              length: codeLength,
               isVerifying,
               isVerified,
             })}
             accessibilityLabel={copy.codeLabel}
+            hint={copy.codeHint}
             error={fieldError?.message}
             editable={!isBusy && !isVerified}
-            onSubmitEditing={handleVerifyPress}
+            onSubmitEditing={submitCode}
             testID={`${testIDPrefix}-code`}
           />
         )}
-      />
-
-      {/* Retry is the verify button itself; a second primary action would compete. */}
-      <ErrorState
-        error={error}
-        title={errorTitle}
-        fullScreen={false}
-        testID={`${testIDPrefix}-error`}
-      />
-
-      <PrimaryButton
-        fullWidth
-        label={copy.submit}
-        onPress={handleVerifyPress}
-        isLoading={isVerifying}
-        disabled={isResending || isVerified}
-        accessibilityHint={copy.submitHint}
       />
 
       {/*
@@ -268,8 +271,9 @@ export function OtpVerificationForm({
 /**
  * Which beat of the animation the code is on.
  *
- * `entered` is the completed-but-unsent state, and it is what makes the row curl
- * on the final keystroke rather than on the network call.
+ * `entered` is the completed-but-unsent state. It is brief now that submission
+ * follows the last keystroke, but it is not dead: it is what the row curls on
+ * during the frames before the request is in flight.
  */
 function resolveStatus({
   value,

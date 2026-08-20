@@ -57,23 +57,17 @@ export const AUTH_COPY = Object.freeze({
 
   customerOtp: Object.freeze({
     title: 'Verify your number',
-    /** `{destination}` is replaced with the masked value the backend supplied. */
-    subtitle: 'Enter the code we sent to {destination}.',
     codeLabel: 'Verification code',
-    codePlaceholder: 'Enter the code',
-    submit: 'Verify',
-    submitHint: 'Checks the code and signs you in',
+    /**
+     * Says what the missing button used to say by existing. Sighted users infer
+     * it from the code completing and the animation starting; this is the same
+     * information for anyone who cannot see either.
+     */
+    codeHint: 'Signs you in automatically once you have entered every digit',
     resend: 'Resend code',
     /** `{seconds}` is replaced with the remaining cooldown. */
     resendIn: 'Resend code in {seconds}s',
     changeAction: 'Change phone number',
-    /**
-     * Replaces ErrorState's default title for `unauthorized`, which reads
-     * "Session expired" — accurate everywhere else in the app, but wrong here
-     * where no session exists yet and the only thing that can have expired is
-     * the code.
-     */
-    expiredTitle: 'Code expired',
   }),
 
   vendorLogin: Object.freeze({
@@ -95,17 +89,6 @@ export const AUTH_COPY = Object.freeze({
     submitHint: 'Signs you in to your vendor account',
     registerPrompt: 'New to Fixora?',
     registerAction: 'Register your business',
-    /**
-     * Replaces ErrorState's default title for `unauthorized`, which reads
-     * "Session expired". Correct elsewhere in the app, nonsense here: nobody is
-     * signed in yet, so nothing can have expired — the two credentials were
-     * simply not accepted.
-     *
-     * Says nothing about which of the two was wrong. The service does not
-     * distinguish an unknown number from a wrong code, precisely so vendors
-     * cannot be enumerated, and this title must not undo that.
-     */
-    failedTitle: 'Sign in failed',
   }),
 
   vendorRegistration: Object.freeze({
@@ -138,23 +121,17 @@ export const AUTH_COPY = Object.freeze({
 
   vendorOtp: Object.freeze({
     title: 'Verify your business number',
-    /** `{destination}` is replaced with the masked value the backend supplied. */
-    subtitle: 'Enter the code we sent to {destination}.',
     codeLabel: 'Verification code',
-    codePlaceholder: 'Enter the code',
-    submit: 'Verify',
     /**
      * Deliberately does not promise a sign in. Verifying the number activates
      * the business and issues an auth code; the session comes later, once that
      * code is confirmed (PROJECT_BIBLE.md section 7A.2).
      */
-    submitHint: 'Checks the code and activates your business',
+    codeHint: 'Checks the code automatically once you have entered every digit',
     resend: 'Resend code',
     /** `{seconds}` is replaced with the remaining cooldown. */
     resendIn: 'Resend code in {seconds}s',
     changeAction: 'Change registration details',
-    expiredTitle: 'Code expired',
-
   }),
 
   /**

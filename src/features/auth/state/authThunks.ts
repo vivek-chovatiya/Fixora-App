@@ -23,6 +23,7 @@ import {
 } from '@/features/auth/state/authSlice';
 import type { SessionPayload } from '@/features/auth/types';
 import { getService } from '@/shared/services/ServiceRegistry';
+import { duration } from '@/shared/theme';
 import { AppError } from '@/shared/types/error';
 
 const log = createLogger('authThunks');
@@ -37,11 +38,42 @@ type Dispatch = (action: unknown) => unknown;
  * Persists then publishes. Storage is written first so that an app killed at
  * this instant restarts signed in, rather than in a state memory believes and
  * the device does not.
+ *
+ * `publishAfterMs` schedules the dispatch instead of awaiting it, and returns.
+ *
+ * Publishing swaps the navigation tree synchronously, so it unmounts the screen
+ * that just verified something. Merely pausing before the dispatch would not
+ * help: the caller only learns it succeeded when this resolves, so the screen
+ * would still be told and unmounted on the same frame. Resolving first is what
+ * gives it a moment in which it knows it succeeded and is still mounted.
+ *
+ * The gap therefore sits between the write and the dispatch, never earlier. The
+ * session is durable for its whole duration: an app killed inside it restarts
+ * signed in, exactly as one killed a millisecond before it would. What waits is
+ * only when the rest of the application is told, and nothing can refuse a
+ * session that is already on disk.
  */
-async function establishSession(dispatch: Dispatch, session: SessionPayload): Promise<void> {
+async function establishSession(
+  dispatch: Dispatch,
+  session: SessionPayload,
+  publishAfterMs = 0,
+): Promise<void> {
   await getSessionStorage().write(session);
-  dispatch(signedIn(session));
-  log.info('Session established', { role: session.user.role });
+
+  const publish = () => {
+    dispatch(signedIn(session));
+    log.info('Session established', { role: session.user.role });
+  };
+
+  if (publishAfterMs > 0) {
+    // Deliberately not awaited. It fires whether or not the screen that started
+    // it is still there — the session exists either way, and a user who leaves
+    // mid-animation should still arrive signed in.
+    setTimeout(publish, publishAfterMs);
+    return;
+  }
+
+  publish();
 }
 
 /**
@@ -73,7 +105,10 @@ export async function signInCustomer(
   code: string,
 ): Promise<SessionPayload> {
   const session = await getService('auth').verifyCustomerOtp(phone, code);
-  await establishSession(dispatch, session);
+
+  // The code was checked on a screen showing the verification animation, so the
+  // publish waits for its verified state to have been seen.
+  await establishSession(dispatch, session, duration.verifiedHold);
   return session;
 }
 
@@ -89,6 +124,9 @@ export async function signInVendor(
   authCode: string,
 ): Promise<SessionPayload> {
   const session = await getService('auth').signInVendor(phone, authCode);
+
+  // No pause: this is a plain form with no verified state to hold on, and a
+  // delay with nothing on screen is just a slower sign in.
   await establishSession(dispatch, session);
   return session;
 }
@@ -108,7 +146,10 @@ export async function confirmVendorAuthCode(
   authCode: string,
 ): Promise<SessionPayload> {
   const session = await getService('auth').verifyVendorAuthCode(registrationId, authCode);
-  await establishSession(dispatch, session);
+
+  // Confirmation runs the same animation as the one-time code, and earns the
+  // same pause before the vendor application replaces it.
+  await establishSession(dispatch, session, duration.verifiedHold);
   return session;
 }
 

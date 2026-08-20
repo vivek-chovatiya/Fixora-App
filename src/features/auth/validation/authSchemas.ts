@@ -29,6 +29,18 @@ import { phoneSchema } from '@/shared/validation/phone';
 export const VENDOR_NAME_MAX_LENGTH = 60;
 export const VENDOR_BUSINESS_NAME_MAX_LENGTH = 80;
 
+/**
+ * Ceiling on the vendor auth code, in characters.
+ *
+ * Deliberately far above any code in use — issued codes are twelve characters —
+ * because this is a bound on absurdity, not a description of the format. The
+ * code is opaque by contract, so a tight limit would be the app inventing a
+ * shape it was never promised and rejecting valid codes the day generation
+ * changes. Wide enough to be wrong about nothing; narrow enough that a pasted
+ * document is refused.
+ */
+export const VENDOR_AUTH_CODE_MAX_LENGTH = 64;
+
 /** Customer sign in, step one: the number a one-time code is sent to. */
 export const customerPhoneSchema = z.object({
   phone: phoneSchema,
@@ -101,7 +113,16 @@ export type VendorRegistrationForm = z.infer<typeof vendorRegistrationSchema>;
  * a valid code the day generation changes. Whether a code is the right one is
  * never the app's decision.
  */
-const vendorAuthCodeField = z.string().trim().min(1, 'Enter your authentication code.');
+const vendorAuthCodeField = z
+  .string()
+  .trim()
+  .min(1, 'Enter your authentication code.')
+  .max(
+    VENDOR_AUTH_CODE_MAX_LENGTH,
+    // Says the entry is wrong, not that the code has a length. A message naming
+    // the ceiling would teach a format the backend never promised.
+    'That does not look like an authentication code. Please check it.',
+  );
 
 /** Confirmation, during onboarding, that the vendor saved the code they were shown. */
 export const vendorAuthCodeSchema = z.object({
