@@ -39,6 +39,14 @@ export interface ButtonProps {
   /** Stretches to the container width. Default is intrinsic width. */
   fullWidth?: boolean;
   icon?: IconName;
+  /**
+   * Which side of the label the icon sits on.
+   *
+   * Leading is the default and is right for an icon that names the action. A
+   * trailing icon is a direction rather than a name — an arrow that says this
+   * button moves you on — so it reads after the words, not before them.
+   */
+  iconPosition?: 'leading' | 'trailing';
   accessibilityHint?: string;
   style?: StyleProp<ViewStyle>;
 }
@@ -56,11 +64,23 @@ const VARIANTS: Readonly<Record<ButtonVariant, VariantColors>> = {
     backgroundPressed: 'primaryPressed',
     label: 'onPrimary',
   },
+  /**
+   * Filled, not outlined.
+   *
+   * It used to be a white plate with a border, which on a white card was a
+   * rectangle drawn around some words — the outline was doing all the work of
+   * saying "this is a control", and doing it faintly. A tonal fill says it
+   * without a line, and reads as quieter than the primary button rather than as
+   * a different kind of thing.
+   *
+   * Pressed goes to `borderStrong` rather than a step of the surface scale: in
+   * dark mode `border` and `surfaceAlt` are the same value, so a press would
+   * have shown nothing at all.
+   */
   secondary: {
-    background: 'surface',
-    backgroundPressed: 'surfaceAlt',
+    background: 'surfaceAlt',
+    backgroundPressed: 'borderStrong',
     label: 'textPrimary',
-    border: 'borderStrong',
   },
   danger: {
     background: 'danger',
@@ -77,6 +97,7 @@ function ButtonComponent({
   disabled = false,
   fullWidth = false,
   icon,
+  iconPosition = 'leading',
   accessibilityHint,
   style,
 }: ButtonProps) {
@@ -98,12 +119,20 @@ function ButtonComponent({
       {
         backgroundColor:
           theme.colors[pressed && !isInactive ? palette.backgroundPressed : palette.background],
-        borderRadius: theme.radius.md,
-        paddingVertical: theme.spacing.md,
-        paddingHorizontal: theme.spacing.lg,
-        // Accessibility floor for touch targets (PROJECT_BIBLE.md section 46).
-        minHeight: theme.hitSlop.minTarget,
-        borderWidth: palette.border ? StyleSheet.hairlineWidth * 2 : 0,
+        // A capsule, matched to the fields above it. 12dp was already a shape
+        // rather than a rectangle with the corners knocked off, but a 12dp
+        // button under a capsule field is the mismatch that made a form read as
+        // parts — and at a 52dp control height the two radii are far enough
+        // apart to see side by side.
+        borderRadius: theme.radius.full,
+        paddingVertical: theme.spacing.sm,
+        // Wider than a rectangle needs, for the same reason the field is: a
+        // capsule curves away from its own label.
+        paddingHorizontal: theme.spacing.xxl,
+        // The shared control height, not the accessibility floor. Both clear
+        // the floor; this one also matches the field above it.
+        minHeight: theme.controlHeight,
+        borderWidth: palette.border ? theme.borderWidth.thin : 0,
         borderColor: palette.border ? theme.colors[palette.border] : undefined,
         opacity: isInactive ? theme.opacity.disabled : 1,
       },
@@ -126,10 +155,17 @@ function ButtonComponent({
         <ActivityIndicator size="small" color={theme.colors[palette.label]} />
       ) : (
         <View style={[styles.content, { gap: theme.spacing.sm }]}>
-          {icon ? <Icon name={icon} size="sm" color={palette.label} /> : null}
-          <Text variant="label" color={palette.label}>
+          {icon && iconPosition === 'leading' ? (
+            <Icon name={icon} size="md" color={palette.label} />
+          ) : null}
+
+          <Text variant="button" color={palette.label} numberOfLines={1}>
             {label}
           </Text>
+
+          {icon && iconPosition === 'trailing' ? (
+            <Icon name={icon} size="md" color={palette.label} />
+          ) : null}
         </View>
       )}
     </Pressable>

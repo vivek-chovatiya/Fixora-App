@@ -11,7 +11,7 @@
  * screen cannot wire "next" on the keyboard without it.
  */
 
-import React, { forwardRef, memo, useCallback, useState } from 'react';
+import React, { forwardRef, memo, useCallback, useState, type ReactNode } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -22,6 +22,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { FieldLabel } from '@/shared/components/FieldLabel';
 import { Icon } from '@/shared/components/Icon';
 import { Text } from '@/shared/components/Text';
 import { useTheme, type IconName } from '@/shared/theme';
@@ -40,6 +41,15 @@ export interface InputProps extends Omit<TextInputProps, 'style' | 'placeholderT
   /** Guidance shown while there is no error. */
   helperText?: string;
   leftIcon?: IconName;
+  /**
+   * Content pinned inside the field, ahead of the value.
+   *
+   * For a fixed part of the input that is not typed — a dialling code, a
+   * currency, a unit. It is divided off from the value so the two do not read
+   * as one string, and it is not a control: anything pressable belongs in
+   * `rightIcon` or outside the field.
+   */
+  prefix?: ReactNode;
   rightIcon?: IconName;
   onRightIconPress?: () => void;
   /**
@@ -59,6 +69,7 @@ const InputComponent = forwardRef<TextInput, InputProps>(function InputBase(
     error,
     helperText,
     leftIcon,
+    prefix,
     rightIcon,
     onRightIconPress,
     rightIconAccessibilityLabel,
@@ -94,19 +105,39 @@ const InputComponent = forwardRef<TextInput, InputProps>(function InputBase(
   );
 
   // Error outranks focus: a focused invalid field must still read as invalid.
+  const isActive = hasError || isFocused;
+
   const borderColor = hasError
     ? theme.colors.danger
     : isFocused
       ? theme.colors.primary
       : theme.colors.border;
 
+  /**
+   * The line thickens as well as changing colour.
+   *
+   * Colour alone is not a state change anyone reliably notices in the corner of
+   * their eye while typing, and on the error case it would be the only signal
+   * separating a valid field from an invalid one — which PROJECT_BIBLE.md
+   * section 46 does not allow to be carried by colour on its own.
+   */
+  const fieldBorderWidth = isActive ? theme.borderWidth.thick : theme.borderWidth.thin;
+
+  /**
+   * Label and message are indented to where the text inside the field starts.
+   *
+   * A rounded rectangle could get away with them flush to the column edge. A
+   * capsule cannot: its content is inset by the radius, so a label at x=0 sits
+   * visibly to the left of the value it names.
+   */
+  const textInset = { paddingHorizontal: theme.spacing.xl };
+
   return (
     <View style={[{ gap: theme.spacing.xs }, containerStyle]}>
       {label ? (
-        <Text variant="label" color={editable ? 'textSecondary' : 'textDisabled'}>
+        <FieldLabel required={required} disabled={!editable} style={textInset}>
           {label}
-          {required ? ' *' : ''}
-        </Text>
+        </FieldLabel>
       ) : null}
 
       <View
@@ -114,14 +145,37 @@ const InputComponent = forwardRef<TextInput, InputProps>(function InputBase(
           styles.field,
           {
             borderColor,
-            borderRadius: theme.radius.md,
+            borderWidth: fieldBorderWidth,
+            // A capsule, and matched to the button beneath it. Two different
+            // shapes stacked is what made a form read as parts rather than as
+            // one column, so the field and its submit button share a radius as
+            // well as a height.
+            borderRadius: theme.radius.full,
             backgroundColor: editable ? theme.colors.surface : theme.colors.surfaceAlt,
-            paddingHorizontal: theme.spacing.md,
-            gap: theme.spacing.sm,
-            minHeight: theme.hitSlop.minTarget,
+            // Wider than a rectangle would need. A capsule curves away from its
+            // own content, so text at a rectangle's padding looks like it is
+            // leaning on the end cap.
+            paddingHorizontal: theme.spacing.xl,
+            gap: theme.spacing.md,
+            // The shared control height, so a field and its submit button are
+            // the same size rather than each sized to its own minimum.
+            minHeight: theme.controlHeight,
           },
         ]}>
         {leftIcon ? <Icon name={leftIcon} size="md" color="textTertiary" /> : null}
+
+        {prefix ? (
+          <>
+            {/*
+              Ruled off on both sides, so the fixed part and the typed part read
+              as two things. Without a rule "+91" and the number run together
+              into one string that the user then tries to edit.
+            */}
+            {leftIcon ? <FieldDivider /> : null}
+            {prefix}
+            <FieldDivider />
+          </>
+        ) : null}
 
         <TextInput
           ref={ref}
@@ -158,11 +212,11 @@ const InputComponent = forwardRef<TextInput, InputProps>(function InputBase(
       </View>
 
       {hasError ? (
-        <Text variant="caption" color="danger">
+        <Text variant="caption" color="danger" style={textInset}>
           {error}
         </Text>
       ) : helperText ? (
-        <Text variant="caption" color="textTertiary">
+        <Text variant="caption" color="textTertiary" style={textInset}>
           {helperText}
         </Text>
       ) : null}
@@ -170,11 +224,36 @@ const InputComponent = forwardRef<TextInput, InputProps>(function InputBase(
   );
 });
 
+/**
+ * The rule between a field's fixed part and its value.
+ *
+ * Inset from the pill's ends rather than run full height: a line touching a
+ * rounded edge reads as a crack in the shape.
+ */
+function FieldDivider() {
+  const theme = useTheme();
+
+  return (
+    <View
+      style={[
+        styles.divider,
+        {
+          width: theme.borderWidth.thin,
+          marginVertical: theme.spacing.sm,
+          backgroundColor: theme.colors.border,
+        },
+      ]}
+    />
+  );
+}
+
 const styles = StyleSheet.create({
   field: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth * 2,
+  },
+  divider: {
+    alignSelf: 'stretch',
   },
   input: {
     flex: 1,

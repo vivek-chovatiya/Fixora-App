@@ -38,6 +38,8 @@ export {
 
 export { ControlledInput, type ControlledInputProps } from './ControlledInput';
 
+export { FieldLabel, type FieldLabelProps } from './FieldLabel';
+
 export { Screen, type ScreenProps } from './Screen';
 export { Card, type CardProps } from './Card';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
@@ -55,3 +57,4 @@ export { useErrorToast } from './useErrorToast';
 
 export { StatusBadge, type StatusBadgeProps, type StatusTone } from './StatusBadge';
 export { Avatar, getInitials, type AvatarProps, type AvatarSize } from './Avatar';
+export { BrandMark, type BrandMarkProps, type BrandMarkSize } from './BrandMark';
