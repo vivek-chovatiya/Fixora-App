@@ -61,6 +61,31 @@ export const duration = Object.freeze({
   toast: 4000,
 });
 
+/**
+ * Spring physics, for motion that travels rather than transitions.
+ *
+ * Kept apart from `duration` because a spring has no duration to state: it has
+ * a stiffness and a resistance, and the time it takes follows from them. The
+ * settling time is quoted in each entry so the two systems can be compared when
+ * choosing between them.
+ *
+ * Everything else in this file is a curve run over a fixed time, which is right
+ * for a thing changing state in place. A control that moves across the screen
+ * reads as an object, and an object that arrives on a fixed schedule reads as a
+ * slide rather than as something with weight.
+ */
+export const spring = Object.freeze({
+  /**
+   * The active tab button crossing the bar.
+   *
+   * Damping ratio 0.75 against a natural frequency of 13.4 rad/s: fast off the
+   * mark, roughly 400ms to settle, and an overshoot under 3% — enough to read as
+   * settling rather than stopping, and far short of a bounce. The design
+   * language is restrained, and a tab bar is not where to spend that.
+   */
+  travel: Object.freeze({ damping: 20, stiffness: 180, mass: 1 }),
+});
+
 export const easing = Object.freeze({
   standard: Easing.bezier(0.2, 0, 0, 1),
   decelerate: Easing.out(Easing.cubic),
@@ -77,6 +102,7 @@ export const easing = Object.freeze({
 export const animation = Object.freeze({
   duration,
   easing,
+  spring,
 });
 
 export type DurationToken = keyof typeof duration;

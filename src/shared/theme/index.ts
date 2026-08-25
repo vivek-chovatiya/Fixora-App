@@ -19,6 +19,7 @@ export { ThemeProvider, useTheme } from './ThemeProvider';
 export { type ColorTokens, type ColorTone, lightColors, darkColors } from './colors';
 export { spacing, screenPadding, hitSlop, type SpacingToken } from './spacing';
 export { radius, type RadiusToken } from './radius';
+export { borderWidth, type BorderWidthToken } from './borderWidth';
 export { elevation, type ElevationToken } from './elevation';
 export { createShadows, type ShadowToken, type ShadowTokens } from './shadows';
 export { opacity, type OpacityToken } from './opacity';

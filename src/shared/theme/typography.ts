@@ -24,6 +24,7 @@ export const fontSize = Object.freeze({
   xxl: 20,
   xxxl: 24,
   display: 30,
+  hero: 34,
 });
 
 export const fontWeight = Object.freeze({
@@ -42,6 +43,7 @@ export const lineHeight = Object.freeze({
   xxl: 28,
   xxxl: 32,
   display: 38,
+  hero: 42,
 });
 
 export const letterSpacing = Object.freeze({
@@ -51,12 +53,15 @@ export const letterSpacing = Object.freeze({
 });
 
 export type TypographyVariant =
+  | 'hero'
   | 'display'
   | 'h1'
   | 'h2'
   | 'h3'
   | 'body'
   | 'bodyStrong'
+  | 'button'
+  | 'subtitle'
   | 'label'
   | 'caption'
   | 'overline';
@@ -68,6 +73,22 @@ type VariantStyle = Pick<
 
 export const typographyVariants: Readonly<Record<TypographyVariant, VariantStyle>> =
   Object.freeze({
+    /**
+     * The largest thing on a page, and the only thing at this size.
+     *
+     * Added when the filled brand band came off the auth screens. That band was
+     * carrying the shape of those screens; without it the heading has to, and
+     * `display` could not, because `display` is the size the wordmark is set at
+     * on the splash. A page heading and a brand wordmark reading as the same
+     * thing is what made the redesigned screens look like the old ones with the
+     * colour removed.
+     */
+    hero: {
+      fontSize: fontSize.hero,
+      lineHeight: lineHeight.hero,
+      fontWeight: fontWeight.bold,
+      letterSpacing: letterSpacing.tight,
+    },
     display: {
       fontSize: fontSize.display,
       lineHeight: lineHeight.display,
@@ -99,6 +120,33 @@ export const typographyVariants: Readonly<Record<TypographyVariant, VariantStyle
       fontSize: fontSize.md,
       lineHeight: lineHeight.md,
       fontWeight: fontWeight.medium,
+    },
+    /**
+     * The words inside a button, and nothing else.
+     *
+     * Buttons used `label`, which is 12px — sized for the caption above a form
+     * field, not for the primary action of a screen. A button is the largest
+     * target on most screens and was carrying the smallest type on them.
+     *
+     * Semibold rather than medium: a filled button has no border to define it,
+     * so the weight of the word is part of what gives it presence.
+     */
+    button: {
+      fontSize: fontSize.lg,
+      lineHeight: lineHeight.lg,
+      fontWeight: fontWeight.semibold,
+    },
+    /**
+     * The supporting line under a heading.
+     *
+     * The scale had no regular weight at 16px at all, so supporting copy could
+     * only be `body` at 14 — which under a 34px heading reads as small print
+     * rather than as the sentence explaining it.
+     */
+    subtitle: {
+      fontSize: fontSize.lg,
+      lineHeight: lineHeight.lg,
+      fontWeight: fontWeight.regular,
     },
     label: {
       fontSize: fontSize.sm,

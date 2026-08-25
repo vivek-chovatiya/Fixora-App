@@ -20,6 +20,14 @@ export const icons = Object.freeze({
   forward: 'chevron-right',
   up: 'chevron-up',
   down: 'chevron-down',
+  /**
+   * Movement, where `forward` is position.
+   *
+   * A chevron points at what is next to it — the end of a row, the edge of a
+   * card. An arrow says the thing it sits on takes you somewhere, which is what
+   * a submit button does and what a chevron on one reads as slightly wrong.
+   */
+  arrowForward: 'arrow-right',
   close: 'close',
   menu: 'menu',
   more: 'dots-vertical',
@@ -32,6 +40,22 @@ export const icons = Object.freeze({
   profile: 'account-circle-outline',
   team: 'account-group-outline',
   reports: 'chart-bar',
+
+  /*
+   * Tabs — selected.
+   *
+   * A filled counterpart for every glyph the tab bars actually use, so the
+   * selected tab differs in shape and not only in colour. Colour alone fails
+   * PROJECT_BIBLE.md section 46: it is invisible to a monochrome display, to
+   * most colour-vision deficiencies, and in bright sunlight.
+   *
+   * Only the four real tabs have one. The rest of the group above appears in
+   * headers and buttons, where nothing is ever "selected".
+   */
+  homeSelected: 'home',
+  requestsSelected: 'clipboard-text',
+  profileSelected: 'account-circle',
+  teamSelected: 'account-group',
 
   // Actions
   search: 'magnify',

@@ -28,3 +28,16 @@ export const screenPadding = spacing.lg;
 export const hitSlop = Object.freeze({
   minTarget: 44,
 });
+
+/**
+ * Height of a button or a text field.
+ *
+ * Deliberately not `hitSlop.minTarget`. That is the floor below which a control
+ * is too small to hit reliably — a limit, not a design. Sizing every control to
+ * its own legal minimum is what made the forms feel cramped: correct, and
+ * visibly grudging about it.
+ *
+ * One value shared by buttons and inputs, so a field and the button under it are
+ * the same height and a form reads as one column rather than as parts.
+ */
+export const controlHeight = 52;
