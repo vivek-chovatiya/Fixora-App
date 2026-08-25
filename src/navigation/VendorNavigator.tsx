@@ -13,8 +13,10 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
+import { renderFloatingTabBar } from '@/navigation/components/FloatingTabBar';
 import { createPlaceholder } from '@/navigation/placeholders/PlaceholderScreen';
 import { createTabIcon } from '@/navigation/tabIcon';
+import { createTabScreenOptions } from '@/navigation/tabScreenOptions';
 import type { VendorTabParamList } from '@/navigation/types';
 import { useTheme } from '@/shared/theme';
 
@@ -31,16 +33,10 @@ export function VendorNavigator() {
   return (
     <Tab.Navigator
       initialRouteName="Dashboard"
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: theme.colors.primary,
-        tabBarInactiveTintColor: theme.colors.textTertiary,
-        tabBarStyle: {
-          backgroundColor: theme.colors.surface,
-          borderTopColor: theme.colors.border,
-        },
-        tabBarLabelStyle: theme.typography.variants.caption,
-      }}>
+      // Shared with the customer bar, so the two applications cannot drift apart —
+      // the presentation in `screenOptions`, and the bar drawing it.
+      tabBar={renderFloatingTabBar}
+      screenOptions={createTabScreenOptions(theme)}>
       <Tab.Screen
         name="Dashboard"
         component={DashboardScreen}
