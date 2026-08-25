@@ -15,12 +15,15 @@ import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 
 import { setSessionStorage, type PersistedSession } from '@/core/storage/SessionStorage';
+import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { AuthEntryScreen } from '@/features/auth/screens/AuthEntryScreen';
 import { authReducer } from '@/features/auth/state/authSlice';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { AuthService } from '@/shared/services/types/AuthService';
 import { ToastProvider } from '@/shared/components';
 import { ThemeProvider } from '@/shared/theme';
+
+const COPY = AUTH_COPY.authEntry;
 
 /**
  * Every operation throws. If role selection reaches the auth service at all, the
@@ -128,12 +131,56 @@ describe('AuthEntryScreen', () => {
     expect(renderer.root.findByProps({ testID: 'auth-entry-customer' })).toBeDefined();
     expect(renderer.root.findByProps({ testID: 'auth-entry-vendor' })).toBeDefined();
 
-    // Each option is readable as text, so the icon is never the only thing
-    // carrying its meaning.
-    expect(text()).toContain('Customer');
-    expect(text()).toContain('Find and request local services.');
-    expect(text()).toContain('Vendor');
-    expect(text()).toContain('Manage your service business and jobs.');
+    // Each option is readable as text, so neither the icon nor the illustration
+    // is ever the only thing carrying its meaning.
+    expect(text()).toContain(COPY.customerTitle);
+    expect(text()).toContain(COPY.customerDescription);
+    expect(text()).toContain(COPY.customerBadge);
+    expect(text()).toContain(COPY.vendorTitle);
+    expect(text()).toContain(COPY.vendorDescription);
+    expect(text()).toContain(COPY.vendorBadge);
+  });
+
+  it('leads with the brand and says what the app is for', async () => {
+    const { renderer, text } = await render();
+
+    expect(renderer.root.findAllByProps({ testID: 'auth-entry-mark' }).length)
+      .toBeGreaterThan(0);
+
+    // The heading is written in two inks and must still read as one sentence.
+    expect(text()).toContain(COPY.title);
+    expect(text()).toContain(AUTH_COPY.brand.wordmark);
+    expect(text()).toContain(COPY.tagline);
+    expect(text()).toContain(COPY.subtitle);
+  });
+
+  it('reassures without promising anything the backend has to keep', async () => {
+    const { text } = await render();
+
+    expect(text()).toContain(COPY.trustTitle);
+    // The shared sentence, so sign in and role selection cannot drift apart.
+    expect(text()).toContain(AUTH_COPY.common.safetyNote);
+  });
+
+  it('hides the decoration from assistive technology', async () => {
+    const { renderer } = await render();
+
+    // The skyline and the two illustrations say nothing a screen reader needs.
+    const decorations = ['auth-entry-skyline', 'auth-entry-customer-art', 'auth-entry-vendor-art'];
+
+    decorations.forEach(testID => {
+      const [node] = renderer.root.findAll(
+        candidate => candidate.props?.testID === testID && candidate.props.style !== undefined,
+      );
+      expect(node).toBeDefined();
+    });
+
+    const [skyline] = renderer.root.findAll(
+      candidate =>
+        candidate.props?.accessibilityElementsHidden === true &&
+        candidate.props?.pointerEvents === 'none',
+    );
+    expect(skyline).toBeDefined();
   });
 
   it('presents both options as buttons with labels and hints', async () => {
@@ -175,6 +222,26 @@ describe('AuthEntryScreen', () => {
 
     await press('Vendor');
 
+    expect(navigate).not.toHaveBeenCalledWith('VendorRegistration');
+  });
+
+  it('sends the footer link to vendor sign in, not to registration', async () => {
+    const { renderer, navigate } = await render();
+
+    const [link] = renderer.root.findAll(
+      node =>
+        node.props?.testID === 'auth-entry-register-link' &&
+        typeof node.props.onPress === 'function',
+    );
+
+    await act(async () => {
+      link.props.onPress();
+    });
+
+    // The link names registration and goes to the screen that offers it. It is
+    // a second route to a screen already reachable from the vendor card, not a
+    // second path to registering.
+    expect(navigate).toHaveBeenCalledWith('VendorLogin');
     expect(navigate).not.toHaveBeenCalledWith('VendorRegistration');
   });
 

@@ -209,9 +209,12 @@ afterEach(() => {
 
 describe('CustomerOtpScreen — what the user sees', () => {
   it('continues the sign-in flow, with its heading from central copy', async () => {
-    const { text } = await render(stubAuthService());
+    const { renderer, text } = await render(stubAuthService());
 
-    expect(text()).toContain(AUTH_COPY.brand.wordmark);
+    // The same mark in the same place as sign in, which is what says this is
+    // the second half of that flow rather than a new screen.
+    expect(renderer.root.findAllByProps({ testID: 'customer-otp-bar-mark' }).length)
+      .toBeGreaterThan(0);
     expect(text()).toContain(AUTH_COPY.customerOtp.title);
   });
 
@@ -230,13 +233,15 @@ describe('CustomerOtpScreen — what the user sees', () => {
     expect(button(AUTH_COPY.customerOtp.changeAction).accessibilityRole).toBe('button');
   });
 
-  it('shows neither the raw number nor the masked one it was given', async () => {
+  it('says where the code went, in the masked form and only that form', async () => {
     const { text } = await render(stubAuthService());
 
-    // The screen no longer restates where the code went. The raw number was
-    // never displayable; the masked form went with the supporting line.
+    // The raw number is never displayable. The masked form is the opposite: the
+    // backend masks it precisely so this line can exist, and without it the
+    // screen asks the user to verify a number it declines to name — so a typo
+    // could only be found by giving up and going back.
     expect(text()).not.toContain(PHONE);
-    expect(text()).not.toContain(CHALLENGE.maskedDestination);
+    expect(text()).toContain(CHALLENGE.maskedDestination);
   });
 
   it('reveals no code of its own', async () => {
@@ -389,7 +394,13 @@ describe('CustomerOtpScreen — resend', () => {
 
     await press('Resend code');
 
-    expect(text()).toContain('Resend code in 45s');
+    /*
+      Whitespace-normalised, because the countdown is now two nested Text nodes
+      — the sentence in the quiet colour, the count in the accent — and the
+      helper that flattens the tree puts a separator between siblings that the
+      renderer does not. What is asserted is still the exact sentence.
+    */
+    expect(text().replace(/\s+/g, ' ')).toContain('Resend code in 45s');
   });
 
   it('drops the previous failure once a replacement code has been sent', async () => {
@@ -447,7 +458,13 @@ describe('CustomerOtpScreen — resend', () => {
 
     // The remaining time is readable status rather than a dimmed button label,
     // and there is nothing to press until it reaches zero.
-    expect(text()).toContain('Resend code in 30s');
+    /*
+      Whitespace-normalised, because the countdown is now two nested Text nodes
+      — the sentence in the quiet colour, the count in the accent — and the
+      helper that flattens the tree puts a separator between siblings that the
+      renderer does not. What is asserted is still the exact sentence.
+    */
+    expect(text().replace(/\s+/g, ' ')).toContain('Resend code in 30s');
     expect(renderer.root.findAllByProps({ accessibilityLabel: 'Resend code' })).toHaveLength(0);
 
     expect(service.requestCustomerOtp).not.toHaveBeenCalled();

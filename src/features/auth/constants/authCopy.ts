@@ -29,21 +29,70 @@ export const AUTH_COPY = Object.freeze({
     tagline: 'Local services, requested in a few taps.',
   }),
 
+  /** Shared by more than one auth screen, so it is not owned by any of them. */
+  common: Object.freeze({
+    back: 'Back',
+    backHint: 'Returns to the previous screen',
+    /**
+     * Reassurance, not a claim about security controls.
+     *
+     * Deliberately says nothing about encryption, storage or compliance: the
+     * app has no way to know what the backend does, and a promise made in the
+     * interface is one the product then has to keep.
+     *
+     * Shared rather than repeated: role selection and sign in both say it, and
+     * two copies of a sentence are two sentences to keep in step.
+     */
+    safetyNote: 'Your information is safe with us.',
+
+    /**
+     * A count of seconds, written short.
+     *
+     * Its own fragment because the countdown is drawn in two inks — the value in
+     * the accent, the sentence around it in the quiet colour — and a unit left
+     * in the sentence would be the one character of the number rendered in the
+     * wrong one. Keeping it here rather than in the component also keeps it
+     * translatable, for a language that abbreviates seconds differently.
+     */
+    secondsShort: '{seconds}s',
+  }),
+
   authEntry: Object.freeze({
-    /** The wordmark carries the product name, so the heading does not repeat it. */
-    title: 'Welcome',
+    /**
+     * The heading is written as two parts because the second is the brand.
+     *
+     * `brand.wordmark` supplies "Fixora", which is not a word to be translated
+     * and is the one string on the screen that must never change. Splitting it
+     * out also lets the product name carry the accent colour without slicing a
+     * translated sentence at a fixed index.
+     */
+    title: 'Welcome to',
+    tagline: 'Connect. Book. Get things done.',
     subtitle: 'Choose how you want to continue.',
+
     customerTitle: 'Customer',
-    customerDescription: 'Find and request local services.',
+    customerDescription: 'Find trusted local services and request help easily.',
+    /** The outcome, not the action — the card title already names the role. */
+    customerBadge: 'Get things done',
     customerHint: 'Continue as a customer',
+
     vendorTitle: 'Vendor',
-    vendorDescription: 'Manage your service business and jobs.',
+    vendorDescription: 'Manage your service business and grow with Fixora.',
+    vendorBadge: 'Grow your business',
     vendorHint: 'Continue as a vendor',
+
+    /** Paired with `common.safetyNote`, which sign in also shows. */
+    trustTitle: 'Safe. Reliable. Local.',
+
     /**
      * Points a new vendor at the one path to registration rather than adding a
-     * second entry point to this screen.
+     * second entry point to this screen. Registration is still reachable only
+     * from vendor sign in; what is tappable here goes to sign in itself, which
+     * the vendor card above already offers.
      */
-    registerNote: 'New vendors can register from vendor sign in.',
+    registerNote: 'New vendors can register from',
+    registerLink: 'vendor sign in',
+    registerLinkHint: 'Opens vendor sign in, where you can register a business',
   }),
 
   customerLogin: Object.freeze({
@@ -57,6 +106,15 @@ export const AUTH_COPY = Object.freeze({
 
   customerOtp: Object.freeze({
     title: 'Verify your number',
+    /**
+     * `{destination}` is replaced with the masked number the backend reports.
+     *
+     * "Verify your number" on its own never said which number, on a screen
+     * reached by typing one — so a typo could only be found by giving up and
+     * going back. The value has always been in the challenge; nothing rendered
+     * it.
+     */
+    sentTo: 'We sent a code to {destination}',
     codeLabel: 'Verification code',
     /**
      * Says what the missing button used to say by existing. Sighted users infer
@@ -65,8 +123,8 @@ export const AUTH_COPY = Object.freeze({
      */
     codeHint: 'Signs you in automatically once you have entered every digit',
     resend: 'Resend code',
-    /** `{seconds}` is replaced with the remaining cooldown. */
-    resendIn: 'Resend code in {seconds}s',
+    /** `{seconds}` is replaced with `common.secondsShort`, which carries the unit. */
+    resendIn: 'Resend code in {seconds}',
     changeAction: 'Change phone number',
   }),
 
@@ -121,6 +179,8 @@ export const AUTH_COPY = Object.freeze({
 
   vendorOtp: Object.freeze({
     title: 'Verify your business number',
+    /** `{destination}` is replaced with the masked number the backend reports. */
+    sentTo: 'We sent a code to {destination}',
     codeLabel: 'Verification code',
     /**
      * Deliberately does not promise a sign in. Verifying the number activates
@@ -129,8 +189,8 @@ export const AUTH_COPY = Object.freeze({
      */
     codeHint: 'Checks the code automatically once you have entered every digit',
     resend: 'Resend code',
-    /** `{seconds}` is replaced with the remaining cooldown. */
-    resendIn: 'Resend code in {seconds}s',
+    /** `{seconds}` is replaced with `common.secondsShort`, which carries the unit. */
+    resendIn: 'Resend code in {seconds}',
     changeAction: 'Change registration details',
   }),
 

@@ -15,29 +15,49 @@
  * sign in, which is the correct outcome — nothing they chose here follows them
  * past authentication.
  *
- * Registration is deliberately absent as an action: a new vendor reaches it from
- * VendorLogin, so there is one path to it rather than two. The footer note says
- * where it is without becoming a third thing to tap.
+ * Registration is still absent as an action. The footer names where it is and
+ * links to vendor sign in — the same destination the vendor card offers — so
+ * there is one path to registration rather than two.
+ *
+ * This is the only auth screen without the top bar. It has nothing to go back
+ * to, so the bar would hold a mark and nothing else; and the page is long
+ * enough to scroll, which the mark should do with it rather than staying
+ * pinned over a scrolling page.
  */
 
 import React, { useCallback } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
+import { RoleCard } from '@/features/auth/components/RoleCard';
 import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import type { AuthStackParamList } from '@/navigation/types';
-import { Card, Icon, Screen, Text } from '@/shared/components';
-import { useTheme, type IconName } from '@/shared/theme';
+import { BrandMark, Icon, Screen, Text } from '@/shared/components';
+import { useTheme } from '@/shared/theme';
 
 const COPY = AUTH_COPY.authEntry;
+
+/**
+ * The decorative skyline at the foot of the page.
+ *
+ * Relative rather than aliased, and required rather than imported: Metro's
+ * resolver is configured for source extensions, so `@/features/...` does not
+ * resolve an image. Cut to real alpha rather than shipped as the opaque crop it
+ * arrived as, so it composites onto the page instead of painting a pale slab
+ * across the bottom of the dark theme.
+ */
+const SKYLINE = require('../assets/city-skyline.png');
+
+/** The strip as drawn — wide and shallow. Height follows from the width. */
+const SKYLINE_ASPECT = 430 / 115;
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'AuthEntry'>;
 
 export function AuthEntryScreen({ navigation }: Props) {
   const theme = useTheme();
 
-  // Stable because Card is memoised: new function identities on every render
-  // would defeat that for no reason.
+  // Stable because RoleCard is memoised: new function identities on every
+  // render would defeat that for no reason.
   const goToCustomerLogin = useCallback(() => {
     navigation.navigate('CustomerLogin');
   }, [navigation]);
@@ -46,140 +66,222 @@ export function AuthEntryScreen({ navigation }: Props) {
     navigation.navigate('VendorLogin');
   }, [navigation]);
 
+  // Page padding lives on the sections rather than on Screen, because the
+  // skyline runs edge to edge and a padded page cannot let it.
+  const gutter = { paddingHorizontal: theme.screenPadding };
+
   return (
-    <Screen scrollable testID="auth-entry-screen">
-      <View
-        style={[
-          styles.body,
-          {
-            // Centres and caps the column, so the screen reads the same on a
-            // small phone and a tablet rather than stretching across one.
-            maxWidth: theme.maxContentWidth,
-          },
-        ]}>
-        {/*
-          The choice is centred in the space above the footer, and the footer
-          sits at the bottom. Centring everything together left the note
-          stranded mid-screen with a large void beneath it.
-        */}
-        <View style={[styles.main, { gap: theme.spacing.xxxl }]}>
-          <View style={{ gap: theme.spacing.xs }}>
-            <Text variant="display" color="primary">
+    <Screen
+      scrollable
+      padded={false}
+      contentContainerStyle={styles.content}
+      testID="auth-entry-screen">
+      <View style={[styles.body, { maxWidth: theme.maxContentWidth }]}>
+        <View
+          style={[
+            styles.masthead,
+            gutter,
+            { paddingTop: theme.spacing.xxl, gap: theme.spacing.sm },
+          ]}>
+          <BrandMark size="md" testID="auth-entry-mark" />
+
+          {/*
+            One heading, two inks. The product name is nested rather than
+            concatenated so the whole line is announced as a single header
+            instead of as two fragments — and so a translation can put "Fixora"
+            wherever its grammar needs it.
+          */}
+          <Text
+            variant="hero"
+            align="center"
+            accessibilityRole="header"
+            style={{ marginTop: theme.spacing.sm }}>
+            {COPY.title}{' '}
+            <Text variant="hero" color="primary">
               {AUTH_COPY.brand.wordmark}
             </Text>
-            <Text variant="h2">{COPY.title}</Text>
-            <Text variant="body" color="textSecondary">
-              {COPY.subtitle}
-            </Text>
-          </View>
+          </Text>
 
-          <View style={{ gap: theme.spacing.lg }}>
-            <RoleOption
-              icon="customer"
-              title={COPY.customerTitle}
-              description={COPY.customerDescription}
-              hint={COPY.customerHint}
-              onPress={goToCustomerLogin}
-              testID="auth-entry-customer"
-            />
+          <Text variant="subtitle" color="textSecondary" align="center">
+            {COPY.tagline}
+          </Text>
 
-            <RoleOption
-              icon="business"
-              title={COPY.vendorTitle}
-              description={COPY.vendorDescription}
-              hint={COPY.vendorHint}
-              onPress={goToVendorLogin}
-              testID="auth-entry-vendor"
-            />
+          <Text variant="body" color="textTertiary" align="center">
+            {COPY.subtitle}
+          </Text>
+        </View>
+
+        {/*
+          Tight enough to read as one question with two answers rather than as
+          two unrelated things.
+        */}
+        <View
+          style={[
+            gutter,
+            { gap: theme.spacing.md, marginTop: theme.spacing.xxxl },
+          ]}>
+          <RoleCard
+            tone="customer"
+            title={COPY.customerTitle}
+            description={COPY.customerDescription}
+            badge={COPY.customerBadge}
+            hint={COPY.customerHint}
+            onPress={goToCustomerLogin}
+            testID="auth-entry-customer"
+          />
+
+          <RoleCard
+            tone="vendor"
+            title={COPY.vendorTitle}
+            description={COPY.vendorDescription}
+            badge={COPY.vendorBadge}
+            hint={COPY.vendorHint}
+            onPress={goToVendorLogin}
+            testID="auth-entry-vendor"
+          />
+        </View>
+
+        {/*
+          Reassurance rather than a control. Not a Card: it is quieter than the
+          two things above it and must stay quieter, so it sits on the alternate
+          surface with no elevation of its own and nothing to press.
+        */}
+        <View
+          style={[
+            styles.trust,
+            gutter,
+            { marginTop: theme.spacing.xl },
+          ]}>
+          <View
+            style={[
+              styles.trustPanel,
+              {
+                backgroundColor: theme.colors.surfaceAlt,
+                borderRadius: theme.radius.xl,
+                padding: theme.spacing.lg,
+                gap: theme.spacing.md,
+              },
+            ]}>
+            <View
+              style={[
+                styles.trustGlyph,
+                {
+                  backgroundColor: theme.colors.primarySubtle,
+                  borderRadius: theme.radius.lg,
+                  width: theme.spacing.giant,
+                  height: theme.spacing.giant,
+                },
+              ]}>
+              <Icon name="verified" size="lg" color="primary" />
+            </View>
+
+            <View style={styles.trustText}>
+              <Text variant="bodyStrong">{COPY.trustTitle}</Text>
+              <Text variant="caption" color="textSecondary">
+                {AUTH_COPY.common.safetyNote}
+              </Text>
+            </View>
           </View>
         </View>
 
-        <Text variant="caption" color="textTertiary" align="center">
-          {COPY.registerNote}
-        </Text>
+        {/*
+          Local services, said without words. It takes the slack at the foot of
+          the page rather than being given a height of its own, which is what
+          stops it becoming a band the eye has to get past.
+
+          Inert and invisible to assistive technology: there is nothing here to
+          read out, and nothing to touch.
+        */}
+        <View
+          style={styles.skyline}
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants">
+          <Image
+            source={SKYLINE}
+            style={[styles.skylineImage, { aspectRatio: SKYLINE_ASPECT }]}
+            resizeMode="cover"
+            testID="auth-entry-skyline"
+          />
+        </View>
+
+        {/*
+          Padded off the artwork above it. The skyline is bottom-aligned in the
+          slack, so without this the ground line of the drawing runs straight
+          into the sentence and the text reads as part of the picture.
+        */}
+        <View
+          style={[
+            styles.footer,
+            gutter,
+            { paddingTop: theme.spacing.md, paddingBottom: theme.spacing.lg },
+          ]}>
+          <Text variant="caption" color="textSecondary" align="center">
+            {COPY.registerNote}{' '}
+            {/*
+              Nested in the sentence rather than placed under it, so the link is
+              read in the order it is meant: where registration is, then how to
+              get there. It goes to vendor sign in — the same place the card
+              above goes — so it adds a route to a screen the user can already
+              reach, not a second path to registration.
+            */}
+            <Text
+              variant="caption"
+              color="primary"
+              accessibilityRole="link"
+              accessibilityHint={COPY.registerLinkHint}
+              onPress={goToVendorLogin}
+              testID="auth-entry-register-link">
+              {COPY.registerLink}
+            </Text>
+            .
+          </Text>
+        </View>
       </View>
     </Screen>
   );
 }
 
-interface RoleOptionProps {
-  icon: IconName;
-  title: string;
-  description: string;
-  hint: string;
-  onPress: () => void;
-  testID: string;
-}
-
-/**
- * Local to this screen on purpose. Two options that differ only in their words
- * do not justify a shared component, and there is no second place in the app
- * that picks a role.
- *
- * Card supplies the surface, radius, shadow, pressed state and button role, so
- * none of that is restated here. Bordered as well as raised because a soft
- * shadow all but disappears against a dark background.
- */
-function RoleOption({ icon, title, description, hint, onPress, testID }: RoleOptionProps) {
-  const theme = useTheme();
-
-  return (
-    <Card
-      onPress={onPress}
-      bordered
-      accessibilityLabel={title}
-      accessibilityHint={hint}
-      testID={testID}>
-      <View style={[styles.option, { gap: theme.spacing.lg }]}>
-        <View
-          style={[
-            styles.iconTile,
-            {
-              backgroundColor: theme.colors.primarySubtle,
-              borderRadius: theme.radius.full,
-              // Sized from the touch-target floor so the row alone is already a
-              // comfortable target before the card's padding is counted.
-              width: theme.hitSlop.minTarget,
-              height: theme.hitSlop.minTarget,
-            },
-          ]}>
-          <Icon name={icon} size="lg" color="primary" />
-        </View>
-
-        <View style={[styles.optionText, { gap: theme.spacing.xxs }]}>
-          <Text variant="h3">{title}</Text>
-          <Text variant="body" color="textSecondary">
-            {description}
-          </Text>
-        </View>
-
-        {/* Affordance only — the title and description already carry the meaning. */}
-        <Icon name="forward" size="md" color="textTertiary" />
-      </View>
-    </Card>
-  );
-}
-
 const styles = StyleSheet.create({
+  content: {
+    // Grows past the viewport on a small phone rather than compressing, which
+    // is what keeps the cards their own size instead of the screen's.
+    flexGrow: 1,
+  },
   body: {
     flex: 1,
     // Fills a phone, caps on a tablet.
     width: '100%',
     alignSelf: 'center',
   },
-  main: {
-    flex: 1,
-    justifyContent: 'center',
+  masthead: {
+    alignItems: 'center',
   },
-  option: {
+  trust: {
+    width: '100%',
+  },
+  trustPanel: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  iconTile: {
+  trustGlyph: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  optionText: {
+  trustText: {
     flex: 1,
+  },
+  skyline: {
+    // Takes whatever is left between the trust panel and the footer, so the
+    // page has no void in it on a tall screen and no fight for space on a
+    // short one.
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  skylineImage: {
+    width: '100%',
+  },
+  footer: {
+    width: '100%',
   },
 });

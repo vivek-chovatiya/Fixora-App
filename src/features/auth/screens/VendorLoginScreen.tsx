@@ -28,6 +28,9 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 
+import { AuthCityscape } from '@/features/auth/components/AuthCityscape';
+import { AuthHeading } from '@/features/auth/components/AuthHeading';
+import { AuthTopBar } from '@/features/auth/components/AuthTopBar';
 import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { useVendorSignIn } from '@/features/auth/hooks/useAuth';
 import {
@@ -46,10 +49,12 @@ import {
   Text,
   useErrorToast,
 } from '@/shared/components';
-import { useTheme } from '@/shared/theme';
+import { spacing, useTheme } from '@/shared/theme';
 import { capPhoneInput, normalisePhone } from '@/shared/validation/phone';
 
 const COPY = AUTH_COPY.vendorLogin;
+
+
 
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'VendorLogin'>;
@@ -86,6 +91,10 @@ export function VendorLoginScreen({ navigation }: Props) {
     navigation.navigate('VendorRegistration');
   }, [navigation]);
 
+  const handleBack = useCallback(() => {
+    navigation.goBack();
+  }, [navigation]);
+
   // Retry is the submit button; both values survive the failure. The message
   // carries itself — "Those sign-in details were not recognised" needs no
   // heading, and says nothing about which of the two was wrong.
@@ -95,34 +104,31 @@ export function VendorLoginScreen({ navigation }: Props) {
     <Screen
       scrollable
       keyboardAvoiding
-      // Centring belongs to the scroll container rather than to a `flex: 1`
-      // child, which cannot grow past the viewport and so has nothing to scroll
+      // Anchored to the top rather than centred, matching role selection and
+      // customer sign in. The container still grows past the viewport and the
+      // child still claims no `flex: 1`, which is what keeps the form scrollable
       // once the keyboard shrinks the window.
       contentContainerStyle={styles.content}
+      header={<AuthTopBar onBack={handleBack} testID="vendor-login-bar" />}
+      // Page padding moved onto the form, because the skyline at the foot runs
+      // edge to edge and a padded page cannot let it.
+      padded={false}
       testID="vendor-login-screen">
       <View
         style={[
           styles.body,
           {
             gap: theme.spacing.xxxl,
+            paddingHorizontal: theme.screenPadding,
             // The same cap the rest of authentication uses.
             maxWidth: theme.maxContentWidth,
           },
         ]}>
-        {/*
-          The same wordmark treatment as role selection and customer sign in.
-          A returning vendor arrives here by the same route a customer takes to
-          their own sign in, and should not find a differently branded screen.
-        */}
-        <View style={{ gap: theme.spacing.xs }}>
-          <Text variant="display" color="primary">
-            {AUTH_COPY.brand.wordmark}
-          </Text>
-          <Text variant="h2">{COPY.title}</Text>
-          <Text variant="body" color="textSecondary">
-            {COPY.subtitle}
-          </Text>
-        </View>
+        <AuthHeading
+          title={COPY.title}
+          subtitle={COPY.subtitle}
+          testID="vendor-login-heading"
+        />
 
         <View style={{ gap: theme.spacing.lg }}>
           <ControlledInput
@@ -187,13 +193,42 @@ export function VendorLoginScreen({ navigation }: Props) {
           />
         </View>
       </View>
+
+      {/*
+        The same foot as customer sign in, so the two halves of authentication
+        read as one product. It takes the slack under the form rather than a
+        height of its own, which is what lets it collapse when the keyboard
+        shrinks the window instead of pushing the submit button off-screen.
+      */}
+      <View style={styles.foot} pointerEvents="none">
+        <AuthCityscape testID="vendor-login-cityscape" />
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   content: {
-    justifyContent: 'center',
+    // No `justifyContent`: `flexGrow: 1` from Screen still lets this grow past
+    // the viewport, so the content scrolls under the keyboard while starting
+    // at the top of the screen rather than the middle of it.
+    /*
+      Measured against the approved render rather than picked.
+
+      At `xl` the whole content column sat about 18dp high of the reference —
+      every internal gap matched, so the only thing out was where the column
+      began. This is that gap, closed.
+    */
+    paddingTop: spacing.huge,
+  },
+  foot: {
+    // Flexes so the artwork sits at the bottom of whatever is left. It cannot
+    // push the form: a scroll container's child with `flex: 1` collapses before
+    // it overflows, which is what keeps the submit button reachable when the
+    // keyboard shrinks the window.
+    flex: 1,
+    justifyContent: 'flex-end',
+    width: '100%',
   },
   body: {
     // Deliberately no `flex: 1` — see the note on contentContainerStyle above.

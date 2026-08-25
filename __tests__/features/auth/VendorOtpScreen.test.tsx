@@ -292,10 +292,11 @@ function captureLogs() {
 }
 
 describe('VendorOtpScreen — what the vendor sees', () => {
-  it('leads with the wordmark, under its own vendor heading', async () => {
-    const { text } = await render(stubAuthService());
+  it('leads with the mark, under its own vendor heading', async () => {
+    const { renderer, text } = await render(stubAuthService());
 
-    expect(text()).toContain(AUTH_COPY.brand.wordmark);
+    expect(renderer.root.findAllByProps({ testID: 'vendor-otp-bar-mark' }).length)
+      .toBeGreaterThan(0);
     expect(text()).toContain(AUTH_COPY.vendorOtp.title);
 
     // Shares the customer screen's shape, not its words: this step verifies a
@@ -329,12 +330,13 @@ describe('VendorOtpScreen — what the vendor sees', () => {
 });
 
 describe('VendorOtpScreen — the one-time code step', () => {
-  it('restates neither the raw number nor the masked one', async () => {
+  it('names the destination in its masked form, and never the raw number', async () => {
     const { text, renderer } = await render(stubAuthService());
 
-    // The supporting line went, and with it the only place the destination
-    // appeared. The raw number was never displayable in the first place.
-    expect(text()).not.toContain(CHALLENGE.maskedDestination);
+    // The vendor typed this number on the previous screen and is now being
+    // asked to prove it. Naming it — masked, as the backend supplies it — is
+    // what lets a typo be caught here rather than after the code never arrives.
+    expect(text()).toContain(CHALLENGE.maskedDestination);
     expect(text()).not.toContain(VENDOR_PHONE);
     expect(renderer.root.findByProps({ testID: 'vendor-otp-code' }).props.value).toBe('');
   });
@@ -419,7 +421,13 @@ describe('VendorOtpScreen — the one-time code step', () => {
 
     // The remaining time is shown as readable status, and there is no resend
     // control to press until it reaches zero.
-    expect(text()).toContain('Resend code in 30s');
+    /*
+      Whitespace-normalised, because the countdown is now two nested Text nodes
+      — the sentence in the quiet colour, the count in the accent — and the
+      helper that flattens the tree puts a separator between siblings that the
+      renderer does not. What is asserted is still the exact sentence.
+    */
+    expect(text().replace(/\s+/g, ' ')).toContain('Resend code in 30s');
     expect(renderer.root.findAllByProps({ accessibilityLabel: 'Resend code' })).toHaveLength(0);
 
     expect(service.requestVendorOtp).not.toHaveBeenCalled();

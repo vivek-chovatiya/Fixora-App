@@ -18,6 +18,7 @@ import { Pressable, StyleSheet, View, type PressableStateCallbackType } from 're
 
 import { DynamicIcon, Icon } from '@/shared/components/Icon';
 import { ErrorState } from '@/shared/components/ErrorState';
+import { FieldLabel } from '@/shared/components/FieldLabel';
 import { Loader } from '@/shared/components/Loader';
 import { Text } from '@/shared/components/Text';
 import { useServiceQuery } from '@/shared/hooks/useServiceQuery';
@@ -27,6 +28,8 @@ import { useTheme } from '@/shared/theme';
 
 export interface ServiceCategoryFieldProps {
   label: string;
+  /** Marks the label required, the same way Input does. */
+  required?: boolean;
   /** Selected category identifiers. */
   value: string[];
   onChange: (categoryIds: string[]) => void;
@@ -38,6 +41,7 @@ export interface ServiceCategoryFieldProps {
 
 function ServiceCategoryFieldComponent({
   label,
+  required,
   value,
   onChange,
   error,
@@ -66,9 +70,12 @@ function ServiceCategoryFieldComponent({
 
   return (
     <View style={{ gap: theme.spacing.sm }} testID={testID}>
-      <Text variant="label" color="textSecondary">
-        {label} *
-      </Text>
+      {/*
+        Not flush by accident: this label names a row of chips rather than the
+        inside of a capsule, so unlike a field label it has nothing to line up
+        with and stays at the column edge with the section heading above it.
+      */}
+      <FieldLabel required={required}>{label}</FieldLabel>
 
       {isLoading ? <Loader /> : null}
 

@@ -163,9 +163,40 @@ describe('CustomerLoginScreen', () => {
     const { renderer, text } = await render();
 
     expect(renderer.root.findByProps({ testID: 'customer-login-screen' })).toBeDefined();
-    expect(text()).toContain(AUTH_COPY.brand.wordmark);
+
+    // The mark, not the word. The top bar carries the logo alone — the wordmark
+    // beside it belonged to the filled brand panel this replaced, and printing
+    // "Fixora" above "Sign in" was two headings where the screen needs one.
+    expect(renderer.root.findAllByProps({ testID: 'customer-login-bar-mark' }).length)
+      .toBeGreaterThan(0);
     expect(text()).toContain(COPY.title);
     expect(text()).toContain(COPY.subtitle);
+  });
+
+  it('shows the dialling code without joining it to the number', async () => {
+    const { renderer, service, type, submit } = await render();
+
+    expect(renderer.root.findAllByProps({ testID: 'customer-login-dial-code' }).length)
+      .toBeGreaterThan(0);
+
+    await type('9876543210');
+    await submit();
+
+    // The code is shown beside the field and is not part of the value. What
+    // reaches the service is the digits the user typed, exactly as before it
+    // appeared — this is a display change, not a contract change.
+    expect(service.requestCustomerOtp).toHaveBeenCalledWith('9876543210');
+  });
+
+  it('carries the safety note over the artwork, as text', async () => {
+    const { renderer, text } = await render();
+
+    // Rendered rather than drawn. The supplied artwork had the sentence baked
+    // into its pixels, where it could not be translated, could not grow with
+    // the OS font size, and could not be read aloud.
+    expect(renderer.root.findAllByProps({ testID: 'customer-login-cityscape' }).length)
+      .toBeGreaterThan(0);
+    expect(text()).toContain(AUTH_COPY.common.safetyNote);
   });
 
   it('asks for a phone number and offers one way to continue', async () => {

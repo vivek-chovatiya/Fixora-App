@@ -177,11 +177,27 @@ describe('VendorLoginScreen — the form', () => {
     expect(text()).toContain('Vendor sign in');
   });
 
-  it('carries the same wordmark and heading as the rest of authentication', async () => {
-    const { text } = await render(stubAuthService());
+  it('carries the same mark and heading as the rest of authentication', async () => {
+    const { renderer, text } = await render(stubAuthService());
 
-    expect(text()).toContain(AUTH_COPY.brand.wordmark);
+    // The mark, not the word. The top bar carries the logo alone; "Fixora"
+    // appears on this screen only inside "New to Fixora?", which is copy about
+    // registering rather than branding, so the mark is what has to be checked.
+    expect(renderer.root.findAllByProps({ testID: 'vendor-login-bar-mark' }).length)
+      .toBeGreaterThan(0);
     expect(text()).toContain(AUTH_COPY.vendorLogin.title);
+  });
+
+  it('carries the safety note over the artwork, as text', async () => {
+    const { renderer, text } = await render(stubAuthService());
+
+    // The same foot as customer sign in. Rendered rather than drawn: the
+    // supplied artwork had the sentence baked into its pixels, where it could
+    // not be translated, could not grow with the OS font size, and could not be
+    // read aloud.
+    expect(renderer.root.findAllByProps({ testID: 'vendor-login-cityscape' }).length)
+      .toBeGreaterThan(0);
+    expect(text()).toContain(AUTH_COPY.common.safetyNote);
   });
 
   it('labels both fields and every action for assistive technology', async () => {

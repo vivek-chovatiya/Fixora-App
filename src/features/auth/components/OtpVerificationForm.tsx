@@ -29,18 +29,20 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 
 import { AppConfig } from '@/core/config/AppConfig';
-import { formatCopy } from '@/features/auth/constants/authCopy';
+import { AUTH_COPY, formatCopy } from '@/features/auth/constants/authCopy';
 import { VerificationCodeInput } from '@/features/auth/components/verification/VerificationCodeInput';
 import type { VerificationStatus } from '@/features/auth/components/verification/VerificationScene';
 import { otpSchema, type OtpForm } from '@/features/auth/validation/authSchemas';
 import { SecondaryButton, Text, useErrorToast } from '@/shared/components';
 import { useCountdown } from '@/shared/hooks/useCountdown';
 import type { OtpChallenge } from '@/shared/services/types/AuthService';
-import { useTheme } from '@/shared/theme';
+import { useTheme, type IconName } from '@/shared/theme';
 import type { AppError } from '@/shared/types/error';
 
-/** Copy each flow supplies. `resendIn` takes `{seconds}`. */
+/** Copy each flow supplies. `sentTo` takes `{destination}`, `resendIn` `{seconds}`. */
 export interface OtpFormCopy {
+  /** Names the masked destination the code went to. */
+  sentTo: string;
   codeLabel: string;
   /** Tells assistive technology that no confirming action is coming. */
   codeHint: string;
@@ -66,6 +68,14 @@ export interface OtpVerificationFormProps {
   /** Returns to wherever the destination was entered. */
   onChangeDestination: () => void;
   /**
+   * Names the change action with a glyph.
+   *
+   * A prop rather than copy, and supplied per flow, because the two flows go
+   * back to different things: one to a phone number, one to a registration
+   * form. An icon that named the wrong one would be worse than none.
+   */
+  changeIcon?: IconName;
+  /**
    * Called once the verified state has been on screen long enough to see.
    *
    * Callers that replace this screen on success should do it here rather than
@@ -86,6 +96,7 @@ export function OtpVerificationForm({
   onVerify,
   onResend,
   onChangeDestination,
+  changeIcon,
   onVerified,
   isVerifying,
   isResending,
@@ -104,6 +115,15 @@ export function OtpVerificationForm({
    * this component can show on its own rather than something it waits to be told.
    */
   const [isVerified, setIsVerified] = useState(false);
+
+  /**
+   * The masked destination currently in play.
+   *
+   * Held rather than read from the prop because a successful resend returns a
+   * fresh challenge, and the line naming where the code went has to name where
+   * the *latest* code went. Seeded from the challenge this attempt started from.
+   */
+  const [destination, setDestination] = useState(challenge.maskedDestination);
 
   // Every failure, from either operation, leaves as a toast.
   useErrorToast(error);
@@ -189,6 +209,14 @@ export function OtpVerificationForm({
     submitCode();
   }, [code, codeLength, isBusy, isVerified, submitCode]);
 
+  /**
+   * The countdown sentence, either side of where the count goes.
+   *
+   * `formatCopy` cannot be used for this line: it returns a string, and this one
+   * needs to be two colours.
+   */
+  const [resendBefore = '', resendAfter = ''] = copy.resendIn.split('{seconds}');
+
   const handleResendPress = useCallback(() => {
     void (async () => {
       const next = await onResend();
@@ -197,12 +225,25 @@ export function OtpVerificationForm({
         // A replacement may carry a different cooldown, so it comes from the
         // response rather than being assumed.
         startCooldown(next.resendAfterSeconds);
+        // And it may name a different destination. Taking it from the response
+        // for the same reason.
+        setDestination(next.maskedDestination);
       }
     })();
   }, [onResend, startCooldown]);
 
   return (
     <View style={{ gap: theme.spacing.lg }}>
+      {/*
+        Where the code went, which the heading above cannot say because it is
+        the same words on every attempt. The value is masked by the backend
+        before it ever reaches the app, so this shows enough to recognise a
+        number and not enough to learn one.
+      */}
+      <Text variant="body" color="textSecondary" testID={`${testIDPrefix}-destination`}>
+        {formatCopy(copy.sentTo, { destination })}
+      </Text>
+
       <Controller
         control={control}
         name="code"
@@ -243,7 +284,20 @@ export function OtpVerificationForm({
       <View style={[styles.resend, { minHeight: theme.hitSlop.minTarget }]}>
         {isCoolingDown ? (
           <Text variant="body" color="textSecondary" align="center">
-            {formatCopy(copy.resendIn, { seconds: secondsRemaining })}
+            {/*
+              Two inks, one sentence. The count is the only part that changes and
+              the only part worth returning to, so it carries the accent while
+              the words around it stay quiet.
+
+              Split on the placeholder rather than assembled from three strings:
+              a translation may put the count anywhere in the sentence, and this
+              keeps working wherever it lands.
+            */}
+            {resendBefore}
+            <Text variant="body" color="primary">
+              {formatCopy(AUTH_COPY.common.secondsShort, { seconds: secondsRemaining })}
+            </Text>
+            {resendAfter}
           </Text>
         ) : (
           // Disabled only while verifying, which is what stops a second request
@@ -261,6 +315,7 @@ export function OtpVerificationForm({
       <SecondaryButton
         fullWidth
         label={copy.changeAction}
+        icon={changeIcon}
         onPress={onChangeDestination}
         disabled={isBusy || isVerified}
       />

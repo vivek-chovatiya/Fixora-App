@@ -24,6 +24,10 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 
+import { AuthCityscape } from '@/features/auth/components/AuthCityscape';
+import { AuthHeading } from '@/features/auth/components/AuthHeading';
+import { AuthTopBar } from '@/features/auth/components/AuthTopBar';
+import { PhoneCountryPrefix } from '@/features/auth/components/PhoneCountryPrefix';
 import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { useRequestCustomerOtp } from '@/features/auth/hooks/useAuth';
 import { customerPhoneSchema, type CustomerPhoneForm } from '@/features/auth/validation/authSchemas';
@@ -33,13 +37,14 @@ import {
   PhoneInput,
   PrimaryButton,
   Screen,
-  Text,
   useErrorToast,
 } from '@/shared/components';
-import { useTheme } from '@/shared/theme';
+import { spacing, useTheme } from '@/shared/theme';
 import { capPhoneInput, normalisePhone } from '@/shared/validation/phone';
 
 const COPY = AUTH_COPY.customerLogin;
+
+
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'CustomerLogin'>;
 
@@ -84,43 +89,49 @@ export function CustomerLoginScreen({ navigation }: Props) {
     void onSubmit();
   }, [onSubmit]);
 
+  const handleBack = useCallback(() => {
+    navigation.goBack();
+  }, [navigation]);
+
   return (
     <Screen
       scrollable
       keyboardAvoiding
-      // Centring belongs to the scroll container, not to a `flex: 1` child.
-      // A child sized to the viewport cannot make the container taller than it,
-      // so once the keyboard shrinks the window the overflow is clipped with
-      // nothing to scroll — on a 360x640 device that hides the submit button.
-      // Centring here lets the container grow past the viewport and scroll.
+      // The mark and the way back. The back control was the affordance this
+      // stack never drew — the gesture and the hardware button already went
+      // there and nothing on the screen said so.
+      header={<AuthTopBar onBack={handleBack} testID="customer-login-bar" />}
+      // The content is anchored to the top rather than centred in the window.
+      // Centred, the brand and the single field it introduces hung in the
+      // middle of a tall screen with a void above and below; reading starts at
+      // the top, so the form does.
+      //
+      // What has not changed is where the sizing lives. The container grows and
+      // the child does not claim `flex: 1` — a child sized to the viewport
+      // cannot make the container taller than it, so once the keyboard shrinks
+      // the window the overflow would be clipped with nothing to scroll, which
+      // on a 360x640 device hides the submit button.
       contentContainerStyle={styles.content}
+      // Page padding moved onto the form, because the skyline at the foot runs
+      // edge to edge and a padded page cannot let it.
+      padded={false}
       testID="customer-login-screen">
       <View
         style={[
           styles.body,
           {
             gap: theme.spacing.xxxl,
+            paddingHorizontal: theme.screenPadding,
             // Same cap as role selection, so the column does not stretch across
             // a tablet and leave a form field a hand's width wide.
             maxWidth: theme.maxContentWidth,
           },
         ]}>
-        {/*
-          The wordmark repeats the treatment role selection uses, which is what
-          carries the brand on a stack with no header. The tagline is
-          deliberately absent: the heading and its supporting line already say
-          what this screen is for, and a third line of copy above a single field
-          is marketing rather than instruction.
-        */}
-        <View style={{ gap: theme.spacing.xs }}>
-          <Text variant="display" color="primary">
-            {AUTH_COPY.brand.wordmark}
-          </Text>
-          <Text variant="h2">{COPY.title}</Text>
-          <Text variant="body" color="textSecondary">
-            {COPY.subtitle}
-          </Text>
-        </View>
+        <AuthHeading
+          title={COPY.title}
+          subtitle={COPY.subtitle}
+          testID="customer-login-heading"
+        />
 
         <View style={{ gap: theme.spacing.lg }}>
           {/*
@@ -138,6 +149,10 @@ export function CustomerLoginScreen({ navigation }: Props) {
             label={COPY.phoneLabel}
             required
             placeholder={COPY.phonePlaceholder}
+            // Which country the app serves, stated in the field rather than
+            // assumed. Display only: it is not part of the value and never
+            // reaches the service.
+            prefix={<PhoneCountryPrefix testID="customer-login-dial-code" />}
             editable={!isSubmitting}
             returnKeyType="send"
             onSubmitEditing={handleSubmitPress}
@@ -147,11 +162,26 @@ export function CustomerLoginScreen({ navigation }: Props) {
           <PrimaryButton
             fullWidth
             label={COPY.submit}
+            // An arrow rather than a chevron, and trailing rather than
+            // leading: the words say what the button does and the arrow says
+            // that doing it moves you on. A chevron here would point at the
+            // button's own edge.
+            icon="arrowForward"
+            iconPosition="trailing"
             onPress={handleSubmitPress}
             isLoading={isSubmitting}
             accessibilityHint={COPY.submitHint}
           />
         </View>
+      </View>
+
+      {/*
+        Takes the slack under the form rather than a height of its own, so a
+        tall screen has no void in it and a short one — or one with the keyboard
+        open — gives the space back to the field and the button instead.
+      */}
+      <View style={styles.foot} pointerEvents="none">
+        <AuthCityscape testID="customer-login-cityscape" />
       </View>
     </Screen>
   );
@@ -159,7 +189,19 @@ export function CustomerLoginScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   content: {
-    justifyContent: 'center',
+    // Deliberately empty of `justifyContent`. `flexGrow: 1` from Screen still
+    // lets this grow past the viewport, which is what keeps the form scrollable
+    // under the keyboard; the content simply starts at the top of it.
+    paddingTop: spacing.xl,
+  },
+  foot: {
+    // Flexes so the artwork sits at the bottom of whatever is left. It cannot
+    // push the form: a scroll container's child with `flex: 1` collapses before
+    // it overflows, which is what keeps the submit button reachable when the
+    // keyboard shrinks the window.
+    flex: 1,
+    justifyContent: 'flex-end',
+    width: '100%',
   },
   body: {
     // Deliberately no `flex: 1` — see the note on contentContainerStyle above.

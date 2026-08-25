@@ -11,6 +11,7 @@
 import React from 'react';
 import ReactTestRenderer, { act, type ReactTestRendererJSON } from 'react-test-renderer';
 
+import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { VendorRegistrationScreen } from '@/features/auth/screens/VendorRegistrationScreen';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { AuthService, VendorRegistration } from '@/shared/services/types/AuthService';
@@ -158,6 +159,40 @@ describe('VendorRegistrationScreen — the form', () => {
     expect(renderer.root.findByProps({ testID: 'vendor-phone' })).toBeDefined();
     expect(renderer.root.findByProps({ testID: 'vendor-email' })).toBeDefined();
     expect(text()).toContain(CATEGORIES[0].name);
+  });
+
+  it('ends on the same foot as both sign-in screens', async () => {
+    const { renderer, text } = await render(stubAuthService());
+
+    // Registration was the one auth screen that stopped at a bare page. The
+    // artwork is decoration, but the sentence over it is not — it is rendered
+    // text, so it translates and scales with the user's type size.
+    expect(renderer.root.findByProps({ testID: 'vendor-registration-cityscape' })).toBeDefined();
+    expect(text()).toContain(AUTH_COPY.common.safetyNote);
+  });
+
+  it('keeps the artwork out of the way of anyone reading or touching the form', async () => {
+    const { renderer } = await render(stubAuthService());
+
+    const art = renderer.root.findByProps({ testID: 'vendor-registration-cityscape-art' });
+
+    expect(art.props.accessibilityElementsHidden).toBe(true);
+    expect(art.props.importantForAccessibility).toBe('no-hide-descendants');
+  });
+
+  it('marks the services field required the same way every other field is', async () => {
+    const { renderer } = await render(stubAuthService());
+
+    /*
+      The marker is the accent, not the asterisk. Rendered as plain text in the
+      label's own colour it was a character at the end of a word, and this was
+      the one required field on an eleven-field form you could not scan for.
+    */
+    const labels = renderer.root.findAll(
+      node => node.props?.children === ' *' && node.props?.color === 'primary',
+    );
+
+    expect(labels.length).toBeGreaterThanOrEqual(5);
   });
 
   it('says nothing about approval, review or waiting', async () => {

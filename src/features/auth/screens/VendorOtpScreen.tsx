@@ -29,6 +29,8 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { getClipboard } from '@/core/clipboard/Clipboard';
 import { createLogger } from '@/core/logger/Logger';
+import { AuthHeading } from '@/features/auth/components/AuthHeading';
+import { AuthTopBar } from '@/features/auth/components/AuthTopBar';
 import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { OtpVerificationForm } from '@/features/auth/components/OtpVerificationForm';
 import { VendorAuthCodeConfirmation } from '@/features/auth/components/VendorAuthCodeConfirmation';
@@ -40,11 +42,12 @@ import {
   useVerifyVendorOtp,
 } from '@/features/auth/hooks/useAuth';
 import type { AuthStackParamList } from '@/navigation/types';
-import { Screen, Text } from '@/shared/components';
+import { Screen } from '@/shared/components';
 import type { VendorAuthCode } from '@/shared/services/types/AuthService';
-import { useTheme } from '@/shared/theme';
+import { spacing, useTheme } from '@/shared/theme';
 
 const COPY = AUTH_COPY.vendorOtp;
+
 
 const log = createLogger('VendorOnboarding');
 
@@ -224,28 +227,30 @@ export function VendorOtpScreen({ route, navigation }: Props) {
     <Screen
       scrollable
       keyboardAvoiding
-      // Centring belongs to the scroll container rather than to a `flex: 1`
-      // child, which could not grow past the viewport and so clipped its
-      // overflow with nothing to scroll once the keyboard appeared.
+      // Anchored to the top, as the screen before it. The container still grows
+      // past the viewport and the child still claims no `flex: 1`, which is what
+      // keeps the code field reachable once the keyboard appears.
       contentContainerStyle={styles.content}
+      /*
+        The bar stays across all three steps; the heading belongs to the first
+        one only.
+
+        The vendor arrives here from registration and should read this as the
+        next step of it rather than a new place, so the bar cannot come and go
+        between steps. But the two steps after this one are the auth-code UI,
+        which titles itself — putting "Verify your business number" above a
+        screen showing an auth code would simply be wrong, and re-titling for
+        them would be redesigning them ahead of their turn.
+      */
+      header={<AuthTopBar testID="vendor-otp-bar" />}
       testID="vendor-otp-screen">
       <View
         style={[styles.body, { gap: theme.spacing.xs, maxWidth: theme.maxContentWidth }]}>
         {step === 'otp' ? (
-          <>
-            {/*
-              Wordmark and heading at the tightest spacing, as on every other
-              auth screen — the vendor arrives here from registration and should
-              read this as the next step of it rather than a new place.
-
-              They belong to this step rather than to the screen. The two steps
-              after it are the auth-code UI, which is its own task; giving them a
-              header here would be redesigning them ahead of it.
-            */}
-            <Text variant="display" color="primary">
-              {AUTH_COPY.brand.wordmark}
-            </Text>
-            <Text variant="h2">{COPY.title}</Text>
+          // Its own gap: the body's is tuned for the auth-code steps, and four
+          // points between a 34px heading and the form under it is not a gap.
+          <View style={{ gap: theme.spacing.xxxl }}>
+            <AuthHeading title={COPY.title} testID="vendor-otp-heading" />
 
             <OtpVerificationForm
               challenge={challenge}
@@ -257,9 +262,12 @@ export function VendorOtpScreen({ route, navigation }: Props) {
               isVerifying={isVerifyingOtp}
               isResending={isResending}
               error={verifyOtpError ?? resendError}
+              // This flow goes back to the registration form, not to a phone
+              // field, so it names that rather than borrowing the other's glyph.
+              changeIcon="edit"
               testIDPrefix="vendor-otp"
             />
-          </>
+          </View>
         ) : null}
 
         {step === 'authCodeDisplay' && authCode ? (
@@ -287,7 +295,10 @@ export function VendorOtpScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   content: {
-    justifyContent: 'center',
+    // No `justifyContent`: `flexGrow: 1` from Screen still lets this grow past
+    // the viewport, so the content scrolls under the keyboard while starting
+    // at the top of the screen rather than the middle of it.
+    paddingTop: spacing.xl,
   },
   body: {
     // Deliberately no `flex: 1` — see the note on contentContainerStyle above.

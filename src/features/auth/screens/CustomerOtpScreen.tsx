@@ -21,14 +21,18 @@ import React, { useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
+import { AuthCityscape } from '@/features/auth/components/AuthCityscape';
+import { AuthHeading } from '@/features/auth/components/AuthHeading';
+import { AuthTopBar } from '@/features/auth/components/AuthTopBar';
 import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { OtpVerificationForm } from '@/features/auth/components/OtpVerificationForm';
 import { useCustomerSignIn, useRequestCustomerOtp } from '@/features/auth/hooks/useAuth';
 import type { AuthStackParamList } from '@/navigation/types';
-import { Screen, Text } from '@/shared/components';
-import { useTheme } from '@/shared/theme';
+import { Screen } from '@/shared/components';
+import { spacing, useTheme } from '@/shared/theme';
 
 const COPY = AUTH_COPY.customerOtp;
+
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'CustomerOtp'>;
 
@@ -85,24 +89,39 @@ export function CustomerOtpScreen({ route, navigation }: Props) {
     <Screen
       scrollable
       keyboardAvoiding
-      // Centring belongs to the scroll container rather than to a `flex: 1`
-      // child, which could not grow past the viewport and so clipped its
-      // overflow with nothing to scroll once the keyboard appeared.
+      // Anchored to the top, as the screen before it. The container still grows
+      // past the viewport and the child still claims no `flex: 1`, which is what
+      // keeps the code field reachable once the keyboard appears.
       contentContainerStyle={styles.content}
+      /*
+        The same bar as sign in, because this is the second half of that flow
+        and should read as a continuation of it rather than a new place.
+
+        It carries the back control now. That is not a new way out — the
+        hardware back gesture and "Change phone number" have always led to the
+        same place — but it is the first one visible without reading to the
+        bottom of the screen, which is where a mistyped number is noticed.
+      */
+      header={<AuthTopBar onBack={changeNumber} testID="customer-otp-bar" />}
+      // Page padding moved onto the form, because the skyline at the foot runs
+      // edge to edge and a padded page cannot let it.
+      padded={false}
       testID="customer-otp-screen">
-      {/*
-        Wordmark, heading and supporting line form one group at the tightest
-        spacing, exactly as on sign in — this screen is the second half of that
-        flow and should read as a continuation of it rather than a new place.
-        The supporting line lives inside the form because the masked destination
-        it names is replaced by a successful resend.
-      */}
       <View
-        style={[styles.body, { gap: theme.spacing.xs, maxWidth: theme.maxContentWidth }]}>
-        <Text variant="display" color="primary">
-          {AUTH_COPY.brand.wordmark}
-        </Text>
-        <Text variant="h2">{COPY.title}</Text>
+        style={[
+          styles.body,
+          {
+            gap: theme.spacing.xxxl,
+            paddingHorizontal: theme.screenPadding,
+            maxWidth: theme.maxContentWidth,
+          },
+        ]}>
+        {/*
+          No subtitle: the supporting line names the masked destination, which a
+          successful resend replaces, so it belongs to the form that owns that
+          value rather than to the heading above it.
+        */}
+        <AuthHeading title={COPY.title} testID="customer-otp-heading" />
 
         <OtpVerificationForm
           challenge={challenge}
@@ -114,8 +133,23 @@ export function CustomerOtpScreen({ route, navigation }: Props) {
           isResending={isResending}
           // Only one can be in flight at a time, so they share one surface.
           error={verifyError ?? resendError}
+          // Names where the button goes back to. The vendor flow returns to a
+          // registration form and says so with its own glyph.
+          changeIcon="call"
           testIDPrefix="customer-otp"
         />
+      </View>
+
+      {/*
+        The same foot as sign in, so the two halves of the flow read as one
+        screen the user is moving through rather than two places.
+
+        It takes the slack under the form rather than a height of its own, which
+        is what lets it collapse when the keyboard opens instead of pushing the
+        code field off-screen — and on this screen the keyboard opens by itself.
+      */}
+      <View style={styles.foot} pointerEvents="none">
+        <AuthCityscape testID="customer-otp-cityscape" />
       </View>
     </Screen>
   );
@@ -123,7 +157,27 @@ export function CustomerOtpScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   content: {
-    justifyContent: 'center',
+    // No `justifyContent`: `flexGrow: 1` from Screen still lets this grow past
+    // the viewport, so the content scrolls under the keyboard while starting
+    // at the top of the screen rather than the middle of it.
+    /*
+      Measured against the reference and against the screens either side of it.
+
+      At `xl` the heading began about 50dp below the centre of the brand mark,
+      where sign in and registration both begin at 70 — so the one screen in the
+      middle of the flow crowded its own bar. `huge` is the value those screens
+      already use.
+    */
+    paddingTop: spacing.huge,
+  },
+  foot: {
+    // Flexes so the artwork sits at the bottom of whatever is left. A scroll
+    // container's child with `flex: 1` collapses before it overflows, which is
+    // what keeps the code field reachable once the keyboard has taken half the
+    // window.
+    flex: 1,
+    justifyContent: 'flex-end',
+    width: '100%',
   },
   body: {
     // Deliberately no `flex: 1` — see the note on contentContainerStyle above.
