@@ -14,6 +14,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 
+import { setOnboardingStorage } from '@/core/storage/OnboardingStorage';
 import { authReducer, sessionAbsent, signedIn, signedOut } from '@/features/auth/state/authSlice';
 import type { SessionPayload } from '@/features/auth/types';
 import { RootNavigator } from '@/navigation/RootNavigator';
@@ -41,6 +42,19 @@ const VENDOR_SESSION: SessionPayload = {
     role: 'vendor',
   },
 };
+
+/**
+ * These tests are about which application is mounted, not about the
+ * introduction, so onboarding is answered as already seen. Left unstubbed, the
+ * gate inside AuthNavigator would hold the splash and no navigator would appear.
+ */
+beforeEach(() => {
+  setOnboardingStorage({
+    hasCompletedOnboarding: jest.fn(async () => true),
+    setOnboardingCompleted: jest.fn(async () => undefined),
+    clear: jest.fn(async () => undefined),
+  });
+});
 
 async function render() {
   const store = configureStore({ reducer: { auth: authReducer } });

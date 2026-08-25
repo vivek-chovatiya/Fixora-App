@@ -23,6 +23,16 @@ jest.mock(
 );
 
 /**
+ * Permissions resolve through a native module, so importing the library at all
+ * fails under Jest. The library ships its own mock for exactly this; tests that
+ * care about a permission outcome register a stub PermissionService instead of
+ * driving this.
+ */
+jest.mock('react-native-permissions', () =>
+  require('react-native-permissions/mock'),
+);
+
+/**
  * `useSafeAreaInsets` throws rather than guessing when no provider sits above
  * it, which would make every tree containing a toast wrap itself for a reason
  * no test is about.

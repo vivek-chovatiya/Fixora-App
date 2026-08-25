@@ -8,6 +8,16 @@ require Pod::Executable.execute_command('node', ['-p',
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
+# react-native-permissions compiles only the handlers named here, so a
+# permission missing from this list is one the app cannot ask for at runtime.
+# It must stay in step with PermissionKind in PermissionService.ts.
+require_relative '../node_modules/react-native-permissions/scripts/setup'
+setup_permissions([
+  'Camera',
+  'LocationWhenInUse',
+  'Notifications',
+])
+
 linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
   Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green

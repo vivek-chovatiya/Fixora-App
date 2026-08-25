@@ -13,6 +13,7 @@
 
 import { AppConfig } from '@/core/config/AppConfig';
 import { createLogger } from '@/core/logger/Logger';
+import { DevicePermissionService } from '@/shared/services/device/DevicePermissionService';
 import { MockAuthService } from '@/shared/services/mock/MockAuthService';
 import { MockCategoryService } from '@/shared/services/mock/MockCategoryService';
 import { MockImageService } from '@/shared/services/mock/MockImageService';
@@ -21,6 +22,7 @@ import type { AuthService } from '@/shared/services/types/AuthService';
 import type { CategoryService } from '@/shared/services/types/CategoryService';
 import type { ImageService } from '@/shared/services/types/ImageService';
 import type { NotificationService } from '@/shared/services/types/NotificationService';
+import type { PermissionService } from '@/shared/services/types/PermissionService';
 
 const log = createLogger('ServiceRegistry');
 
@@ -29,6 +31,12 @@ export interface ServiceMap {
   category: CategoryService;
   notification: NotificationService;
   image: ImageService;
+  /**
+   * Device capability rather than a backend one, which is why it is registered
+   * outside the mock/live switch below. A camera permission does not become
+   * real when the API does.
+   */
+  permission: PermissionService;
 }
 
 export type ServiceKey = keyof ServiceMap;
@@ -59,6 +67,11 @@ export function getService<K extends ServiceKey>(key: K): ServiceMap[K] {
  */
 export function configureServices(): void {
   registry.clear();
+
+  // Registered in both branches on purpose. Everything below this line is a
+  // backend service and follows `useMockServices`; permissions are the device's
+  // answer either way, and a mock one would prompt nobody.
+  registerService('permission', new DevicePermissionService());
 
   if (AppConfig.features.useMockServices) {
     registerService('auth', new MockAuthService());

@@ -2,6 +2,28 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      Requested during onboarding, and never at launch. Each is explained on the
+      step it belongs to before the system dialog is shown.
+
+      Coarse accompanies fine because Android 12 and above let the user grant
+      only the approximate one; declaring fine alone means that choice cannot be
+      offered and the grant silently fails.
+
+      POST_NOTIFICATIONS is Android 13+. Older versions grant notifications at
+      install and ignore this, which is why there is no maxSdkVersion here.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      The camera is used to photograph a problem, not to inspect the device. A
+      phone without one must still be able to install and run the app.
+    -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"

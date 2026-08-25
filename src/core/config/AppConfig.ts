@@ -56,6 +56,12 @@ export const AppConfig = Object.freeze({
     keyPrefix: '@fixora',
     /** Holds the signed-in session. Read once at startup, written on sign in/out. */
     sessionKey: '@fixora/session',
+    /**
+     * Records that onboarding has been seen. Deliberately separate from the
+     * session: signing out does not make someone a first-time user again, and
+     * clearing one must not clear the other.
+     */
+    onboardingKey: '@fixora/onboarding',
   }),
 
   pagination: Object.freeze({
@@ -77,6 +83,19 @@ export const AppConfig = Object.freeze({
   phone: Object.freeze({
     minDigits: 10,
     maxDigits: 15,
+    /**
+     * The dialling code shown beside the phone field.
+     *
+     * ⚠️ Display only. It is not prepended to what the user types and it does
+     * not reach the backend — `normalisePhone` still sends the digits entered
+     * and nothing else, so this changes no contract. It says which country the
+     * app serves, which on a single-country product is the whole of the truth.
+     *
+     * Choosing a different one is multi-country, which PROJECT_BIBLE.md lists
+     * as a future phase and says explicitly not to implement prematurely. When
+     * that phase arrives this becomes a default rather than a constant.
+     */
+    dialCode: '+91',
   }),
 
   /**

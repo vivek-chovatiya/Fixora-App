@@ -41,7 +41,18 @@ import type { OtpChallenge } from '@/shared/services/types/AuthService';
  */
 export type AuthStackParamList = {
   /**
-   * Role selection, and the stack's entry point. The choice made here is a
+   * The introduction, shown once on a first launch.
+   *
+   * It lives in this stack rather than above it because it belongs to the same
+   * unauthenticated phase: it is what an unknown user sees before choosing a
+   * role, and it is unreachable to anyone with a session. Whether it is the
+   * stack's entry point is decided at mount from local storage, not navigated
+   * to — so nothing can return to it once it has been finished.
+   */
+  Onboarding: undefined;
+
+  /**
+   * Role selection, and the stack's entry point once the introduction is done. The choice made here is a
    * navigation decision only — the authenticated role comes from the session,
    * so nothing selected here is carried as a param or trusted afterwards.
    */
