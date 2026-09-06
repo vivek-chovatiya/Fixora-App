@@ -18,11 +18,15 @@ import { MockAuthService } from '@/shared/services/mock/MockAuthService';
 import { MockCategoryService } from '@/shared/services/mock/MockCategoryService';
 import { MockImageService } from '@/shared/services/mock/MockImageService';
 import { MockNotificationService } from '@/shared/services/mock/MockNotificationService';
+import { MockRequestService } from '@/shared/services/mock/MockRequestService';
+import { MockVendorService } from '@/shared/services/mock/MockVendorService';
 import type { AuthService } from '@/shared/services/types/AuthService';
 import type { CategoryService } from '@/shared/services/types/CategoryService';
 import type { ImageService } from '@/shared/services/types/ImageService';
 import type { NotificationService } from '@/shared/services/types/NotificationService';
 import type { PermissionService } from '@/shared/services/types/PermissionService';
+import type { RequestService } from '@/shared/services/types/RequestService';
+import type { VendorService } from '@/shared/services/types/VendorService';
 
 const log = createLogger('ServiceRegistry');
 
@@ -31,6 +35,8 @@ export interface ServiceMap {
   category: CategoryService;
   notification: NotificationService;
   image: ImageService;
+  request: RequestService;
+  vendor: VendorService;
   /**
    * Device capability rather than a backend one, which is why it is registered
    * outside the mock/live switch below. A camera permission does not become
@@ -78,6 +84,8 @@ export function configureServices(): void {
     registerService('category', new MockCategoryService());
     registerService('notification', new MockNotificationService());
     registerService('image', new MockImageService());
+    registerService('request', new MockRequestService());
+    registerService('vendor', new MockVendorService());
     log.info('Services configured', { mode: 'mock', count: registry.size });
     return;
   }
