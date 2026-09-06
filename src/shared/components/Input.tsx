@@ -25,7 +25,7 @@ import {
 import { FieldLabel } from '@/shared/components/FieldLabel';
 import { Icon } from '@/shared/components/Icon';
 import { Text } from '@/shared/components/Text';
-import { useTheme, type IconName } from '@/shared/theme';
+import { useTheme, type IconName, type RadiusToken } from '@/shared/theme';
 
 /**
  * Derived from TextInputProps rather than imported. React Native renamed these
@@ -60,6 +60,16 @@ export interface InputProps extends Omit<TextInputProps, 'style' | 'placeholderT
   rightIconAccessibilityLabel?: string;
   /** Appends a marker to the label and flags the field to assistive tech. */
   required?: boolean;
+  /**
+   * Corner radius of the field. A capsule by default.
+   *
+   * Exists for `multiline`, which the capsule cannot hold: at four lines tall a
+   * 999 radius is a lozenge, and the text sits inside a shape that curves away
+   * from it on every side. A notes box asks for a rounded rectangle, and this is
+   * the smallest way to let one field say so without every other field in the
+   * application changing shape.
+   */
+  radiusToken?: RadiusToken;
   containerStyle?: StyleProp<ViewStyle>;
 }
 
@@ -74,6 +84,7 @@ const InputComponent = forwardRef<TextInput, InputProps>(function InputBase(
     onRightIconPress,
     rightIconAccessibilityLabel,
     required = false,
+    radiusToken = 'full',
     containerStyle,
     editable = true,
     onFocus,
@@ -106,6 +117,10 @@ const InputComponent = forwardRef<TextInput, InputProps>(function InputBase(
 
   // Error outranks focus: a focused invalid field must still read as invalid.
   const isActive = hasError || isFocused;
+
+  // Read from the props it was already given rather than added as a second way
+  // of saying the same thing.
+  const isMultiline = Boolean(rest.multiline);
 
   const borderColor = hasError
     ? theme.colors.danger
@@ -150,7 +165,7 @@ const InputComponent = forwardRef<TextInput, InputProps>(function InputBase(
             // shapes stacked is what made a form read as parts rather than as
             // one column, so the field and its submit button share a radius as
             // well as a height.
-            borderRadius: theme.radius.full,
+            borderRadius: theme.radius[radiusToken],
             backgroundColor: editable ? theme.colors.surface : theme.colors.surfaceAlt,
             // Wider than a rectangle would need. A capsule curves away from its
             // own content, so text at a rectangle's padding looks like it is
@@ -160,6 +175,18 @@ const InputComponent = forwardRef<TextInput, InputProps>(function InputBase(
             // The shared control height, so a field and its submit button are
             // the same size rather than each sized to its own minimum.
             minHeight: theme.controlHeight,
+          },
+          // A growing field fills from the top. Centred is right for one line
+          // and wrong for four, where it would leave the first line floating in
+          // the middle of the box and the padding uneven as it grew.
+          isMultiline && styles.multilineField,
+          isMultiline && {
+            paddingVertical: theme.spacing.md,
+            // Opens at roughly four lines. A multiline field the height of a
+            // single-line one looks like a single-line one, so nobody writes a
+            // paragraph in it — and `numberOfLines` no longer sizes one on
+            // Android, while `rows` is not in this version's types.
+            minHeight: theme.controlHeight * 2,
           },
         ]}>
         {leftIcon ? <Icon name={leftIcon} size="md" color="textTertiary" /> : null}
@@ -185,6 +212,11 @@ const InputComponent = forwardRef<TextInput, InputProps>(function InputBase(
           placeholderTextColor={theme.colors.textTertiary}
           style={[
             styles.input,
+            // Fills the taller box rather than sitting in the top of it. The row
+            // aligns its children to the top so a multiline field starts at the
+            // first line, and without this the input keeps its one-line height —
+            // which looked right and left two thirds of the box untappable.
+            isMultiline && styles.multilineInput,
             theme.typography.variants.body,
             { color: editable ? theme.colors.textPrimary : theme.colors.textDisabled },
           ]}
@@ -252,6 +284,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  multilineField: {
+    alignItems: 'flex-start',
+  },
   divider: {
     alignSelf: 'stretch',
   },
@@ -259,6 +294,10 @@ const styles = StyleSheet.create({
     flex: 1,
     // Android adds vertical padding that misaligns the text against icons.
     paddingVertical: 0,
+  },
+  multilineInput: {
+    alignSelf: 'stretch',
+    textAlignVertical: 'top',
   },
 });
 
