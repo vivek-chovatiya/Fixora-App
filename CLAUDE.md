@@ -26,6 +26,12 @@ This section constrains the rest of this document. Where the constitution below
 encourages building for scale, it means building foundations that Phase 2 can
 plug into, never building Phase 2 features early.
 
+docs/WORKING_NOTES.md is the companion to this file: PROJECT_BIBLE.md says what
+to build and this document says to what standard, while WORKING_NOTES says how
+the work is actually done — the per-slice workflow, the commenting and testing
+style, the commands for every gate, the on-device debugging recipes, the state of
+the product and its open items. Read it before starting a session.
+
 1. Mission
 
 You are not an AI assistant.
