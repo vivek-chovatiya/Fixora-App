@@ -62,8 +62,21 @@ function stubAuthService(overrides: Partial<AuthService> = {}): AuthService {
   } as AuthService;
 }
 
-function stubCategoryService(): CategoryService {
-  return { listServiceCategories: jest.fn(async () => CATEGORIES) };
+/**
+ * Sub-categories are part of the catalogue contract but no part of registering a
+ * business, so asking for them here is a mistake worth failing on rather than a
+ * call worth stubbing — the same treatment the auth operations above get.
+ */
+function stubCategoryService(
+  overrides: Partial<CategoryService> = {},
+): CategoryService {
+  return {
+    listServiceCategories: jest.fn(async () => CATEGORIES),
+    listSubCategories: jest.fn(() => {
+      throw new Error('listSubCategories must not be called from vendor registration');
+    }),
+    ...overrides,
+  };
 }
 
 async function render(service: AuthService, categories: CategoryService = stubCategoryService()) {
@@ -222,9 +235,10 @@ describe('VendorRegistrationScreen — the services field', () => {
     const long: ServiceCategory[] = [
       { id: 'cat_long', name: 'Appliance Repair and Installation', iconGlyph: 'wrench-outline' },
     ];
-    const { renderer } = await render(stubAuthService(), {
-      listServiceCategories: jest.fn(async () => long),
-    });
+    const { renderer } = await render(
+      stubAuthService(),
+      stubCategoryService({ listServiceCategories: jest.fn(async () => long) }),
+    );
 
     const [label] = renderer.root.findAll(
       node => node.props.numberOfLines === 1 && typeof node.props.children === 'string',
@@ -262,7 +276,10 @@ describe('VendorRegistrationScreen — the services field', () => {
       .mockRejectedValueOnce(new AppError({ kind: 'network', message: 'socket hang up' }))
       .mockResolvedValueOnce(CATEGORIES);
 
-    const { renderer, text, press } = await render(stubAuthService(), { listServiceCategories });
+    const { renderer, text, press } = await render(
+      stubAuthService(),
+      stubCategoryService({ listServiceCategories }),
+    );
 
     expect(text()).toContain('No connection');
     expect(text()).not.toContain('socket hang up');
@@ -275,9 +292,10 @@ describe('VendorRegistrationScreen — the services field', () => {
 
   it('shows no options, and blocks submission, when there are none', async () => {
     const service = stubAuthService();
-    const { text, fill, submit } = await render(service, {
-      listServiceCategories: jest.fn(async () => []),
-    });
+    const { text, fill, submit } = await render(
+      service,
+      stubCategoryService({ listServiceCategories: jest.fn(async () => []) }),
+    );
 
     await fill('vendor-business-name', VALID.businessName);
     await fill('vendor-first-name', VALID.ownerFirstName);
