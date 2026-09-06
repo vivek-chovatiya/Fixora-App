@@ -40,6 +40,8 @@ export { ControlledInput, type ControlledInputProps } from './ControlledInput';
 
 export { FieldLabel, type FieldLabelProps } from './FieldLabel';
 
+export { BackButton, type BackButtonProps } from './BackButton';
+
 export { Screen, type ScreenProps } from './Screen';
 export { Card, type CardProps } from './Card';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
