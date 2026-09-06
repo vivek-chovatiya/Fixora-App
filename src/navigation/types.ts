@@ -92,6 +92,60 @@ export type CustomerTabParamList = {
   Profile: undefined;
 };
 
+/**
+ * The customer application's stack (PROJECT_BIBLE.md section 26).
+ *
+ * The tabs are one route inside it rather than the application itself, because
+ * categories and request creation are pushed screens — they cover the tabs
+ * rather than living in one. Wrapping the tabs is what gives them somewhere to
+ * be pushed onto without any tab screen owning a stack of its own.
+ *
+ * Only `Categories` is registered so far. The rest of the flow arrives with the
+ * screens that fill it; a route typed ahead of its screen is a promise the app
+ * can navigate to and then fail to render.
+ */
+export type CustomerStackParamList = {
+  CustomerTabs: NavigatorScreenParams<CustomerTabParamList>;
+
+  /**
+   * Service discovery, reached from Home's primary action.
+   *
+   * Takes no params: it lists what the backend offers, and the customer has not
+   * chosen anything yet.
+   */
+  Categories: undefined;
+
+  /**
+   * The services inside one category.
+   *
+   * `categoryId` and nothing else. The name is display data — it is rendered,
+   * translated and changed by the backend, so routing on it would make a
+   * renamed category a broken link. The screen behind this route asks the
+   * backend what the id means rather than trusting what it was handed.
+   */
+  SubCategories: { categoryId: string };
+
+  /**
+   * Where a chosen service leads (PROJECT_BIBLE.md sections 13 and 26).
+   *
+   * Two identifiers and nothing else. The screen behind this asks the backend
+   * what they mean rather than being handed names, glyphs or a response object —
+   * the same rule the sub-category route follows, for the same reason.
+   */
+  CreateRequest: { categoryId: string; subCategoryId: string };
+
+  /**
+   * Choosing a professional, or choosing not to (PROJECT_BIBLE.md section 18A).
+   *
+   * The same two identifiers, because the backend decides eligibility from the
+   * service being asked for and this screen has to ask it. Nothing else travels:
+   * what the customer typed into the details form is carried by
+   * `RequestDraftContext`, not by the route, because notes and photo URLs have
+   * no business in navigation state.
+   */
+  PreferredVendor: { categoryId: string; subCategoryId: string };
+};
+
 /** Vendor bottom tabs (PROJECT_BIBLE.md section 43). */
 export type VendorTabParamList = {
   Dashboard: undefined;
@@ -106,7 +160,7 @@ export type VendorTabParamList = {
  */
 export type RootStackParamList = {
   Auth: NavigatorScreenParams<AuthStackParamList>;
-  Customer: NavigatorScreenParams<CustomerTabParamList>;
+  Customer: NavigatorScreenParams<CustomerStackParamList>;
   Vendor: NavigatorScreenParams<VendorTabParamList>;
 };
 

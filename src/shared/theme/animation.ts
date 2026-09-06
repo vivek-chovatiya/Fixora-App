@@ -24,6 +24,17 @@ export const duration = Object.freeze({
   /** Bottom sheets and full-screen transitions. */
   sheet: 280,
   /**
+   * One breath of a loading placeholder.
+   *
+   * Long by the standards of this file because it is not a transition: nothing
+   * is changing state, and the motion exists only to say that a grey block is
+   * waiting for content rather than being content. At transition speeds it
+   * flickers, which reads as a fault in the very moment the screen is asking
+   * for patience.
+   */
+  pulse: 900,
+
+  /**
    * The verification orbit, and the only duration here measured in seconds
    * rather than fractions of one.
    *
