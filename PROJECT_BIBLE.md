@@ -252,6 +252,15 @@ generated.
 **Regeneration.** From the confirmation step the vendor may request a new code.
 The previous one is revoked immediately and stops working.
 
+**Code format and returning vendors — amended 21/10/2026 (owner).** The
+permanent auth code is **6 digits** (a string; leading zeros allowed). The
+backend assigns it automatically; an administrator can change it, after which
+the old code stops working. On a device where the vendor has signed in before,
+the app **remembers the phone number** (never the code), so a returning vendor
+types only the 6-digit code; "Use a different number" forgets the remembered
+phone. The code itself is still never stored, logged or sent anywhere but the
+sign-in request (below).
+
 **Returning vendors** sign in with phone + permanent auth code. No one-time code
 is required on subsequent logins unless a future product decision changes it.
 

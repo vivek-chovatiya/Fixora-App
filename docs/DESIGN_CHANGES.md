@@ -1,6 +1,10 @@
 # Fixora — Design Changes
 
 State of the UI on `feature/FIX-001-navigation-and-auth-state`, as of 2026-08-25.
+Section 2's tokens, section 3.3, rule 12 and the open items were brought up to
+date on 20/10/2026; `onDanger`, `Button`, section 3.4, section 4's back control,
+the vendor sign-in row, rule 13 and the open items on 21/10/2026. The rest still
+describes the August state.
 
 This is a **design reference**, not a changelog to append to. It records what the
 interface now is, what tokens exist to build it from, and the rules that must not
@@ -50,6 +54,11 @@ Scope: Phase 1 only. Nothing here implements a Phase 2 feature — see
 | `animation.spring.travel` | `{ damping: 20, stiffness: 180, mass: 1 }` | `theme/animation.ts` | ζ≈0.75, ω≈13.4 rad/s → ~400ms settle, <3% overshoot. For motion that *travels*; timing curves stay for state changing in place. |
 | `icons.arrowForward` | `arrow-right` | `theme/icons.ts` | A chevron points at what is beside it; an arrow says the control takes you somewhere. |
 | `icons.homeSelected` / `requestsSelected` / `profileSelected` / `teamSelected` | filled counterparts | same | Tab selection must change shape, not only colour. |
+| `colors.onOverlay` | `palette.white`, both themes | `theme/colors.ts` | Text and icons drawn directly on `overlay`. The scrim is dark in both themes, so its ink must be light in both; `textInverse` flips to near-black in dark and all but vanished there — the request photo tiles' "Uploading", "Upload failed" and × (fixed in `RequestPhotoTile`, 20/10/2026). |
+| `colors.onDanger` | `palette.white`, both themes | same | Ink on a `danger` fill — the notification badge, and since 21/10/2026 the danger button's label, icon and spinner. White on red500 is 4.8:1; `textInverse` there is 4.2:1 in dark. |
+| `icons.cancelled` | `cancel` | `theme/icons.ts` | A request called off (Reports, 3E-8). Not `reject`: declining and being cancelled are different outcomes, and side by side on the report they must differ in shape, not only in word. |
+| `icons.markAllRead` | `check-all` | same | Marking every notification read (3F-2). Two ticks, not `selected`'s one: it acts on the whole list. |
+| `icons.accept` / `reject` / `startWork` / `completeWork` / `copy` | `check` / `close-circle-outline` / `play-circle-outline` / `check-circle-outline` / `content-copy` | same | Earlier phases, recorded here for completeness: answering a request (3E-4), moving work along (3E-5), and copying a reference — distinct from `document`, which read as "open the paperwork". |
 
 ### 2.2 Changed signatures
 
@@ -65,8 +74,11 @@ Scope: Phase 1 only. Nothing here implements a Phase 2 feature — see
   Changing it moves every screen in the application, so it was reported rather
   than done. If it is ever wanted: `screenPadding = spacing.xxl` (24) or
   `spacing.xxxl` (32), one line.
-- **Colour tokens.** No new colours were invented. The vendor role card uses the
-  existing `success`/`successSubtle` pair rather than a second green.
+- **Colour tokens — no new hues.** The vendor role card uses the existing
+  `success`/`successSubtle` pair rather than a second green. The two colour
+  tokens added since (`onOverlay`, `onDanger`, 20/10/2026) are not new colours
+  either: both are `palette.white`, named for the fill they sit on, so ink on a
+  fixed fill stops borrowing `textInverse`, which follows the theme.
 
 ---
 
@@ -113,12 +125,140 @@ you could scan for and one you could not. Indentation is the caller's business.
   some words on a white card. Pressed uses `borderStrong` because in dark mode
   `border` and `surfaceAlt` are the same value and a press would have shown
   nothing.
+- **Danger is labelled `onDanger`** (owner decision, 21/10/2026): the label,
+  its icon and the busy spinner are white in both themes, 4.8:1 on red500,
+  where `textInverse` was near-black in dark at 4.2:1. Light mode looks as it
+  did. Every danger button and every `ConfirmDialog` confirm moved with it. Its
+  pressed fill is still `danger` itself, so a press shows no change (open item).
+- The capsule's horizontal padding is exported as `BUTTON_LABEL_INSET`
+  (`spacing.xxl`), a component constant rather than a token, because
+  `ConfirmDialog` works out label room from it and the two must not drift.
 
 **`Screen`**
 - New **`header`** slot: sits outside the scroll area **and** outside the
   `KeyboardAvoidingView`. That placement is the point — a bar inside the
   keyboard-avoiding view is pushed off the top of the screen as the keyboard
   opens, and a back control inside a centred body drifts to the middle.
+
+### 3.3 Added on 20/10/2026
+
+Feature components, built from existing tokens plus the two in §2.1. None of
+them is a new shared component.
+
+- **Report figure cards** (`ReportFigureCard`, vendor Reports). A bordered
+  `Card` at `shadow="sm"`: a tinted glyph disc (`spacing.xxxl` square,
+  `radius.full`, the tone's `…Subtle` behind it), the figure in `h1`, the label
+  in `caption`. Total is `info`, Completed `success`, the rating `warning` with
+  read-only stars, and Rejected and Cancelled **neutral** — ordinary outcomes,
+  not faults (§49.1); they differ by glyph as well as word. Two to a row by
+  `flexGrow: 1` / `flexBasis: '40%'`, the rating full width; no fixed widths.
+- **Rating breakdown bars** (`RatingSummaryCard`, vendor Reviews). Five rows
+  under the average: the number with a small filled star, a bar (track
+  `borderStrong`, fill `warning`, `spacing.sm` high, `radius.full`), the
+  percentage in `tabular-nums`. ⚠️ The bars are the same length in every row
+  because the percentage column is held open at the width of "100%" by an
+  invisible, zero-height copy of it — "0%" and "100%" rows share one bar length
+  and "100%" cannot clip.
+- **Shop image grid and tiles** (`ShopImageTile`, `AddShopImageTile`,
+  `ShopImagesSection`). Squares from the theme's breakpoint columns, sized from
+  the window. The add tile is dashed ("a place for a photo", not a photo) and
+  split into "Take a photo" / "Choose a photo" halves. A tile in progress or
+  failed is dimmed under the `overlay` scrim, its state word on a **`surface`
+  label** rather than inverse text on the scrim, so it reads in both themes and
+  over light and dark photos; a primary progress bar runs along the bottom edge;
+  a failed tile gains a thick `danger` border (thickness as well as colour).
+  Remove is a small `surface` circle with a thin border, 30dp drawn plus 8dp
+  slop. Profile's card draws the squares three to a row as explicit `flex: 1`
+  cells.
+- **Notification bell and badge** (`NotificationBell`). A ringed, raised 44dp
+  disc, as `BackButton` is — `surface`, a thin `borderStrong` ring,
+  `shadows.sm`, `surfaceAlt` while pressed. The badge on its shoulder: a
+  `danger` fill with `onDanger` digits in `label`, "9+" above nine, nothing at
+  zero. In the inbox an unread row says so three ways — the `bodyStrong` title,
+  a dot and a tinted glyph disc — never by colour alone.
+- **Payment section** (request details, both roles). Vendor: a bordered `Card`
+  under the heading — Final amount, Payment status ("Paid · UPI"), notes when
+  there are any, and a `textTertiary` caption "Recorded by you. Fixora does not
+  process payments." Customer: a "Payment" group before "Your review" with the
+  amount and status only. Amounts come from `formatMoney` ("₹1,250.50"); the
+  form's "₹" is the amount field's `Input` `prefix`.
+
+### 3.4 Added and changed on 21/10/2026
+
+Built from existing tokens; no token was added.
+
+**Shared.**
+
+- **`ConfirmDialog` chooses row or stack by itself.** Its two answers sit side
+  by side only when both labels fit on one line; otherwise they stack, full
+  width, the way out still first. Calculated, not measured
+  (`answersFitSideBySide`): dialog = min(`breakpoints.sm`, window − 2 ×
+  `spacing.xl`); answer = (dialog − 2 × `spacing.xl` − `spacing.md`) / 2; label
+  room = answer − 2 × `spacing[BUTTON_LABEL_INSET]` — **86dp at 360dp, 102 at
+  392, 106 from 400dp up** (the dialog stops growing at 360). A label is taken
+  as code points × 16sp × the system font scale × `LABEL_EM_PER_CHARACTER`
+  **0.6**; real labels at 16sp come to 0.46–0.52, so the figure is about 15%
+  over the widest. The dialog's own spacing is three named constants
+  (`BACKDROP_PADDING` `xl`, `DIALOG_PADDING` `xl`, `ANSWER_GAP` `md`) read by
+  both the layout and the calculation. ⚠️ It errs towards stacking: one-word
+  pairs (Cancel / Log out, Delete, Reject, Remove, Disable, Stop) stay in a row
+  at every phone width, while "Keep editing / Discard" and "Keep request /
+  Cancel request" stack on every phone, 411dp included. `stacked` remains as an
+  override. The row itself never wraps — each button's basis is its 40%
+  minimum, never its words — which is why the choice has to be made up front.
+- **`OfflineBanner`** (new). A strip across the top of the app while the device
+  is offline: `warningSubtle` fill running up behind the status bar (padding
+  `insets.top + spacing.sm`), a hairline `border` underneath, the network
+  failure's own glyph and tone (`ERROR_PRESENTATION.network` — the offline glyph
+  in `warning`), "You're offline." in `bodyStrong` running into "Some things
+  may not load until you reconnect." in `body`. One accessible block, role alert, a **polite** live
+  region, not pressable; nothing at all when online. It sits in the layout and
+  pushes the app down rather than covering a header (WORKING_NOTES 3G-1 for why
+  that needs a second safe-area provider).
+- **`BackButton` is the only back disc.** Auth's copy was removed; `AuthTopBar`
+  draws the shared one with the auth copy's words (section 4).
+
+**Vendor.**
+
+- **Availability components.**
+  - `SwitchRow`: the whole row is the control and one stop — the words, their
+    line and the platform `Switch`, which is drawn for the eye only (track
+    `borderStrong` off, `primary` on; thumb `onPrimary`). While a change is out,
+    a small `primary` spinner sits beside a dimmed switch.
+  - `AvailabilityNotice` (dashboard): a `warningSubtle` `Card` with no shadow,
+    the `warning` glyph, one line and a secondary "Turn on" — the look of
+    `StaleNotice` on purpose, one notice style in the app, but not an alert and
+    not a retry: it is a state the vendor chose, so no danger tone (§49.1).
+  - `TimeChoiceDialog`: built like `ConfirmDialog` — `overlay` backdrop, a
+    `surface` panel at `radius.xl` — holding `SelectionChip`s two to a row
+    (`flexBasis: '40%'`, `flexGrow: 1`: a third never fits, two always do), so
+    each row is an hour. Never taller than the screen (`maxHeight: '100%'`, the
+    list `flexShrink: 1`).
+  - `WorkingDayRow`: a bordered `Card` without shadow; each time is a `surface`
+    field at `radius.lg` with a `down` glyph in `textTertiary`, a `thin`
+    `border` at rest and a `thick` `danger` border when the day closes before it
+    opens — with the sentence beside it, never colour alone.
+- **The Rejected filter.** Requests' chips are All, Pending, Active, Completed,
+  Rejected, wrapping as before. A rejected card wears the neutral "Rejected"
+  badge with the crossed-circle glyph (an answer, not an alarm), its date line
+  reads "Rejected …", and it has no buttons under it.
+- **The team member photo card.** At the top of the add and edit form, drawn as
+  the business picture's card on the vendor profile form: an `xl` `Avatar`
+  (initials from the typed name, the profile glyph while blank), a "Photo"
+  heading, an optional caption, Take a photo / Choose a photo side by side where
+  they fit and wrapping where they do not, Remove photo when there is one, an
+  "Uploading the photo…" line and, on failure, `ErrorState` with Try again and
+  Discard. The team card's avatar shows the photo, falling back to initials.
+  The picture is decorative on both — the words carry it.
+
+**Native.**
+
+- **The window background follows the mode.** `res/values/colors.xml`
+  (#F9FAFB) and `res/values-night/colors.xml` (#030712) define
+  `window_background` for `AppTheme`'s `android:windowBackground`. Android 12+
+  draws its system splash in it, so the system splash, the window and the JS
+  splash are one colour in each mode — no more AppCompat grey (#303030) between
+  them in dark. Rule 13.
 
 ---
 
@@ -128,8 +268,7 @@ All new unless noted.
 
 | Component | What it is |
 |---|---|
-| `AuthTopBar` | The 44dp bar every auth screen opens with: mark centred in the full width, back control absolutely positioned on the left so the mark does not shift between screens that have one and screens that do not. Paints nothing, so the app-level `StatusBar` stands. |
-| `AuthBackButton` | A raised, ringed 44dp disc with a chevron. Adds a *visible* exit to screens that were only escapable by hardware button or edge swipe. Pressing steps the fill up, never fades the ink. |
+| `AuthTopBar` | The 44dp bar every auth screen opens with: mark centred in the full width, back control absolutely positioned on the left so the mark does not shift between screens that have one and screens that do not. Paints nothing, so the app-level `StatusBar` stands. The back control — a *visible* exit for screens that were only escapable by hardware button or edge swipe — is the shared `BackButton` (a raised, ringed 44dp disc with a chevron; pressing steps the fill up, never fades the ink), spoken with the auth copy's words. Auth's own copy of it was removed on 21/10/2026. |
 | `AuthHeading` | `hero` title + optional `subtitle`, in the page body so it scrolls away. |
 | `AuthCityscape` | The decorative foot: `city-signin.png` at 430:162, with "Your information is safe with us." **rendered as text** over it beside a `primarySubtle` disc. The sentence was painted out of the supplied artwork — baked-in text is untranslatable, ignores the user's type size, and is invisible to a screen reader. |
 | `PhoneCountryPrefix` | Drawn flag + `AppConfig.phone.dialCode`. **Not a picker and not a value**: no chevron (there is nothing to open — multi-country is Phase 2), and the code is never prepended to the digits or sent to a service. |
@@ -148,7 +287,7 @@ All new unless noted.
 | `AuthEntryScreen` | **no** | — | inline | own `city-skyline` | The only auth screen without the top bar: nothing behind it, and the page scrolls, so the mark should scroll with it. Two `RoleCard`s. Footer links to vendor sign in, which is the only path to registration. |
 | `CustomerLoginScreen` | yes | yes | yes | yes | Phone field carries `PhoneCountryPrefix`; submit uses `icon="arrowForward" iconPosition="trailing"`. |
 | `CustomerOtpScreen` | yes | yes (→ change number) | yes | yes (`flex: 1` foot) | `changeIcon="call"`. `paddingTop: spacing.huge`. |
-| `VendorLoginScreen` | yes | yes | yes | yes | **No `+91` prefix yet** — open item. |
+| `VendorLoginScreen` | yes | yes | yes | yes | **No `+91` prefix yet** — open item. Since 21/10/2026 two faces: the full form, and for a vendor who has signed in on this device before, "Welcome back" with a bordered `Card` (call glyph, `••••••0001`), the code field alone and a secondary "Use a different number". |
 | `VendorRegistrationScreen` | yes | yes | yes | yes (`flexGrow: 1` foot) | `padded={false}` + body gutter; BUSINESS / CONTACT / SERVICES overlines in `textSecondary`; `required` on the service field. |
 | `VendorOtpScreen` | yes (mark only) | **no** | yes | **no** | Deliberate: it holds three steps in one screen, two of which display a standing credential. `changeIcon="edit"`. |
 
@@ -316,6 +455,15 @@ deliberately claiming nothing about encryption, storage or compliance), and
     logged, stored in Redux, persisted, or put in navigation params; OTP
     verification creates no session; screens never touch `ServiceRegistry`,
     `axios` or storage directly; only `error.userMessage` is ever rendered.
+12. **Ink on a fill that does not invert with the theme uses that fill's own
+    token** — `onOverlay` on the scrim, `onDanger` on `danger` — never
+    `textInverse`, which flips to near-black in dark mode. Check it in dark:
+    that is where the borrowed token fails. Since 21/10/2026 the danger button
+    keeps it too.
+13. **Android's `window_background` is a copy of the JS `background` token** —
+    #F9FAFB in `res/values/colors.xml`, #030712 in `res/values-night/colors.xml`.
+    Native resources cannot read the JS theme, so change all three together, or
+    a frame of the wrong colour shows between the system splash and the app.
 
 ---
 
@@ -334,6 +482,16 @@ deliberately claiming nothing about encryption, storage or compliance), and
   `role-customer`, `role-vendor`) came from the same session as the defective
   flag. They look correct on device, but that is where to look first.
 - **Country picker** unbuilt, pending Phase 2 approval.
+- **A quieter danger button.** Disabling a team member and cancelling a
+  request use the filled danger variant, as Log out does; a tonal-danger
+  variant would be a new `Button` variant and needs approval.
+- **The danger button's press shows nothing.** Its pressed fill is `danger`
+  itself; a pressed red would be a new colour token.
+- **Two photo cards.** The team member form's and the vendor profile form's are
+  the same card written twice; one shared component would change a locked
+  screen.
+- **`ConfirmDialog`'s 0.6 em a character** is for the Latin script the app ships
+  in; a translation into wider glyphs needs its own figure.
 
 ---
 
