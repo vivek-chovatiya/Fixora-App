@@ -87,6 +87,18 @@ const SEED: Readonly<Record<string, readonly EligibleVendor[]>> = Object.freeze(
   // reachable by tapping through the real application.
 });
 
+/**
+ * The name of a vendor offered for this service, for the mock request table.
+ *
+ * ⚠️ For the other mocks and nothing else — see `findMockServiceNames`, which
+ * exists for the same reason. Looked up within the service rather than across
+ * every vendor, because section 18A.1 makes eligibility the backend's rule: a
+ * directed request for somebody not offered for this job is one it refuses.
+ */
+export function findMockVendorName(subCategoryId: string, vendorId: string): string | undefined {
+  return SEED[subCategoryId]?.find(vendor => vendor.id === vendorId)?.name;
+}
+
 export class MockVendorService implements VendorService {
   async listEligibleVendors(
     categoryId: string,
