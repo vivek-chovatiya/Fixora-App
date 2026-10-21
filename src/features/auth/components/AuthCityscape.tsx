@@ -77,7 +77,7 @@ function AuthCityscapeComponent({ testID }: AuthCityscapeProps) {
               height: theme.spacing.xxxl,
             },
           ]}>
-          <Icon name="verified" size="sm" color="primary" />
+          <Icon name="verified" size="sm" color="onPrimarySubtle" />
         </View>
 
         <Text variant="caption" color="textSecondary">

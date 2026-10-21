@@ -13,7 +13,7 @@ import { OFFLINE_BANNER_COPY, OfflineBanner } from '@/shared/components';
 import { ERROR_PRESENTATION } from '@/shared/components/errorPresentation';
 import { MockNetworkStatusService } from '@/shared/services/mock/MockNetworkStatusService';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
-import { ThemeProvider } from '@/shared/theme';
+import { SUBTLE_INK, ThemeProvider, type SubtleTint } from '@/shared/theme';
 
 const SPOKEN = "You're offline. Some things may not load until you reconnect.";
 
@@ -96,7 +96,7 @@ describe('OfflineBanner', () => {
     expect(alerts[0].props.accessibilityLabel).toBe(SPOKEN);
   });
 
-  it('wears the network failure’s glyph and tone, so it reads like every “No connection”', async () => {
+  it('wears the network failure’s glyph and tint, so it reads like every “No connection”', async () => {
     const renderer = await render(new MockNetworkStatusService({ isOffline: true }));
 
     // `Icon` is memoised, so it is found by the token props it is given.
@@ -105,7 +105,11 @@ describe('OfflineBanner', () => {
     );
     expect(icons.length).toBeGreaterThan(0);
     expect(icons[0].props.name).toBe(ERROR_PRESENTATION.network.icon);
-    expect(icons[0].props.color).toBe(ERROR_PRESENTATION.network.tone);
+    // The tone's tint, in that tint's own ink (3G-4) — not the tone's colour,
+    // which is 2.9:1 on its tint in light.
+    const tint = `${ERROR_PRESENTATION.network.tone}Subtle` as SubtleTint;
+    expect(icons[0].props.color).toBe(SUBTLE_INK[tint]);
+    expect(icons[0].props.color).not.toBe(ERROR_PRESENTATION.network.tone);
   });
 
   it('offers nothing to press', async () => {

@@ -75,6 +75,13 @@ export { SelectionChip, type SelectionChipProps } from './SelectionChip';
 export { StarRating, type StarRatingProps } from './StarRating';
 export { ContentSection, type ContentSectionProps } from './ContentSection';
 export { StaleNotice, type StaleNoticeProps } from './StaleNotice';
+export {
+  RequestPhotoStrip,
+  type RequestPhotoStripCopy,
+  type RequestPhotoStripProps,
+} from './RequestPhotoStrip';
+export { PhotoUploadProgress, type PhotoUploadProgressProps } from './PhotoUploadProgress';
+export { ProgressBar, progressPercent, type ProgressBarProps } from './ProgressBar';
 export { BrandMark, type BrandMarkProps, type BrandMarkSize } from './BrandMark';
 export { OfflineBanner, OFFLINE_BANNER_COPY, type OfflineBannerProps } from './OfflineBanner';
 export { WindowOffsetContext, useWindowOffset } from './windowOffset';

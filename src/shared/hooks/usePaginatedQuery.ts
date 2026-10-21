@@ -21,6 +21,35 @@
  * - A page repeated is not a second record. Offset pages shift when a record is
  *   added between two reads, so the next page can begin with the last one's
  *   final item. With `getKey`, an item already in the list is not appended again.
+ *
+ * ⚠️ `refreshQuietly` (Phase 3E-15, owner decision 21/10/2026) is the list
+ * checking again by itself when its tab is shown again, and it must look like
+ * nothing happened until it has an answer: no placeholders, no spinner, the
+ * failure from before left in place, and the scroll position kept.
+ *
+ * - It reads every page on screen, not page one alone, which would cut a list
+ *   scrolled into its third page back to its first under the customer's thumb.
+ * - ⚠️ Page by page, at the list's own page size — the same requests a
+ *   customer scrolling would make — never one request for all of them. One
+ *   long page would lean on the backend accepting a page size it never agreed
+ *   to (any limit it sets would fail every return to a long list); this asks
+ *   nothing a scroll does not. The price is one request per page shown on each
+ *   return. It stops early at a page that says there is no more, and the list
+ *   is swapped in whole only when the last page lands — never page one over a
+ *   list still showing pages two and three. Superseded (a filter, a pull, a
+ *   retry) or unmounted part-way, it is dropped without a word.
+ * - The page counter, `hasMore` and `total` are what it actually read, so the
+ *   next "load more" asks for the page after them.
+ * - It never starts beside a load in the air, and it never holds a press back:
+ *   a pull or Try again (whatever had failed) starts at once with its own
+ *   placeholder or spinner, and the quiet read is dropped. A tap is never
+ *   swallowed. A next page asked for by scrolling while it is out is not lost
+ *   either: one is held, and asked for once the quiet read lands — if there is
+ *   still more and nothing newer has replaced the read.
+ * - A failure is reported as the pull it stands in for (`refresh`), or as a
+ *   first load when nothing was on screen, so `retry` does what it would have
+ *   done — except that a next page that had already failed stays the failure:
+ *   `retry` still carries on from the page after the last one that arrived.
  */
 
 import { useCallback, useEffect, useRef, useState, type DependencyList } from 'react';
@@ -64,6 +93,22 @@ export interface UsePaginatedQueryResult<T> {
   refresh: () => void;
   /** Repeats whatever failed: the next page, a refresh, or the first load. */
   retry: () => void;
+  /**
+   * Reads every page on screen again, one by one, showing nothing until the
+   * last lands. Does nothing while any load is in the air. For a screen reading
+   * again on its own, never for a gesture.
+   */
+  refreshQuietly: () => void;
+}
+
+/** `previous` with the items of `next` it does not already hold, in order. */
+function appendUnseen<T>(previous: T[], next: T[], getKey: ((item: T) => string) | undefined): T[] {
+  if (!getKey) {
+    return [...previous, ...next];
+  }
+
+  const seen = new Set(previous.map(getKey));
+  return [...previous, ...next.filter(item => !seen.has(getKey(item)))];
 }
 
 export function usePaginatedQuery<T>(
@@ -94,6 +139,18 @@ export function usePaginatedQuery<T>(
   const getKeyRef = useRef(options.getKey);
   getKeyRef.current = options.getKey;
 
+  /** Read by a quiet read, which must know what is on screen when it starts and when it fails. */
+  const shownRef = useRef<{ hasItems: boolean; page: number }>({
+    hasItems: false,
+    page: AppConfig.pagination.initialPage,
+  });
+  shownRef.current = { hasItems: items.length > 0, page };
+
+  /** A quiet read is out, and is the newest read. */
+  const quietRef = useRef(false);
+  /** A next page was asked for while it was out: one, asked for when it lands. */
+  const moreHeldRef = useRef(false);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -103,11 +160,16 @@ export function usePaginatedQuery<T>(
 
   const load = useCallback(
     async (targetPage: number, mode: LoadMode) => {
-      // The next page waits its turn; a new question does not.
-      if (mode === 'more' && inFlightRef.current) {
+      // The next page waits its turn; a new question does not. Nor does a press
+      // over a quiet read: Try again on a failed next page goes ahead, and the
+      // quiet read is dropped (only `loadMore` itself is held for it, below).
+      if (mode === 'more' && inFlightRef.current && !quietRef.current) {
         return;
       }
       inFlightRef.current = true;
+      // Anything started here is newer than a quiet read still out, and than the page it held.
+      quietRef.current = false;
+      moreHeldRef.current = false;
 
       const requestId = requestIdRef.current + 1;
       requestIdRef.current = requestId;
@@ -139,19 +201,9 @@ export function usePaginatedQuery<T>(
           return;
         }
 
-        setItems(previous => {
-          if (mode !== 'more') {
-            return result.items;
-          }
-
-          const getKey = getKeyRef.current;
-          if (!getKey) {
-            return [...previous, ...result.items];
-          }
-
-          const seen = new Set(previous.map(getKey));
-          return [...previous, ...result.items.filter(item => !seen.has(getKey(item)))];
-        });
+        setItems(previous =>
+          mode === 'more' ? appendUnseen(previous, result.items, getKeyRef.current) : result.items,
+        );
         setPage(result.page);
         setTotal(result.total);
         setHasMore(result.hasMore);
@@ -179,6 +231,81 @@ export function usePaginatedQuery<T>(
     [pageSize],
   );
 
+  /*
+    The quiet read. No flag is set while it is out — nothing on screen moves
+    until the last page lands — and nothing is cleared, so a stale failure stays
+    where it is until there is an answer to replace it.
+  */
+  const readQuietly = useCallback(async () => {
+    if (inFlightRef.current) {
+      return;
+    }
+    inFlightRef.current = true;
+    quietRef.current = true;
+    moreHeldRef.current = false;
+
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    const isCurrent = () => mountedRef.current && requestIdRef.current === requestId;
+
+    const first = AppConfig.pagination.initialPage;
+    const { hasItems, page: reached } = shownRef.current;
+    const pagesShown = hasItems ? reached - first + 1 : 1;
+
+    // The page after what was read, when a next page was held for it.
+    let nextPage: number | null = null;
+
+    try {
+      let read: T[] = [];
+      let last: Page<T> | undefined;
+      for (let target = first; target < first + pagesShown; target += 1) {
+        const result = await fetchRef.current({ page: target, pageSize });
+        if (!isCurrent()) {
+          return;
+        }
+        read = appendUnseen(read, result.items, getKeyRef.current);
+        last = result;
+        if (!result.hasMore) {
+          break;
+        }
+      }
+
+      if (last) {
+        setItems(read);
+        setPage(last.page);
+        setTotal(last.total);
+        setHasMore(last.hasMore);
+        setError(null);
+        setFailedDuring(null);
+        if (moreHeldRef.current && last.hasMore) {
+          nextPage = last.page + 1;
+        }
+      }
+    } catch (caught) {
+      if (!isCurrent()) {
+        return;
+      }
+      const appError = AppError.from(caught);
+      log.error('quiet read failed', { pagesShown, kind: appError.kind });
+      setError(appError);
+      // A next page that already failed stays the failure; with nothing on
+      // screen a retry must start from placeholders, as after a first load.
+      const standsInFor: LoadMode = shownRef.current.hasItems ? 'refresh' : 'load';
+      setFailedDuring(current => current ?? standsInFor);
+    } finally {
+      if (requestIdRef.current === requestId) {
+        inFlightRef.current = false;
+        quietRef.current = false;
+        moreHeldRef.current = false;
+      }
+    }
+
+    if (nextPage !== null && isCurrent()) {
+      // `.catch` rather than `void`: the lint baseline (WORKING_NOTES section 5) does not grow.
+      load(nextPage, 'more').catch(() => undefined);
+    }
+  }, [load, pageSize]);
+
   useEffect(() => {
     if (!enabled) {
       setIsLoading(false);
@@ -192,6 +319,11 @@ export function usePaginatedQuery<T>(
   const loadMore = useCallback(() => {
     // A failure is retried through `retry`, never by scrolling on past it.
     if (!hasMore || isLoadingMore || isLoading || isRefreshing || error) {
+      return;
+    }
+    // Held, not dropped, while a quiet read is out: it lands as the page counter moves.
+    if (quietRef.current) {
+      moreHeldRef.current = true;
       return;
     }
     void load(page + 1, 'more');
@@ -211,6 +343,15 @@ export function usePaginatedQuery<T>(
     void load(AppConfig.pagination.initialPage, failedDuring === 'refresh' ? 'refresh' : 'load');
   }, [failedDuring, load, page]);
 
+  const refreshQuietly = useCallback(() => {
+    if (!enabled) {
+      return;
+    }
+    // Started, not awaited: it settles every read itself. `.catch` rather than
+    // `void`, so the lint baseline (WORKING_NOTES section 5) does not grow.
+    readQuietly().catch(() => undefined);
+  }, [enabled, readQuietly]);
+
   return {
     items,
     error,
@@ -224,5 +365,6 @@ export function usePaginatedQuery<T>(
     loadMore,
     refresh,
     retry,
+    refreshQuietly,
   };
 }

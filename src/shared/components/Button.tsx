@@ -11,6 +11,14 @@
  * While `isLoading` is true the button is disabled. That is not cosmetic: it is
  * what prevents a double submit, which PROJECT_BIBLE.md section 33.1 requires for
  * vendor accept, where two taps could enter a race the backend must arbitrate.
+ *
+ * ⚠️ Two reds, for two weights of the same warning (Phase 3G-4, 21/10/2026).
+ * `danger` — filled, white words — is for the act that ends something: Log out,
+ * and every `ConfirmDialog`'s final yes. `dangerSecondary` — a red tint, red
+ * words — is for a way *towards* such an act that still has a dialog behind
+ * it: a team member's Disable, a customer's Cancel request. A filled red there
+ * shouted at a control whose dialog was already the protection. Do not move a
+ * dialog's confirm to the tonal variant: the last step is the loud one.
  */
 
 import React, { memo, useCallback } from 'react';
@@ -28,7 +36,7 @@ import { Icon } from '@/shared/components/Icon';
 import { Text } from '@/shared/components/Text';
 import { useTheme, type ColorTokens, type IconName, type SpacingToken } from '@/shared/theme';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'danger';
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'dangerSecondary';
 
 export interface ButtonProps {
   label: string;
@@ -98,11 +106,27 @@ const VARIANTS: Readonly<Record<ButtonVariant, VariantColors>> = {
    * that red, under the 4.5:1 a label needs. White is 4.8:1 in both (owner's
    * decision, 21/10/2026). The icon and the busy spinner take the label's
    * colour, so all three move together.
+   *
+   * Pressed is `dangerPressed`, a step darker. It used to be `danger` itself,
+   * so a press on Log out showed nothing at all (3G-2's open item).
    */
   danger: {
     background: 'danger',
-    backgroundPressed: 'danger',
+    backgroundPressed: 'dangerPressed',
     label: 'onDanger',
+  },
+  /**
+   * The secondary button's shape in the danger's colours: a tint, not a fill.
+   *
+   * ⚠️ The words are `onDangerSubtle`, never `danger`: the base red on its own
+   * tint is 3.9:1 in light and 3.3:1 in dark. `onDangerSubtle` goes darker in
+   * light and lighter in dark, and clears 4.5:1 on both the tint and its
+   * pressed step in both themes.
+   */
+  dangerSecondary: {
+    background: 'dangerSubtle',
+    backgroundPressed: 'dangerSubtlePressed',
+    label: 'onDangerSubtle',
   },
 };
 

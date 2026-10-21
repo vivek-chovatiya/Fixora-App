@@ -147,7 +147,7 @@ function CategoryChipComponent({ category, selected, disabled, onPress }: Catego
       <DynamicIcon
         glyph={category.iconGlyph}
         size="sm"
-        color={selected ? 'primary' : 'textTertiary'}
+        color={selected ? 'onPrimarySubtle' : 'textTertiary'}
       />
 
       {/*
@@ -171,7 +171,7 @@ function CategoryChipComponent({ category, selected, disabled, onPress }: Catego
       <View style={styles.labelBox}>
         <Text
           variant="label"
-          color={selected ? 'primary' : 'textSecondary'}
+          color={selected ? 'onPrimarySubtle' : 'textSecondary'}
           numberOfLines={1}>
           {category.name}
         </Text>
@@ -181,7 +181,7 @@ function CategoryChipComponent({ category, selected, disabled, onPress }: Catego
         Selection is never carried by colour alone: the mark appears, the border
         changes, and the checkbox role reports it to a screen reader.
       */}
-      {selected ? <Icon name="selected" size="sm" color="primary" /> : null}
+      {selected ? <Icon name="selected" size="sm" color="onPrimarySubtle" /> : null}
     </Pressable>
   );
 }

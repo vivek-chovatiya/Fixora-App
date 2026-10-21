@@ -112,11 +112,11 @@ function AvatarComponent({
       accessibilityRole="image"
       accessibilityLabel={accessibilityLabel}>
       {initials ? (
-        <Text variant={INITIALS_VARIANT[size]} color="primary">
+        <Text variant={INITIALS_VARIANT[size]} color="onPrimarySubtle">
           {initials}
         </Text>
       ) : (
-        <Icon name={fallbackIcon} size={size === 'sm' ? 'sm' : 'lg'} color="primary" />
+        <Icon name={fallbackIcon} size={size === 'sm' ? 'sm' : 'lg'} color="onPrimarySubtle" />
       )}
     </View>
   );

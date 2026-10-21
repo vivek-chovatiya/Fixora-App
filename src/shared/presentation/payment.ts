@@ -47,6 +47,17 @@ export function isPaidStatus(status: string): boolean {
   return normalise(status) === PAYMENT_STATUS_PAID;
 }
 
+/**
+ * Whether a recorded status says the customer has not paid yet — the one
+ * record a vendor may later change to paid (owner decision, 21/10/2026).
+ *
+ * ⚠️ Not `!isPaidStatus`: a status the table does not know is neither, and
+ * offering to change a record nobody can read would be a guess about it.
+ */
+export function isUnpaidStatus(status: string): boolean {
+  return normalise(status) === PAYMENT_STATUS_UNPAID;
+}
+
 /** A payment status in words: "Paid", "Not paid yet", or that it cannot be shown. */
 export function presentPaymentStatus(status: string): string {
   return STATUS_LABELS[normalise(status)] ?? PAYMENT_COPY.unavailable;

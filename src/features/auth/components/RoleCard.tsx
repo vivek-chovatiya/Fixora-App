@@ -27,8 +27,15 @@ import { useTheme, type ColorTokens, type IconName } from '@/shared/theme';
 export type RoleCardTone = 'customer' | 'vendor';
 
 interface ToneStyle {
-  /** Ink for the glyph, the badge label and the chevron. */
+  /** Ink for the chevron, which sits on a `surface` disc. */
   accent: keyof ColorTokens;
+  /**
+   * Ink for everything drawn on `subtle` — the glyph and the badge's words —
+   * which is that tint's own ink (`SUBTLE_INK`, Phase 3G-4). ⚠️ Not the
+   * accent: `success` is 3.0:1 on `successSubtle` in light and `primary` 4.2 /
+   * 4.0:1 on `primarySubtle`, short of the 4.5:1 12sp words need.
+   */
+  ink: keyof ColorTokens;
   /** Fill behind the glyph and the badge. */
   subtle: keyof ColorTokens;
   icon: IconName;
@@ -48,6 +55,7 @@ interface ToneStyle {
 const TONES: Readonly<Record<RoleCardTone, ToneStyle>> = {
   customer: {
     accent: 'primary',
+    ink: 'onPrimarySubtle',
     subtle: 'primarySubtle',
     icon: 'customer',
     art: require('../assets/role-customer.png'),
@@ -56,6 +64,7 @@ const TONES: Readonly<Record<RoleCardTone, ToneStyle>> = {
     // The existing success pair, not a new green. A second green a few points
     // away from this one would be a token nobody could choose between.
     accent: 'success',
+    ink: 'onSuccessSubtle',
     subtle: 'successSubtle',
     icon: 'business',
     art: require('../assets/role-vendor.png'),
@@ -137,7 +146,7 @@ function RoleCardComponent({
                   height: theme.spacing.xxxl,
                 },
               ]}>
-              <Icon name={palette.icon} size="md" color={palette.accent} />
+              <Icon name={palette.icon} size="md" color={palette.ink} />
             </View>
 
             <Text variant="h3" numberOfLines={1}>
@@ -159,7 +168,7 @@ function RoleCardComponent({
                 paddingVertical: theme.spacing.xs,
               },
             ]}>
-            <Text variant="label" color={palette.accent} numberOfLines={1}>
+            <Text variant="label" color={palette.ink} numberOfLines={1}>
               {badge}
             </Text>
           </View>

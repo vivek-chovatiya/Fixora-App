@@ -241,7 +241,7 @@ function VerificationSceneComponent({
       />
 
       <Animated.View pointerEvents="none" style={[styles.centred, markStyle]}>
-        <Icon name="success" size="lg" color="primary" />
+        <Icon name="success" size="lg" color="onPrimarySubtle" />
       </Animated.View>
 
       {characters.map((character, index) => (

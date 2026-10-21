@@ -19,6 +19,7 @@ import { currencySymbol, formatMoney } from '@/shared/presentation/money';
 import {
   describePayment,
   isPaidStatus,
+  isUnpaidStatus,
   PAYMENT_COPY,
   presentPaymentStatus,
 } from '@/shared/presentation/payment';
@@ -114,6 +115,21 @@ describe('Payment words', () => {
     expect(describePayment('PAID', '   ')).toBe('Paid');
     // A method against an unpaid job is a contradiction; the status is the part to trust.
     expect(describePayment('UNPAID', 'Cash')).toBe('Not paid yet');
+  });
+
+  /*
+    "Not paid yet" is the one record a vendor may later change to paid
+    (21/10/2026). A status nobody worded is neither paid nor unpaid, so it is
+    never offered for changing.
+  */
+  it.each([
+    ['UNPAID', true],
+    [' unpaid ', true],
+    ['PAID', false],
+    ['PARTLY_PAID', false],
+    ['', false],
+  ])('reads %p as not paid yet: %p', (status, expected) => {
+    expect(isUnpaidStatus(status)).toBe(expected);
   });
 
   it('never says a payment was processed', () => {

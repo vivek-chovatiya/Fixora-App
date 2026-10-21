@@ -108,7 +108,7 @@ export function PermissionPrompt({ copy, onAnswered, testID }: PermissionPromptP
                 backgroundColor: theme.colors.primarySubtle,
               },
             ]}>
-            <Icon name={copy.icon} size="lg" color="primary" />
+            <Icon name={copy.icon} size="lg" color="onPrimarySubtle" />
           </View>
 
           <Text variant="h3" style={styles.title}>

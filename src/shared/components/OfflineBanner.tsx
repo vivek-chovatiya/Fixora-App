@@ -86,13 +86,16 @@ function OfflineBannerComponent({ testID = 'offline-banner' }: OfflineBannerProp
         accessibilityLiveRegion="polite"
         accessibilityLabel={SPOKEN}
         style={[styles.row, { gap: theme.spacing.sm, maxWidth: theme.maxContentWidth }]}>
-        <Icon name={presentation.icon} size="md" color={presentation.tone} />
+        {/* The tint's own ink, words and glyph (3G-4): `warning` is 2.9:1 here in light. */}
+        <Icon name={presentation.icon} size="md" color="onWarningSubtle" />
         {/*
           `flex: 1`, not `flexShrink`: a wrapping Text sized by its own content
           in a row can lose its last line at 360dp (WORKING_NOTES section 11).
         */}
-        <Text variant="body" style={styles.copy}>
-          <Text variant="bodyStrong">{OFFLINE_BANNER_COPY.title}</Text>{' '}
+        <Text variant="body" color="onWarningSubtle" style={styles.copy}>
+          <Text variant="bodyStrong" color="onWarningSubtle">
+            {OFFLINE_BANNER_COPY.title}
+          </Text>{' '}
           {OFFLINE_BANNER_COPY.message}
         </Text>
       </View>

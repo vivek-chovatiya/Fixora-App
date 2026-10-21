@@ -11,6 +11,15 @@
  *
  * Mapping a backend status onto a tone and a human label belongs to the feature
  * module that owns that status.
+ *
+ * ⚠️ The words are 12sp caption, so they need 4.5:1 on their tint in both
+ * themes (Phase 3G-4, 21/10/2026, measured from the theme by the suite). A
+ * tone's own colour is not readable on its own tint — danger was 3.9:1 light
+ * and 3.3:1 dark, info 4.2 / 4.0, success 3.0 and warning 2.9 in light — so
+ * each coloured tint has its own ink: `onDangerSubtle`, `onInfoSubtle`,
+ * `onSuccessSubtle`, `onWarningSubtle` (5.5–9.0:1). The neutral grey was
+ * 4.4:1 in light, and is now `textSecondary` — the same grey family, one step
+ * darker in light and the very same value in dark (6.9 / 5.8).
  */
 
 import React, { memo } from 'react';
@@ -18,7 +27,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { Icon } from '@/shared/components/Icon';
 import { Text } from '@/shared/components/Text';
-import { useTheme, type ColorTokens, type IconName } from '@/shared/theme';
+import { SUBTLE_INK, useTheme, type ColorTokens, type IconName } from '@/shared/theme';
 
 /** Semantic emphasis, not a status. */
 export type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
@@ -28,12 +37,18 @@ interface TonePalette {
   foreground: keyof ColorTokens;
 }
 
+/** The tone's tint, and that tint's own ink from the theme's one table (3G-4). */
+function toneOf(tone: StatusTone): TonePalette {
+  const background = `${tone}Subtle` as const;
+  return { background, foreground: SUBTLE_INK[background] };
+}
+
 const TONES: Readonly<Record<StatusTone, TonePalette>> = {
-  neutral: { background: 'neutralSubtle', foreground: 'neutral' },
-  info: { background: 'infoSubtle', foreground: 'info' },
-  success: { background: 'successSubtle', foreground: 'success' },
-  warning: { background: 'warningSubtle', foreground: 'warning' },
-  danger: { background: 'dangerSubtle', foreground: 'danger' },
+  neutral: toneOf('neutral'),
+  info: toneOf('info'),
+  success: toneOf('success'),
+  warning: toneOf('warning'),
+  danger: toneOf('danger'),
 };
 
 export interface StatusBadgeProps {

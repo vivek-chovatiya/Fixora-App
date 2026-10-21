@@ -16,7 +16,14 @@ export { getTheme, lightTheme, darkTheme, type AppTheme, type ThemeMode } from '
  */
 export { ThemeProvider, useTheme } from './ThemeProvider';
 
-export { type ColorTokens, type ColorTone, lightColors, darkColors } from './colors';
+export {
+  type ColorTokens,
+  type ColorTone,
+  type SubtleTint,
+  lightColors,
+  darkColors,
+  SUBTLE_INK,
+} from './colors';
 export { spacing, screenPadding, hitSlop, type SpacingToken } from './spacing';
 export { radius, type RadiusToken } from './radius';
 export { borderWidth, type BorderWidthToken } from './borderWidth';

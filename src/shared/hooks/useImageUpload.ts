@@ -24,6 +24,14 @@
  *
  * One action at a time: while an image is being picked or uploaded, another
  * press does nothing.
+ *
+ * ⚠️ `progress` is the upload's own report, 0 to 1, and `null` until the
+ * service has said anything (Phase 3G-4, 21/10/2026). Null is "not known
+ * yet", never 0%: picking and compressing come before the upload starts, and a
+ * bar at zero through them would read as stuck. It belongs to one attempt —
+ * cleared when an action starts and when it ends, and a report from an
+ * attempt that has ended, or after unmount, is dropped — so a late report can
+ * never draw a bar under a finished or failed upload.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -34,6 +42,18 @@ import type { ImageAsset, ImageSource } from '@/shared/services/types/ImageServi
 import { AppError } from '@/shared/types/error';
 
 const log = createLogger('useImageUpload');
+
+/**
+ * A reported progress as a fraction the screen can draw, or null when it is
+ * not a number at all. Held to 0–1: an uploader that says 1.02 or −0.1 is
+ * rounding, not reporting a bar past its ends.
+ */
+function asFraction(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  return Math.min(1, Math.max(0, value));
+}
 
 /** What the screen is doing, so it can say so. */
 export type ImageUploadStatus = 'idle' | 'working' | 'failed';
@@ -57,6 +77,12 @@ export interface ImageUpload {
    * uploading would otherwise miss (2026-10-21).
    */
   isRunning: () => boolean;
+  /**
+   * How far the running upload has got, 0 to 1, as the service last reported
+   * it. `null` while nothing is uploading and before the first report — a
+   * screen draws that as "uploading", not as 0%.
+   */
+  progress: number | null;
   /** The picture that failed to save, kept for a retry. Local and unsaved. */
   pending: ImageAsset | null;
   /** Set when the last attempt failed. Cleared by a retry or a discard. */
@@ -75,6 +101,7 @@ export function useImageUpload({ attach, detach }: ImageUploadOptions): ImageUpl
   const [status, setStatus] = useState<ImageUploadStatus>('idle');
   const [pending, setPending] = useState<ImageAsset | null>(null);
   const [error, setError] = useState<AppError | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
 
   // Read at call time, so a caller need not memoise what it passes.
   const attachRef = useRef(attach);
@@ -91,6 +118,13 @@ export function useImageUpload({ attach, detach }: ImageUploadOptions): ImageUpl
     image it was uploading if Try again is to mean anything.
   */
   const keepRef = useRef<ImageAsset | null>(null);
+  /*
+    Which action is running, counted. A progress report carries the number it
+    was started under and is dropped once the count has moved on — the action
+    ended, failed or was followed by another — because an uploader may report
+    once more after its promise has settled.
+  */
+  const attemptRef = useRef(0);
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -118,7 +152,16 @@ export function useImageUpload({ attach, detach }: ImageUploadOptions): ImageUpl
     }
 
     const compressed = await images.compress(asset);
-    const { remoteUrl } = await images.upload(compressed);
+    const attempt = attemptRef.current;
+    const { remoteUrl } = await images.upload(compressed, state => {
+      if (!mountedRef.current || attempt !== attemptRef.current) {
+        return;
+      }
+      const fraction = asFraction(state.progress);
+      if (fraction !== null) {
+        setProgress(fraction);
+      }
+    });
     await attachRef.current(remoteUrl);
   }, []);
 
@@ -137,8 +180,10 @@ export function useImageUpload({ attach, detach }: ImageUploadOptions): ImageUpl
       }
       inFlight.current = true;
       keepRef.current = keep;
+      attemptRef.current += 1;
       setStatus('working');
       setError(null);
+      setProgress(null);
 
       void (async () => {
         try {
@@ -159,6 +204,11 @@ export function useImageUpload({ attach, detach }: ImageUploadOptions): ImageUpl
           }
         } finally {
           inFlight.current = false;
+          // Ended: any report still on its way belongs to nothing now.
+          attemptRef.current += 1;
+          if (mountedRef.current) {
+            setProgress(null);
+          }
         }
       })();
     },
@@ -222,6 +272,7 @@ export function useImageUpload({ attach, detach }: ImageUploadOptions): ImageUpl
     status,
     isBusy: status === 'working',
     isRunning,
+    progress,
     pending,
     error,
     choose,

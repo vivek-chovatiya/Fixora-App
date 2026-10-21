@@ -172,7 +172,7 @@ export function AuthEntryScreen({ navigation }: Props) {
                   height: theme.spacing.giant,
                 },
               ]}>
-              <Icon name="verified" size="lg" color="primary" />
+              <Icon name="verified" size="lg" color="onPrimarySubtle" />
             </View>
 
             <View style={styles.trustText}>

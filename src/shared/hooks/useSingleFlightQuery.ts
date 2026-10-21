@@ -50,6 +50,18 @@ export function useSingleFlightQuery<T>(
   const busy = useRef(false);
   const generation = useRef(0);
 
+  /*
+    ⚠️ The read in the air is a quiet one (Phase 3E-15). A press is never held
+    back by it: Try again and a pull start at once, with their own placeholder
+    or spinner, and the quiet answer is dropped when it lands (it is no longer
+    the newest read). Only a quiet read defers — to anything — never the other
+    way round: a tap silently swallowed is a tap the user thinks did nothing.
+    `startingQuiet` is up only while a quiet read is being started, so the call
+    it starts knows what it is.
+  */
+  const quietOut = useRef(false);
+  const startingQuiet = useRef(false);
+
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
@@ -62,29 +74,46 @@ export function useSingleFlightQuery<T>(
     generation.current += 1;
     const mine = generation.current;
     busy.current = true;
+    quietOut.current = startingQuiet.current;
     try {
       return await fetcherRef.current();
     } finally {
       if (generation.current === mine) {
         busy.current = false;
+        quietOut.current = false;
       }
     }
   }, []);
 
   const query = useServiceQuery<T>(guarded, deps, options);
-  const { retry: retryQuery, refresh: refreshQuery } = query;
+  const { retry: retryQuery, refresh: refreshQuery, refreshQuietly: refreshQuietlyQuery } = query;
 
+  // A press goes ahead over a quiet read, never over another press's read.
   const retry = useCallback(() => {
-    if (!busy.current) {
+    if (!busy.current || quietOut.current) {
       retryQuery();
     }
   }, [retryQuery]);
 
   const refresh = useCallback(() => {
-    if (!busy.current) {
+    if (!busy.current || quietOut.current) {
       refreshQuery();
     }
   }, [refreshQuery]);
 
-  return { ...query, retry, refresh };
+  // The shared query already holds a quiet read back while one is out; held here too, by the same guard.
+  const refreshQuietly = useCallback(() => {
+    if (busy.current) {
+      return;
+    }
+    startingQuiet.current = true;
+    try {
+      // Calls `guarded` before it returns, which reads `startingQuiet`.
+      refreshQuietlyQuery();
+    } finally {
+      startingQuiet.current = false;
+    }
+  }, [refreshQuietlyQuery]);
+
+  return { ...query, retry, refresh, refreshQuietly };
 }

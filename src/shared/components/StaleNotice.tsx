@@ -91,10 +91,13 @@ function StaleNoticeComponent({
         accessibilityRole="alert"
         accessibilityLiveRegion="polite"
         accessibilityLabel={spokenSentences([title, message, reason])}>
-        <Icon name="warning" size="md" color="warning" />
+        {/* Words and glyph in the tint's own ink (3G-4): `warning` is 2.9:1 here in light. */}
+        <Icon name="warning" size="md" color="onWarningSubtle" />
         <View style={[styles.copy, { gap: theme.spacing.xxs }]}>
-          <Text variant="bodyStrong">{title}</Text>
-          <Text variant="caption" color="textSecondary">
+          <Text variant="bodyStrong" color="onWarningSubtle">
+            {title}
+          </Text>
+          <Text variant="caption" color="onWarningSubtle">
             {reason ? `${message} ${reason}` : message}
           </Text>
         </View>

@@ -129,7 +129,7 @@ function OnboardingIllustrationComponent({ name, size, testID }: OnboardingIllus
         {scene.subject === 'mark' ? (
           <BrandMark size="lg" />
         ) : (
-          <Icon name={scene.subject} size={subject} color="primary" />
+          <Icon name={scene.subject} size={subject} color="onPrimarySubtle" />
         )}
       </View>
 
