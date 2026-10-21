@@ -79,10 +79,19 @@ export type AuthStackParamList = {
    *
    * `registrationId` is the onboarding identity — never the phone number, so a
    * half-finished registration cannot be resumed by anyone who merely knows the
-   * number. The challenge carries only the masked destination and timings; no
-   * one-time code and no auth code ever travels in params.
+   * number. Every onboarding call is keyed by it alone. The challenge carries
+   * only the masked destination and timings; no one-time code and no auth code
+   * ever travels in params.
+   *
+   * `phone` travels beside it for one job, never as an identity: once
+   * onboarding finishes, it is the number remembered on this device for the
+   * next sign in — the digits the vendor typed, as sign in remembers the digits
+   * typed there. The account's own `phone` has no format contract, and a
+   * backend that answered "+919000000001" would have the next code-only sign
+   * in send twelve digits and fail as a wrong code. It is the vendor's own
+   * number, not a credential, like `CustomerOtp`'s.
    */
-  VendorOtp: { registrationId: string; challenge: OtpChallenge };
+  VendorOtp: { registrationId: string; phone: string; challenge: OtpChallenge };
 };
 
 /** Customer bottom tabs (PROJECT_BIBLE.md section 26). */
@@ -106,6 +115,37 @@ export type CustomerTabParamList = {
  */
 export type CustomerStackParamList = {
   CustomerTabs: NavigatorScreenParams<CustomerTabParamList>;
+
+  /**
+   * Editing the signed-in customer's own details (PROJECT_BIBLE.md sections 25
+   * and 26, Phase 3D-8).
+   *
+   * Takes no params. Whose profile it is, is whoever is signed in — passing an
+   * id would imply this screen can edit somebody else's, which it cannot, and
+   * passing the current values would let a stale copy be saved over fresher
+   * ones. The screen reads the session, like every other screen that needs it.
+   */
+  EditProfile: undefined;
+
+  /**
+   * The customer's saved addresses (PROJECT_BIBLE.md section 18; section 26
+   * names this route `Addresses`, below Profile).
+   *
+   * Takes no params, for the reason `EditProfile` takes none: whose addresses
+   * they are, is whoever is signed in.
+   */
+  Addresses: undefined;
+
+  /**
+   * Adding one, or changing one that is already saved.
+   *
+   * `addressId` absent means a new address. One route rather than two because
+   * the two differ only in what the form opens with — splitting them would be
+   * two screens maintaining one form. The id and nothing else: the screen reads
+   * the record from the service rather than being handed a copy that may have
+   * gone stale while another change was in flight.
+   */
+  EditAddress: { addressId?: string };
 
   /**
    * Service discovery, reached from Home's primary action.
@@ -135,6 +175,35 @@ export type CustomerStackParamList = {
   CreateRequest: { categoryId: string; subCategoryId: string };
 
   /**
+   * Where the work is to be done (PROJECT_BIBLE.md section 18).
+   *
+   * The same two identifiers as its neighbours, and for the same reason — the
+   * screen resolves what they mean rather than being handed names. The address
+   * itself never travels in params: it is where somebody lives, and navigation
+   * state is serialised, logged by devtools and restored from disk, which is no
+   * place for it. `RequestDraftContext` carries it, as it carries the notes and
+   * the photo URLs.
+   *
+   * Named `ServiceAddress` rather than `CustomerServiceAddress`: every route in
+   * this list is the customer's, so the prefix would distinguish it from
+   * nothing, and none of its siblings carry one.
+   */
+  ServiceAddress: { categoryId: string; subCategoryId: string };
+
+  /**
+   * One of the customer's saved addresses, chosen as the service address
+   * (PROJECT_BIBLE.md section 18's "address selection"), pushed from
+   * `ServiceAddress` and popped back to it.
+   *
+   * ⚠️ No params, and the choice never travels in one. Whose addresses they are
+   * is whoever is signed in, and the address chosen is copied into
+   * `RequestDraftContext` — where `ServiceAddress` reads it back — because an
+   * address in navigation state is an address in devtools and on disk, the
+   * reason `ServiceAddress` itself carries none.
+   */
+  ChooseSavedAddress: undefined;
+
+  /**
    * Choosing a professional, or choosing not to (PROJECT_BIBLE.md section 18A).
    *
    * The same two identifiers, because the backend decides eligibility from the
@@ -144,6 +213,69 @@ export type CustomerStackParamList = {
    * no business in navigation state.
    */
   PreferredVendor: { categoryId: string; subCategoryId: string };
+
+  /**
+   * The summary a customer reads before sending (PROJECT_BIBLE.md section 19).
+   *
+   * The same two identifiers again, for the same reason: the screen resolves the
+   * names it shows from the backend rather than being handed them. Everything it
+   * summarises comes from `RequestDraftContext`, which is also what it checks
+   * before letting anything be sent.
+   */
+  RequestConfirmation: { categoryId: string; subCategoryId: string };
+
+  /**
+   * The moment after a request goes out (PROJECT_BIBLE.md section 19).
+   *
+   * ⚠️ Takes the same two identifiers as its siblings and nothing else — no
+   * reference, no address, no vendor. It is tempting to pass the outcome here
+   * because the draft that held it is destroyed at the same moment, and it would
+   * be wrong for the reason every other screen in this flow avoids it:
+   * navigation state is serialised, written to disk and printed by devtools, and
+   * a customer's home address has no business in any of those. The outcome
+   * travels in `RequestDraftContext`, which is where the request lived all
+   * along.
+   *
+   * It is reached by `reset` rather than `navigate`, so there is nothing behind
+   * it to go back to — see the screen for why.
+   */
+  RequestSubmitted: { categoryId: string; subCategoryId: string };
+
+  /**
+   * One request, read back (PROJECT_BIBLE.md section 20).
+   *
+   * ⚠️ The reference and nothing else. Unlike the creation routes this carries
+   * no category or service, because a request that exists already knows what it
+   * was for — the screen asks `RequestService` for the record rather than being
+   * handed any of it. Above all it is never handed the record itself: an address,
+   * notes and photographs in a route param are all three in navigation state,
+   * which is serialised, restored from disk and printed by devtools. A reference
+   * is what a customer reads aloud, and is safe to travel.
+   */
+  RequestDetails: { requestId: string };
+
+  /**
+   * Section 24's "Rate Your Experience", for one request.
+   *
+   * ⚠️ The reference and nothing else, for the reason `RequestDetails` gives —
+   * and never the review either. Whether the request can be reviewed, and
+   * whether it already has been, are read from the services by the screen, so a
+   * stale or hand-built route can at worst open a screen that says no.
+   */
+  RequestReview: { requestId: string };
+
+  /**
+   * The customer's notifications (PROJECT_BIBLE.md section 57; in-app only, as
+   * section 80's "Basic" — push is section 72's Phase 2), pushed from the bell
+   * on Home.
+   *
+   * ⚠️ No params. Whose notifications they are is the session's, so no route —
+   * restored, deep-linked or hand-built — can open somebody else's. The vendor
+   * stack registers the same screen under the same name; neither stack holds
+   * the other's (section 3), and a notification's link opens a request in this
+   * stack's own `RequestDetails`.
+   */
+  Notifications: undefined;
 };
 
 /** Vendor bottom tabs (PROJECT_BIBLE.md section 43). */
@@ -155,13 +287,107 @@ export type VendorTabParamList = {
 };
 
 /**
+ * The vendor application's stack (Phase 3E-1).
+ *
+ * ⚠️ Which routes exist depends on the profile, the way the root depends on the
+ * session: until setup is complete the stack holds `VendorProfileSetup` and
+ * nothing else, so no tab, deep link or stray `navigate` can reach the
+ * application around it. Saving the profile swaps the set; nothing navigates.
+ *
+ * No params anywhere: the profile is read from `VendorProfileService`, never
+ * carried in a route (a route is serialised, restored and printed by devtools).
+ */
+export type VendorStackParamList = {
+  VendorProfileSetup: undefined;
+  VendorTabs: NavigatorScreenParams<VendorTabParamList>;
+  /** The same form as setup, opened from the Profile tab. */
+  EditVendorProfile: undefined;
+  /**
+   * One request, read-only (section 32, Phase 3E-3).
+   *
+   * ⚠️ The reference and nothing else, for the reason the customer's
+   * `RequestDetails` gives. Whose request it is comes from the session, never
+   * from here: a hand-built route to somebody else's reference opens a screen
+   * that says it could not be found.
+   */
+  VendorRequestDetails: { requestId: string };
+  /**
+   * Completing a job in progress and recording what it came to — the final
+   * amount and the offline payment (sections 36 and 37) — pushed from the
+   * request's "Mark completed", on its details or its card.
+   *
+   * ⚠️ The reference and nothing else, as `VendorRequestDetails`. Nothing about
+   * the job is carried: the service decides whether it is this vendor's and in
+   * progress, and refuses the completion otherwise.
+   */
+  CompleteWork: { requestId: string };
+  /**
+   * The vendor's notifications (section 57; in-app only, section 80 — push is
+   * section 72's Phase 2), pushed from the bell on the Dashboard.
+   *
+   * ⚠️ No params, and never an account id: whose notifications they are is the
+   * session's. The same screen the customer stack registers under the same
+   * name; a notification's link opens a request in this stack's own
+   * `VendorRequestDetails`, never the customer's route.
+   */
+  Notifications: undefined;
+  /**
+   * The reviews customers wrote about this vendor's work, read-only (section
+   * 41, Phase 3E-6), pushed from the Profile tab.
+   *
+   * ⚠️ No params, and never a vendor id. Whose reviews they are comes from the
+   * session, so no route — restored, deep-linked or hand-built — can open
+   * another vendor's.
+   */
+  VendorReviews: undefined;
+  /**
+   * The vendor's basic report — today, this week or this month (section 42),
+   * pushed from the Profile tab.
+   *
+   * ⚠️ No params: not a vendor id, and not the period either. Whose figures they
+   * are comes from the session, and the period is chosen on the screen, so no
+   * route — restored, deep-linked or hand-built — can open another vendor's.
+   */
+  VendorReports: undefined;
+  /**
+   * Adding a team member (no `memberId`) or changing one (section 39, Phase
+   * 3E-7), pushed from the Team tab. One form, as `EditAddress` is.
+   *
+   * ⚠️ The member's id and nothing else. The details are read from
+   * `VendorTeamService`, never carried here, and whose team it is comes from
+   * the session: an id that is not on this vendor's team opens a form that says
+   * so, and saving it is refused.
+   */
+  EditTeamMember: { memberId?: string };
+  /**
+   * The vendor's shop images — add, retry, remove (section 38's "Upload Shop
+   * Images"), pushed from the Profile tab.
+   *
+   * ⚠️ No params, never a vendor id and never a URL. The images are read from
+   * `VendorProfileService` for whoever is signed in, so no route can open or
+   * change another vendor's.
+   */
+  ShopImages: undefined;
+  /**
+   * The vendor's usual week — which days they open, and when (section 38's
+   * "Working Hours" and "Manage Availability"), pushed from the Profile tab's
+   * "Edit working hours".
+   *
+   * ⚠️ No params: never a vendor id and never the hours. The week is the
+   * profile's for whoever is signed in, and is saved through
+   * `VendorProfileService`, so no route can open or change another vendor's.
+   */
+  WorkingHours: undefined;
+};
+
+/**
  * The root is switched by auth state, not navigated between. It is typed here so
  * that `useNavigation` resolves correctly anywhere in the tree.
  */
 export type RootStackParamList = {
   Auth: NavigatorScreenParams<AuthStackParamList>;
   Customer: NavigatorScreenParams<CustomerStackParamList>;
-  Vendor: NavigatorScreenParams<VendorTabParamList>;
+  Vendor: NavigatorScreenParams<VendorStackParamList>;
 };
 
 /**
