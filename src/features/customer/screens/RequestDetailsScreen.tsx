@@ -60,7 +60,6 @@ import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 
 import { StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
-import { RequestPhotoStrip } from '@/features/customer/components/RequestPhotoStrip';
 import { RequestReference } from '@/features/customer/components/RequestReference';
 import { RequestReviewSummary } from '@/features/customer/components/RequestReviewSummary';
 import { RequestStatusOverview } from '@/features/customer/components/RequestStatusOverview';
@@ -98,6 +97,7 @@ import {
   ConfirmDialog,
   EmptyState,
   ErrorState,
+  RequestPhotoStrip,
   Screen,
   Text,
 } from '@/shared/components';
@@ -248,15 +248,8 @@ function ReviewSection({
       />
     );
   } else if (availability === 'checking') {
-    content = (
-      <View
-        accessibilityRole="progressbar"
-        accessibilityLabel={REVIEW.loadingLabel}
-        accessibilityState={{ busy: true }}
-        testID="request-details-review-loading">
-        <Skeleton height={theme.hitSlop.minTarget} radiusToken="lg" />
-      </View>
-    );
+    // Drawn by the loading region below, not as content.
+    content = null;
   } else {
     content = (
       <View style={{ gap: theme.spacing.md }}>
@@ -275,9 +268,35 @@ function ReviewSection({
     );
   }
 
+  /*
+    ⚠️ Two regions, never one updated into the other — the keyed loading
+    region every list has had since 3G-3. While the review is being checked, a
+    region named for it and busy; once it has answered — the review, the
+    prompt or the failure — a plain container with no name, role or state of
+    its own, under the group's heading, which already names it. They carry
+    different keys, and that is the fix, not a detail: the checking view and
+    the prompt were both a plain View in the same place, so React updated the
+    one into the other, and Android does not unset a prop that merely
+    disappears — the prompt could keep `busy` (the exposure Home's regions had,
+    3D-10). The `progressbar` role went with it, as it did on the lists.
+  */
+  const isChecking = !review.error && availability === 'checking';
+
   return (
     <RequestSummarySection title={REVIEW.yourReviewTitle} testID="request-details-review">
-      {content}
+      {isChecking ? (
+        <View
+          key="loading"
+          accessibilityLabel={REVIEW.loadingLabel}
+          accessibilityState={{ busy: true }}
+          testID="request-details-review-loading">
+          <Skeleton height={theme.hitSlop.minTarget} radiusToken="lg" />
+        </View>
+      ) : (
+        <View key="settled" testID="request-details-review-settled">
+          {content}
+        </View>
+      )}
     </RequestSummarySection>
   );
 }
@@ -453,7 +472,9 @@ function RequestRecord({
           {notes ? (
             <RequestSummaryBlock label={SUMMARY.notesLabel} value={notes} testID="details-notes" />
           ) : null}
-          {photos.length > 0 ? <RequestPhotoStrip urls={photos} testID="details-photos" /> : null}
+          {photos.length > 0 ? (
+            <RequestPhotoStrip urls={photos} copy={SUMMARY} testID="details-photos" />
+          ) : null}
         </RequestSummarySection>
       ) : null}
 
@@ -464,15 +485,17 @@ function RequestRecord({
 
       {/*
         Beneath everything, where it is found by somebody looking for it rather
-        than met by somebody reading the request. The danger fill marks it as
-        the one control here that ends something; the dialog it opens is what
-        protects it (section 46). Only before acceptance — `isCancellableState`
-        decides, never a status compared here — so it never meets the review.
+        than met by somebody reading the request. The red marks it as the one
+        control here that ends something; the dialog it opens is what protects
+        it (section 46), so this is the quiet red tint and the dialog's own
+        Cancel request is the filled one (3G-4). Only before acceptance —
+        `isCancellableState` decides, never a status compared here — so it
+        never meets the review.
       */}
       {isCancellableState(stage) ? (
         <Button
           label={CANCEL.action}
-          variant="danger"
+          variant="dangerSecondary"
           icon="cancelled"
           onPress={onCancel}
           disabled={isCancelDisabled}

@@ -43,6 +43,39 @@ export type VendorChoice =
 export const NO_VENDOR_CHOICE: VendorChoice = Object.freeze({ kind: 'none' });
 
 /**
+ * Where the draft's professional stands against the eligible list for its
+ * service (PROJECT_BIBLE.md section 18A; Phase 3D-12).
+ *
+ * - `unnamed` — no professional is named (open dispatch, or not answered
+ *   yet): nothing for a list to confirm or contradict.
+ * - `unknown` — one is named and the list has not settled: still being read,
+ *   or its last read failed. Nothing can be said either way, so nothing may be
+ *   cleared — and nothing may be sent.
+ * - `available` — the latest list has them.
+ * - `unavailable` — the latest list has loaded and does not. They stopped
+ *   being eligible after the draft named them, and the request must never go
+ *   to them.
+ *
+ * ⚠️ `list` is the list only once it has settled; the caller passes undefined
+ * while a read is in the air or after one failed. A list kept from an earlier
+ * read is not the latest one.
+ */
+export type VendorChoiceStanding = 'unnamed' | 'unknown' | 'available' | 'unavailable';
+
+export function vendorChoiceStanding(
+  choice: VendorChoice,
+  list: readonly { id: string }[] | undefined,
+): VendorChoiceStanding {
+  if (choice.kind !== 'vendor') {
+    return 'unnamed';
+  }
+  if (!list) {
+    return 'unknown';
+  }
+  return list.some(vendor => vendor.id === choice.vendorId) ? 'available' : 'unavailable';
+}
+
+/**
  * A request as far as the customer has got it.
  *
  * Exactly what is needed to resume and to submit — no navigation state, no

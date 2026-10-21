@@ -71,8 +71,10 @@ function ResumeRequestCardComponent({
       </View>
 
       <View style={[styles.body, { gap: theme.spacing.xxs }]}>
-        <Text variant="bodyStrong">{COPY.resumeTitle}</Text>
-        <Text variant="caption" color="textSecondary">
+        <Text variant="bodyStrong" color="onPrimarySubtle">
+          {COPY.resumeTitle}
+        </Text>
+        <Text variant="caption" color="onPrimarySubtle">
           {detail}
         </Text>
       </View>
@@ -82,7 +84,7 @@ function ResumeRequestCardComponent({
         it would be a second thing to hear about the same one thing.
       */}
       <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-        <Icon name="forward" size="md" color="primary" />
+        <Icon name="forward" size="md" color="onPrimarySubtle" />
       </View>
     </Card>
   );

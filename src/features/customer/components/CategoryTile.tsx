@@ -65,7 +65,7 @@ function CategoryTileComponent({
             height: theme.spacing.huge,
           },
         ]}>
-        <DynamicIcon glyph={iconGlyph} size="md" color="primary" />
+        <DynamicIcon glyph={iconGlyph} size="md" color="onPrimarySubtle" />
       </View>
 
       <Text variant="label" numberOfLines={2} style={styles.label}>

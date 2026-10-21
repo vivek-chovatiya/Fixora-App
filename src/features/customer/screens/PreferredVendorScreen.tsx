@@ -25,17 +25,26 @@
  * and the summary that follows is the only place a request is created. This
  * paragraph used to say the opposite, which was true for exactly as long as
  * there was no confirmation screen to disagree with it.
+ *
+ * ⚠️ A professional the list no longer has is not kept (Phase 3D-12). A
+ * resumed or restored draft can name one who stopped being eligible; once the
+ * list has loaded without them, `useCheckedVendorChoice` takes them off the
+ * draft and this screen says so in one sentence under its heading, with the
+ * question open again. Not while the list is loading or failed — nothing can
+ * be known then — and the confirmation screen, which reads the list again,
+ * sends no professional it has not seen in a loaded one.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, StyleSheet, View, type ListRenderItemInfo } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
+import { InfoNotice } from '@/features/customer/components/InfoNotice';
 import { NoPreferenceOption } from '@/features/customer/components/NoPreferenceOption';
 import { Skeleton } from '@/features/customer/components/Skeleton';
 import { VendorOption } from '@/features/customer/components/VendorOption';
 import { CUSTOMER_COPY } from '@/features/customer/constants/customerCopy';
-import { useEligibleVendors } from '@/features/customer/hooks/useEligibleVendors';
+import { useCheckedVendorChoice } from '@/features/customer/hooks/useCheckedVendorChoice';
 import { useRequestDraft } from '@/features/customer/state/RequestDraftContext';
 import { NO_VENDOR_CHOICE, type VendorChoice } from '@/features/customer/state/requestDraft';
 import type { CustomerStackParamList } from '@/navigation/types';
@@ -99,7 +108,9 @@ export function PreferredVendorScreen({ navigation, route }: Props) {
   const { categoryId, subCategoryId } = route.params;
 
   const { draft, completion, updateDraft } = useRequestDraft();
-  const vendors = useEligibleVendors(categoryId, subCategoryId);
+  // The list, and the draft's professional checked against it: one the latest
+  // list no longer has is taken off the draft (see the note at the top).
+  const { vendors, wasWithdrawn } = useCheckedVendorChoice(categoryId, subCategoryId);
 
   /*
     The answer lives on the draft, not on this screen.
@@ -252,6 +263,23 @@ export function PreferredVendorScreen({ navigation, route }: Props) {
       <Text variant="subtitle" color="textSecondary">
         {COPY.subtitle}
       </Text>
+
+      {/*
+        Why the question is open again: the professional the draft named is not
+        on the list that has just loaded. Under the heading, where it is read
+        before the choices, and in the info tone of the details form's notice
+        about another request — nothing is wrong with this one, and both ways on
+        are below — the same `InfoNotice`. Announced, because it appears after
+        the screen has been read, when the list lands.
+      */}
+      {wasWithdrawn ? (
+        <InfoNotice
+          text={COPY.vendorUnavailable}
+          announce
+          style={{ marginTop: theme.spacing.sm }}
+          testID="preferred-vendor-withdrawn"
+        />
+      ) : null}
     </View>
   );
 

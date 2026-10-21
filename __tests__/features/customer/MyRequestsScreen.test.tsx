@@ -14,6 +14,11 @@
  * - a card opens Request Details with a reference and nothing else, and says
  *   the status in the words the details screen uses — including which wait a
  *   waiting request is in, off-path statuses and ones the app does not know
+ * - shown again (the tab, or coming back from a request), it reads once more,
+ *   quietly — not on arrival, never beside a read already out, with no
+ *   placeholders and no spinner, the filter and the rows kept, every page on
+ *   screen in one request — and a quiet read that fails keeps the rows
+ *   (owner decision, 21/10/2026, Phase 3E-15)
  *
  * The fixture shares no names with the mock seed, so what passes has passed on
  * what the service returned.
@@ -22,6 +27,7 @@
 import React from 'react';
 import ReactTestRenderer, { act, type ReactTestRendererJSON } from 'react-test-renderer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { NavigationContext } from '@react-navigation/native';
 
 import { AppConfig } from '@/core/config/AppConfig';
 import { CUSTOMER_COPY } from '@/features/customer/constants/customerCopy';
@@ -96,7 +102,49 @@ type ListRequests = (
   request: PageRequest,
 ) => Promise<Page<CustomerRequest>>;
 
-async function render(listRequests: ListRequests = pageOf()) {
+/**
+ * Just enough of the tab's navigation object for focus: whether it is focused,
+ * and listeners the test fires as the tab bar would when another tab is chosen
+ * (blur) and this one again (focus). The screen's own `navigation` prop stays
+ * the plain stub — focus is read from the context, as `useNavigationEvent` does.
+ */
+function fakeFocus() {
+  const listeners: Record<'focus' | 'blur', Array<() => void>> = { focus: [], blur: [] };
+  let focused = true;
+
+  return {
+    context: {
+      isFocused: () => focused,
+      addListener: (event: 'focus' | 'blur', listener: () => void) => {
+        listeners[event] = [...listeners[event], listener];
+        return () => {
+          listeners[event] = listeners[event].filter(entry => entry !== listener);
+        };
+      },
+    },
+    /** Another tab, then this one again. */
+    leaveAndReturn: async () => {
+      await act(async () => {
+        focused = false;
+        listeners.blur.forEach(listener => listener());
+      });
+      await act(async () => {
+        focused = true;
+        listeners.focus.forEach(listener => listener());
+      });
+    },
+    /** A focus event with no blur before it, as a navigator can send on arrival. */
+    focusAgain: async () => {
+      await act(async () => {
+        listeners.focus.forEach(listener => listener());
+      });
+    },
+  };
+}
+
+type FakeFocus = ReturnType<typeof fakeFocus>;
+
+async function render(listRequests: ListRequests = pageOf(), focus?: FakeFocus) {
   const list = jest.fn(listRequests);
 
   registerService('request', {
@@ -117,19 +165,24 @@ async function render(listRequests: ListRequests = pageOf()) {
     }),
   } as RequestService);
 
-  return { ...(await mount()), list };
+  return { ...(await mount(focus)), list };
 }
 
-async function mount() {
+async function mount(focus?: FakeFocus) {
   const navigate = jest.fn();
   const navigation = { navigate } as never;
   const route = { key: 'Requests', name: 'Requests' as const, params: undefined } as never;
 
+  const screen = <MyRequestsScreen navigation={navigation} route={route} />;
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   await act(async () => {
     renderer = ReactTestRenderer.create(
       <ThemeProvider>
-        <MyRequestsScreen navigation={navigation} route={route} />
+        {focus ? (
+          <NavigationContext.Provider value={focus.context as never}>{screen}</NavigationContext.Provider>
+        ) : (
+          screen
+        )}
       </ThemeProvider>,
     );
   });
@@ -895,5 +948,164 @@ describe('MyRequestsScreen — a request changed on Request Details', () => {
 
     await choose(COPY.filterActive);
     expect(cards()).not.toContain('REQ-24081');
+  });
+});
+
+describe('MyRequestsScreen — shown again (owner decision, 21/10/2026, Phase 3E-15)', () => {
+  it('reads nothing more on arrival than its first page', async () => {
+    const focus = fakeFocus();
+    const { list, settle } = await render(pageOf(), focus);
+
+    await focus.focusAgain();
+    await settle();
+
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads once more, exactly once, each time the tab is shown again', async () => {
+    const focus = fakeFocus();
+    const { list, settle } = await render(pageOf(), focus);
+
+    await focus.leaveAndReturn();
+    await settle();
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(list).toHaveBeenLastCalledWith('all', { page: 1, pageSize: PAGE_SIZE });
+
+    await focus.leaveAndReturn();
+    await settle();
+    expect(list).toHaveBeenCalledTimes(3);
+  });
+
+  it('reads quietly: no placeholders, no spinner, the rows kept until the answer', async () => {
+    const focus = fakeFocus();
+    const quiet = deferred<Page<CustomerRequest>>();
+    const list = jest
+      .fn<ReturnType<ListRequests>, Parameters<ListRequests>>()
+      .mockImplementationOnce(pageOf())
+      .mockImplementationOnce(() => quiet.promise);
+    const { cards, busy, hosts, settle } = await render(list, focus);
+
+    await focus.leaveAndReturn();
+
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(busy()).toEqual([]);
+    expect(hosts('my-requests-loading')).toHaveLength(0);
+    const [scroller] = hosts('my-requests-list');
+    expect(scroller.props.refreshing).toBe(false);
+    expect(cards()).toEqual(REQUESTS.slice(0, PAGE_SIZE).map(request => request.id));
+
+    const fresh: CustomerRequest = { ...REQUESTS[0], id: 'REQ-NEW', createdAt: new Date().toISOString() };
+    await act(async () => {
+      quiet.resolve(toPage([fresh, ...REQUESTS], { page: 1, pageSize: PAGE_SIZE }));
+    });
+    await settle();
+
+    expect(cards()[0]).toBe('REQ-NEW');
+    expect(cards()).toHaveLength(PAGE_SIZE);
+  });
+
+  it('keeps the chosen filter, and reads that view again', async () => {
+    const focus = fakeFocus();
+    const { list, choose, renderer, settle } = await render(pageOf(), focus);
+
+    await choose(COPY.filterActive);
+    await focus.leaveAndReturn();
+    await settle();
+
+    expect(list).toHaveBeenLastCalledWith('active', { page: 1, pageSize: PAGE_SIZE });
+    const [active] = renderer.root.findAll(
+      node =>
+        typeof node.type === 'string' &&
+        node.props?.accessibilityRole === 'radio' &&
+        node.props?.accessibilityLabel === COPY.filterActive,
+    );
+    expect(active.props.accessibilityState.selected).toBe(true);
+  });
+
+  it('sends no second read when shown again while one is still out', async () => {
+    const focus = fakeFocus();
+    const quiet = deferred<Page<CustomerRequest>>();
+    const list = jest
+      .fn<ReturnType<ListRequests>, Parameters<ListRequests>>()
+      .mockImplementationOnce(pageOf())
+      .mockImplementationOnce(() => quiet.promise)
+      .mockImplementation(pageOf());
+    const { settle } = await render(list, focus);
+
+    await focus.leaveAndReturn();
+    await focus.leaveAndReturn();
+    await focus.leaveAndReturn();
+    expect(list).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      quiet.resolve(toPage(REQUESTS, { page: 1, pageSize: PAGE_SIZE }));
+    });
+    await settle();
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends none while the first page is still out either', async () => {
+    const focus = fakeFocus();
+    const first = deferred<Page<CustomerRequest>>();
+    const list = jest.fn<ReturnType<ListRequests>, Parameters<ListRequests>>(() => first.promise);
+    await render(list, focus);
+
+    await focus.leaveAndReturn();
+
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the rows when a quiet read fails, and says so under them as a failed pull does', async () => {
+    const focus = fakeFocus();
+    const list = jest
+      .fn<ReturnType<ListRequests>, Parameters<ListRequests>>()
+      .mockImplementationOnce(pageOf())
+      .mockRejectedValueOnce(failure())
+      .mockImplementation(pageOf());
+    const { cards, hosts, press, settle } = await render(list, focus);
+
+    await focus.leaveAndReturn();
+    await settle();
+
+    expect(cards()).toEqual(REQUESTS.slice(0, PAGE_SIZE).map(request => request.id));
+    expect(hosts('my-requests-error')).toHaveLength(0);
+    expect(hosts('my-requests-more-error')).toHaveLength(1);
+
+    // Its retry is the pull it stood in for.
+    await press('Try again');
+    expect(list.mock.calls.map(([, request]) => request)).toEqual([
+      { page: 1, pageSize: PAGE_SIZE },
+      { page: 1, pageSize: PAGE_SIZE },
+      { page: 1, pageSize: PAGE_SIZE },
+    ]);
+    expect(hosts('my-requests-more-error')).toHaveLength(0);
+  });
+
+  it('reads every page on screen, page by page, so the list is not cut back to its first', async () => {
+    const many: CustomerRequest[] = Array.from({ length: PAGE_SIZE * 2 + 5 }, (_, index) => ({
+      ...REQUESTS[0],
+      id: `REQ-M${String(index + 1).padStart(3, '0')}`,
+    }));
+    const focus = fakeFocus();
+    const { list, press, cards, settle } = await render(pageOf(many), focus);
+
+    await press(COPY.showMore);
+    expect(cards()).toHaveLength(PAGE_SIZE * 2);
+
+    list.mockClear();
+    await focus.leaveAndReturn();
+    await settle();
+
+    // The requests a scroll makes, at the list's own page size — never one long page.
+    expect(list.mock.calls).toEqual([
+      ['all', { page: 1, pageSize: PAGE_SIZE }],
+      ['all', { page: 2, pageSize: PAGE_SIZE }],
+    ]);
+    expect(cards()).toEqual(many.slice(0, PAGE_SIZE * 2).map(request => request.id));
+
+    // The next page is still the one after what is on screen.
+    await press(COPY.showMore);
+    expect(list).toHaveBeenLastCalledWith('all', { page: 3, pageSize: PAGE_SIZE });
+    expect(cards()).toEqual(many.map(request => request.id));
   });
 });

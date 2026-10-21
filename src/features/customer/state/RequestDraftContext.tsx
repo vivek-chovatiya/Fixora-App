@@ -58,6 +58,7 @@ import { createLogger } from '@/core/logger/Logger';
 import {
   completionOf,
   isDraftWorthKeeping,
+  NO_VENDOR_CHOICE,
   type RequestDraft,
   type RequestDraftCompletion,
   type SubmittedRequest,
@@ -84,6 +85,23 @@ interface RequestDraftContextValue {
   startDraft: (draft: RequestDraft) => void;
   /** Merges into the existing draft, leaving every other answer alone. */
   updateDraft: (changes: Partial<RequestDraft>) => void;
+  /**
+   * Takes a professional the latest eligible list no longer has off the draft,
+   * leaving the vendor question unanswered (PROJECT_BIBLE.md section 18A;
+   * Phase 3D-12). Only that professional: a draft that names somebody else by
+   * now is left alone. Called by `useCheckedVendorChoice`, never on a guess.
+   */
+  withdrawVendor: (vendorId: string) => void;
+  /**
+   * True once `withdrawVendor` has taken a professional off, until the vendor
+   * question is answered again or the draft is replaced or sent.
+   *
+   * ⚠️ Here rather than on Preferred Vendor, because the confirmation screen
+   * can be the one that finds them gone, and it then goes back: the screen
+   * that says so is not the one that saw it. In memory only — after a restart
+   * the question is simply unanswered.
+   */
+  isVendorWithdrawn: boolean;
   /**
    * Forgets it, here and on the device.
    *
@@ -121,6 +139,11 @@ interface RequestDraftContextValue {
 
 const log = createLogger('RequestDraftContext');
 
+/** Whether the draft names this professional — the only one `withdrawVendor` may take off. */
+function namesVendor(draft: RequestDraft | null, vendorId: string): draft is RequestDraft {
+  return draft !== null && draft.vendor.kind === 'vendor' && draft.vendor.vendorId === vendorId;
+}
+
 const RequestDraftContext = createContext<RequestDraftContextValue | undefined>(undefined);
 
 export interface RequestDraftProviderProps {
@@ -142,6 +165,25 @@ export function RequestDraftProvider({
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [isRestored, setIsRestored] = useState(false);
   const [submitted, setSubmitted] = useState<SubmittedRequest | null>(null);
+  const [isVendorWithdrawn, setIsVendorWithdrawn] = useState(false);
+
+  /*
+    ⚠️ The draft as of the last change asked for, ahead of the render that
+    shows it — set together with the state by `commitDraft`, and only there.
+
+    Every action decides from this and writes the result down beside the
+    update, never inside a state updater: React may run an updater during
+    render and runs it twice under StrictMode, so a write inside one could go
+    out twice (found in review, 3D-12). Read from the ref rather than from the
+    `draft` a callback closes over, because two changes in the same tick — a
+    form writing two answers in one handler — must compose: the second sees the
+    first, as it did when each was a functional update.
+  */
+  const draftRef = useRef<RequestDraft | null>(null);
+  const commitDraft = useCallback((next: RequestDraft | null) => {
+    draftRef.current = next;
+    setDraft(next);
+  }, []);
 
   const ownerRef = useRef(ownerId);
 
@@ -183,12 +225,12 @@ export function RequestDraftProvider({
       }
 
       if (saved) {
-        setDraft(saved.draft);
+        commitDraft(saved.draft);
         setSavedAt(saved.savedAt);
       }
       setIsRestored(true);
     })();
-  }, []);
+  }, [commitDraft]);
 
   /**
    * Writes, and says nothing when it fails.
@@ -230,56 +272,86 @@ export function RequestDraftProvider({
 
   const startDraft = useCallback(
     (next: RequestDraft) => {
-      setDraft(next);
+      commitDraft(next);
+      setIsVendorWithdrawn(false);
       persist(next);
     },
-    [persist],
+    [commitDraft, persist],
   );
 
-  const updateDraft = useCallback(
-    (changes: Partial<RequestDraft>) => {
-      setDraft(current => {
-        if (!current) {
-          return current;
-        }
-
-        const next = { ...current, ...changes };
-
-        /*
-          A draft emptied back out is not kept.
-
-          Clearing every answer and leaving is the same intention as never having
-          started, and a home screen offering to resume that would be offering to
-          resume nothing.
-        */
-        if (isDraftWorthKeeping(next)) {
-          persist(next);
-        } else {
-          forget();
-        }
-
-        return next;
-      });
+  /**
+   * Writes a changed draft down — or forgets one emptied back out.
+   *
+   * Clearing every answer and leaving is the same intention as never having
+   * started, and a home screen offering to resume that would be offering to
+   * resume nothing.
+   */
+  const keepOrForget = useCallback(
+    (next: RequestDraft) => {
+      if (isDraftWorthKeeping(next)) {
+        persist(next);
+      } else {
+        forget();
+      }
     },
     [persist, forget],
   );
 
+  const updateDraft = useCallback(
+    (changes: Partial<RequestDraft>) => {
+      const current = draftRef.current;
+      if (!current) {
+        return;
+      }
+
+      // A new answer to the vendor question replaces the one that was withdrawn.
+      if (changes.vendor !== undefined) {
+        setIsVendorWithdrawn(false);
+      }
+
+      const next = { ...current, ...changes };
+      commitDraft(next);
+      keepOrForget(next);
+    },
+    [commitDraft, keepOrForget],
+  );
+
+  const withdrawVendor = useCallback(
+    (vendorId: string) => {
+      const current = draftRef.current;
+      if (!namesVendor(current, vendorId)) {
+        // Somebody else by now, or nobody: nothing to withdraw, nothing to say.
+        return;
+      }
+
+      // Saved as any other change is: a draft whose only answer was this
+      // professional is no longer one worth keeping.
+      const next: RequestDraft = { ...current, vendor: NO_VENDOR_CHOICE };
+      commitDraft(next);
+      setIsVendorWithdrawn(true);
+      keepOrForget(next);
+    },
+    [commitDraft, keepOrForget],
+  );
+
   const clearDraft = useCallback((): Promise<void> => {
-    setDraft(null);
+    commitDraft(null);
     setSavedAt(null);
+    setIsVendorWithdrawn(false);
     return forget();
-  }, [forget]);
+  }, [commitDraft, forget]);
 
   const recordSubmission = useCallback(
     (submission: SubmittedRequest) => {
       setSubmitted(submission);
       // Exactly what `clearDraft` does, and inseparable from it: the request is
       // out, so there is nothing left to resume.
-      setDraft(null);
+      commitDraft(null);
       setSavedAt(null);
+      setIsVendorWithdrawn(false);
       forget();
     },
-    [forget],
+    [commitDraft, forget],
   );
 
   const completion = useMemo(() => (draft ? completionOf(draft) : null), [draft]);
@@ -292,6 +364,8 @@ export function RequestDraftProvider({
       completion,
       startDraft,
       updateDraft,
+      withdrawVendor,
+      isVendorWithdrawn,
       clearDraft,
       submitted,
       recordSubmission,
@@ -303,6 +377,8 @@ export function RequestDraftProvider({
       completion,
       startDraft,
       updateDraft,
+      withdrawVendor,
+      isVendorWithdrawn,
       clearDraft,
       submitted,
       recordSubmission,

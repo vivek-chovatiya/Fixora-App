@@ -23,8 +23,8 @@
  * thing to explain and one more target competing with the screen's purpose.
  *
  * The bell at the top is the one way to the notifications inbox (section 57);
- * the bar has no tab for it. A failed unread count is a bell with no badge,
- * never an error on this screen.
+ * the bar has no tab for it. A pull reads its count again with the sections. A
+ * failed unread count is a bell with no badge, never an error on this screen.
  */
 
 import React, { useCallback } from 'react';
@@ -43,12 +43,8 @@ import { ResumeRequestCard } from '@/features/customer/components/ResumeRequestC
 import { ServicePrompt } from '@/features/customer/components/ServicePrompt';
 import { CUSTOMER_COPY } from '@/features/customer/constants/customerCopy';
 import { useCustomerHome } from '@/features/customer/hooks/useCustomerHome';
-import {
-  isDraftWorthKeeping,
-  type RequestDraftStep,
-} from '@/features/customer/state/requestDraft';
+import type { RequestDraftStep } from '@/features/customer/state/requestDraft';
 import { NotificationBell } from '@/features/notifications/components/NotificationBell';
-import { useUnreadNotificationCount } from '@/features/notifications/hooks/useUnreadNotificationCount';
 import type { CustomerStackParamList, CustomerTabParamList } from '@/navigation/types';
 import { Screen, StaleNotice } from '@/shared/components';
 import { useAnalytics } from '@/shared/hooks/useAnalytics';
@@ -76,41 +72,33 @@ const TOP_EDGE_ONLY = ['top'] as const;
 
 export function CustomerHomeScreen({ navigation }: Props) {
   const theme = useTheme();
+  /*
+    `resume` is offered only while the draft is worth keeping, and the bell's
+    count is read again by the pull with everything else — both decided in the
+    hook (3D-12).
+  */
   const {
     greeting,
     name,
     categories,
     requests,
-    resume: restoredRequest,
+    resume,
+    unreadNotifications,
     refresh,
     isRefreshing,
     isStale,
     staleError,
   } = useCustomerHome();
 
-  /*
-    A draft is offered only while it is worth keeping.
-
-    The draft context keeps a draft that was emptied back out in memory — the
-    form that emptied it may still be open, and is still writing to it — and
-    removes only the copy on the device. Offering "Continue your request" for
-    that would be offering to resume nothing, so the same rule that decides
-    whether a draft is saved (`isDraftWorthKeeping`) decides whether it is
-    offered.
-  */
-  const resume =
-    restoredRequest && isDraftWorthKeeping(restoredRequest.draft) ? restoredRequest : null;
-
   const openCategories = useCallback(() => {
     navigation.navigate('Categories');
   }, [navigation]);
 
   /*
-    The bell (section 57): the unread count, read on arrival and on every
-    return, and the inbox as a pushed screen. Whose notifications they are is
-    the session's, so nothing travels.
+    The bell (section 57): the unread count, read on arrival, on every return
+    and on every pull, and the inbox as a pushed screen. Whose notifications
+    they are is the session's, so nothing travels.
   */
-  const unreadNotifications = useUnreadNotificationCount();
   const openNotifications = useCallback(() => {
     navigation.navigate('Notifications');
   }, [navigation]);

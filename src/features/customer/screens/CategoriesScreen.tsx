@@ -27,7 +27,9 @@
  * the failure, having nowhere to go but the empty slot, was never drawn. Now
  * the vendor lists' notice (3E-3) sits under the heading with a Try again that
  * pulls again, and the tiles stay. A failed *first* read is unchanged — there is
- * nothing to keep, so it is the full error with its own retry.
+ * nothing to keep, so it is the full error with its own retry — and, as on the
+ * vendor lists, no pull over it: the retry is right there, and a pull would be
+ * a second, hidden one.
  */
 
 import React, { useCallback, useMemo } from 'react';
@@ -271,8 +273,11 @@ export function CategoriesScreen({ navigation }: Props) {
           },
         ]}
         showsVerticalScrollIndicator={false}
-        onRefresh={refresh}
-        refreshing={isRefreshing}
+        // Not offered over a first read that failed: `error` is only that one
+        // (a failed pull is `isStale`, and keeps its pull), and its retry is
+        // right there. The vendor lists' rule.
+        onRefresh={error ? undefined : refresh}
+        refreshing={error ? false : isRefreshing}
         testID="categories-grid"
       />
     </Screen>

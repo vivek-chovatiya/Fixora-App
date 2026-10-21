@@ -227,8 +227,12 @@ describe('EditProfileScreen — what it opens with', () => {
   it('shows the phone as a read-only row, with the reason, and never as a field', async () => {
     const { byTestID, field, text } = await render();
 
+    // Written for reading, as Profile writes it (owner, 21/10/2026).
     expect(byTestID('edit-profile-phone')[0]?.props.accessibilityLabel).toBe(
-      `${COPY.phoneLabel}: 9876543210`,
+      `${COPY.phoneLabel}: +91 98765 43210`,
+    );
+    expect(byTestID('edit-profile-phone')[0]?.props.accessibilityLabel).not.toContain(
+      '9876543210',
     );
     expect(field('edit-profile-phone')).toBeUndefined();
     expect(text()).toContain(COPY.phoneHelp);
@@ -248,6 +252,8 @@ describe('EditProfileScreen — saving', () => {
       lastName: 'Sharma',
       email: 'asha@example.com',
     });
+    // The phone written for reading is display only, never sent.
+    expect(JSON.stringify(updateProfile.mock.calls)).not.toContain('+91');
     expect(goBack).toHaveBeenCalledTimes(1);
   });
 

@@ -185,7 +185,7 @@ export function RequestSubmittedScreen({ navigation, route }: Props) {
             Shape as well as colour, which section 46 requires — a tick reads as
             a tick in greyscale, and a green circle does not.
           */}
-          <Icon name="success" size="xxl" color="success" />
+          <Icon name="success" size="xxl" color="onSuccessSubtle" />
         </View>
 
         <View style={{ gap: theme.spacing.sm }}>

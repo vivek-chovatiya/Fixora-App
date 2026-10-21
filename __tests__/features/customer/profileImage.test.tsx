@@ -31,7 +31,11 @@ import { RequestDraftProvider } from '@/features/customer/state/RequestDraftCont
 import { setRequestDraftStorage } from '@/features/customer/state/requestDraftStorage';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { AuthService } from '@/shared/services/types/AuthService';
-import type { ImageAsset, ImageService } from '@/shared/services/types/ImageService';
+import type {
+  ImageAsset,
+  ImageService,
+  UploadProgressListener,
+} from '@/shared/services/types/ImageService';
 import type { ProfileService } from '@/shared/services/types/ProfileService';
 import { AppError } from '@/shared/types/error';
 import { ThemeProvider } from '@/shared/theme';
@@ -83,7 +87,7 @@ interface Options {
   /** What the picker returns. An empty array is a cancelled pick. */
   picked?: ImageAsset[];
   valid?: boolean;
-  onUpload?: () => Promise<UploadResult>;
+  onUpload?: (asset: ImageAsset, onProgress?: UploadProgressListener) => Promise<UploadResult>;
   onSetImage?: (url: string) => Promise<AuthUser>;
 }
 
@@ -267,7 +271,9 @@ describe('choosing a picture', () => {
 
     await press(COPY.photoGallery);
 
-    expect(upload).toHaveBeenCalledWith(COMPRESSED);
+    // With a progress listener since 3G-4; the file is still the compressed one.
+    expect(upload).toHaveBeenCalledWith(COMPRESSED, expect.any(Function));
+    expect(upload).not.toHaveBeenCalledWith(PICKED, expect.anything());
   });
 
   it('puts the uploaded url into the session, never the local file', async () => {
@@ -396,5 +402,104 @@ describe('pressed twice', () => {
 
     expect(r.upload).toHaveBeenCalledTimes(1);
     expect(r.setProfileImage).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * How far the upload has got (3D-12), as the vendor's photo cards show it
+ * (3G-4) and through the same shared piece: the waiting words once, in a polite
+ * live region, until the upload reports; then one progressbar stop whose value
+ * is the figure, and which is not a live region, so the figure never speaks.
+ */
+describe('how far the upload has got', () => {
+  const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
+
+  afterEach(() => {
+    for (const renderer of mounted.splice(0)) {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  /** An upload held open, with the listener the screen handed it. */
+  async function uploading() {
+    let report: UploadProgressListener | undefined;
+    let finish!: (result: UploadResult) => void;
+    const r = await render({
+      onUpload: (_asset, onProgress) => {
+        report = onProgress;
+        return new Promise<UploadResult>(resolve => (finish = resolve));
+      },
+    });
+    mounted.push(r.renderer);
+    await r.press(COPY.photoGallery);
+
+    return {
+      ...r,
+      report: async (fraction: number) => {
+        await act(async () => {
+          report?.({ assetId: PICKED.id, status: 'uploading', progress: fraction });
+        });
+      },
+      finish: async () => {
+        await act(async () => {
+          finish({ assetId: PICKED.id, remoteUrl: REMOTE });
+        });
+        await act(async () => {});
+      },
+    };
+  }
+
+  /** Every polite or assertive live region inside a node, by its own testID. */
+  function liveRegionsIn(node: ReactTestRenderer.ReactTestInstance) {
+    return node
+      .findAll(child => typeof child.type === 'string' && child.props?.accessibilityLiveRegion)
+      .map(child => child.props.testID as string | undefined);
+  }
+
+  it('says it is saving, once, until the upload has said how far it has got', async () => {
+    const r = await uploading();
+
+    const [waiting] = r.byTestID('profile-photo-busy');
+    expect(waiting.props.accessibilityLiveRegion).toBe('polite');
+    expect(r.text()).toContain(COPY.photoUploading);
+    // Never a bar at 0% through picking and compressing.
+    expect(r.byTestID('profile-photo-progress')).toHaveLength(0);
+
+    await r.finish();
+  });
+
+  it('then shows the figure as one progressbar stop with its value, which never speaks', async () => {
+    const r = await uploading();
+
+    await r.report(0.42);
+
+    expect(r.byTestID('profile-photo-busy')).toHaveLength(0);
+    const [bar] = r.byTestID('profile-photo-progress');
+    expect(bar.props.accessibilityRole).toBe('progressbar');
+    expect(bar.props.accessibilityLabel).toBe(COPY.photoUploading);
+    expect(bar.props.accessibilityValue).toEqual({ min: 0, max: 100, now: 42 });
+    expect(r.text()).toContain(COPY.photoProgress(42));
+    expect(r.byTestID('profile-photo-progress-fill')).toHaveLength(1);
+    expect(liveRegionsIn(bar)).toEqual([]);
+    expect(bar.props.accessibilityLiveRegion).toBeUndefined();
+
+    await r.report(0.8);
+    expect(r.byTestID('profile-photo-progress')[0].props.accessibilityValue.now).toBe(80);
+    expect(r.text()).toContain('Uploading… 80%');
+
+    await r.finish();
+  });
+
+  it('leaves no bar once the picture is saved', async () => {
+    const r = await uploading();
+    await r.report(0.9);
+
+    await r.finish();
+
+    expect(r.byTestID('profile-photo-progress')).toHaveLength(0);
+    expect(r.byTestID('profile-photo-busy')).toHaveLength(0);
+    expect(r.setProfileImage).toHaveBeenCalledWith(REMOTE);
   });
 });

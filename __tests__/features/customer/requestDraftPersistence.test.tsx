@@ -274,6 +274,140 @@ describe('the request draft', () => {
     expect(api.savedAt).toBeNull();
     expect(storage.clearCount()).toBe(1);
   });
+
+  /*
+    A professional the latest eligible list no longer has (3D-12): taken off
+    the draft, written down that way so a restart does not bring them back,
+    and remembered as withdrawn — in memory only — until the question is
+    answered again.
+  */
+  it('takes a professional who is no longer listed off the draft, and writes it down', async () => {
+    const storage = stubStorage();
+    await mount();
+
+    await act(async () => {
+      api.startDraft({ ...DRAFT, vendor: { kind: 'vendor', vendorId: 'ven_gone' } });
+    });
+    expect(api.isVendorWithdrawn).toBe(false);
+
+    await act(async () => {
+      api.withdrawVendor('ven_gone');
+    });
+
+    expect(api.draft?.vendor).toEqual({ kind: 'none' });
+    // Every other answer stays.
+    expect(api.draft?.values.notes).toBe('The fan rattles.');
+    expect(api.draft?.address).toEqual(ADDRESS);
+    expect(api.completion?.step).toBe('vendor');
+    expect(storage.writes[storage.writes.length - 1].vendor).toEqual({ kind: 'none' });
+    expect(api.isVendorWithdrawn).toBe(true);
+
+    await act(async () => {
+      api.updateDraft({ vendor: { kind: 'open' } });
+    });
+    expect(api.isVendorWithdrawn).toBe(false);
+  });
+
+  it('leaves a draft that names somebody else by now alone', async () => {
+    const storage = stubStorage();
+    await mount();
+
+    await act(async () => {
+      api.startDraft({ ...DRAFT, vendor: { kind: 'vendor', vendorId: 'ven_apex' } });
+    });
+    const written = storage.writes.length;
+
+    await act(async () => {
+      api.withdrawVendor('ven_gone');
+    });
+
+    expect(api.draft?.vendor).toEqual({ kind: 'vendor', vendorId: 'ven_apex' });
+    expect(storage.writes).toHaveLength(written);
+    expect(api.isVendorWithdrawn).toBe(false);
+  });
+
+  /**
+   * Mounted where React runs every state updater twice (StrictMode, in
+   * development). A write made inside an updater went out twice there (review,
+   * 3D-12); every write now sits beside its update instead.
+   */
+  async function mountStrict() {
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = ReactTestRenderer.create(
+        <React.StrictMode>
+          <RequestDraftProvider>
+            <Probe />
+          </RequestDraftProvider>
+        </React.StrictMode>,
+      );
+    });
+    mounted.push(renderer);
+  }
+
+  it('writes a withdrawal down once, even where React runs updaters twice', async () => {
+    const storage = stubStorage();
+    await mountStrict();
+
+    await act(async () => {
+      api.startDraft({ ...DRAFT, vendor: { kind: 'vendor', vendorId: 'ven_gone' } });
+    });
+    const before = storage.writes.length;
+
+    await act(async () => {
+      api.withdrawVendor('ven_gone');
+    });
+
+    expect(storage.writes).toHaveLength(before + 1);
+    expect(storage.writes[storage.writes.length - 1].vendor).toEqual({ kind: 'none' });
+    expect(api.draft?.vendor).toEqual({ kind: 'none' });
+    expect(api.isVendorWithdrawn).toBe(true);
+  });
+
+  it('composes two changes in one tick, and writes each down once, even there', async () => {
+    // A form writing two answers in one handler: the second must see the
+    // first, as it did when each change was a functional update.
+    const storage = stubStorage();
+    await mountStrict();
+
+    await act(async () => {
+      api.startDraft(DRAFT);
+    });
+    const before = storage.writes.length;
+
+    await act(async () => {
+      api.updateDraft({ values: { ...DRAFT.values, notes: 'It sparks too.' } });
+      api.updateDraft({ vendor: { kind: 'open' } });
+    });
+
+    expect(storage.writes).toHaveLength(before + 2);
+    expect(storage.writes[before].values.notes).toBe('It sparks too.');
+    expect(storage.writes[before].vendor).toEqual(NO_VENDOR_CHOICE);
+    expect(storage.writes[before + 1]).toEqual({
+      ...DRAFT,
+      values: { ...DRAFT.values, notes: 'It sparks too.' },
+      vendor: { kind: 'open' },
+    });
+    expect(api.draft?.values.notes).toBe('It sparks too.');
+    expect(api.draft?.vendor).toEqual({ kind: 'open' });
+  });
+
+  it('forgets a draft emptied back out once, even there', async () => {
+    const storage = stubStorage();
+    await mountStrict();
+
+    await act(async () => {
+      api.startDraft(DRAFT);
+    });
+    await act(async () => {
+      api.updateDraft({
+        values: { priority: '', preferredDate: '', preferredTime: '', notes: '' },
+        address: null,
+      });
+    });
+
+    expect(storage.clearCount()).toBe(1);
+  });
 });
 
 describe('the request draft, when the device will not cooperate', () => {

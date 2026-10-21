@@ -491,10 +491,13 @@ export function ServiceAddressScreen({ navigation, route }: Props) {
             accessibilityLabel={`${COPY.selectedLabel}: ${chosen.formattedAddress}`}
             style={{ gap: theme.spacing.xxs }}
             testID="service-address-selected">
-            <Text variant="overline" color="textTertiary">
+            {/* On the tint, so in its own ink (3G-4). */}
+            <Text variant="overline" color="onPrimarySubtle">
               {COPY.selectedLabel}
             </Text>
-            <Text variant="bodyStrong">{chosen.formattedAddress}</Text>
+            <Text variant="bodyStrong" color="onPrimarySubtle">
+              {chosen.formattedAddress}
+            </Text>
           </View>
         </Card>
       ) : null}

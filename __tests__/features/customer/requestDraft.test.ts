@@ -16,6 +16,7 @@ import {
   completionOf,
   isDraftWorthKeeping,
   NO_VENDOR_CHOICE,
+  vendorChoiceStanding,
   type RequestDraft,
 } from '@/features/customer/state/requestDraft';
 
@@ -172,5 +173,38 @@ describe('isDraftWorthKeeping', () => {
     expect(isDraftWorthKeeping({ ...EMPTY, values: { ...EMPTY.values, notes: '   ' } })).toBe(
       false,
     );
+  });
+});
+
+/**
+ * Where a chosen professional stands against the eligible list (3D-12): the
+ * rule that keeps a request from going to somebody who is no longer eligible.
+ * The list is passed only once it has settled; undefined is "not known".
+ */
+describe('vendorChoiceStanding', () => {
+  const LIST = [{ id: 'ven_zenith' }, { id: 'ven_apex' }];
+
+  it('has nothing to check when nobody is named', () => {
+    expect(vendorChoiceStanding(NO_VENDOR_CHOICE, LIST)).toBe('unnamed');
+    expect(vendorChoiceStanding({ kind: 'open' }, LIST)).toBe('unnamed');
+    // Open dispatch never waits on a list, loaded or not.
+    expect(vendorChoiceStanding({ kind: 'open' }, undefined)).toBe('unnamed');
+  });
+
+  it('knows nothing about a named professional until the list has settled', () => {
+    expect(vendorChoiceStanding({ kind: 'vendor', vendorId: 'ven_gone' }, undefined)).toBe(
+      'unknown',
+    );
+  });
+
+  it('confirms a professional the list has, by identifier', () => {
+    expect(vendorChoiceStanding({ kind: 'vendor', vendorId: 'ven_apex' }, LIST)).toBe('available');
+  });
+
+  it('finds a professional the loaded list does not have unavailable — an empty one included', () => {
+    expect(vendorChoiceStanding({ kind: 'vendor', vendorId: 'ven_gone' }, LIST)).toBe(
+      'unavailable',
+    );
+    expect(vendorChoiceStanding({ kind: 'vendor', vendorId: 'ven_apex' }, [])).toBe('unavailable');
   });
 });

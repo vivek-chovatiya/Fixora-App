@@ -6,7 +6,8 @@
  *
  * - it shows the session's name, phone and email, and nothing it does not have:
  *   no email row without an email, the phone number in place of a missing name,
- *   initials or the profile glyph in the avatar
+ *   initials or the profile glyph in the avatar — the phone, in both places,
+ *   written for reading ("+91 98765 43210") rather than as stored
  * - it offers nothing that is not built — Log out is the only control
  * - Log out asks; Cancel changes nothing, the unsent draft included
  * - confirming clears the draft first, then the session, once however often it
@@ -242,12 +243,14 @@ describe('profileOf', () => {
     expect(profileOf({ ...ASHA, firstName: '   ' }).heading).toBe('Patel');
   });
 
-  it('heads the page with the phone number when there is no name', () => {
+  it('heads the page with the phone number, written for reading, when there is no name', () => {
     expect(profileOf(NAMELESS)).toEqual({
       firstName: '',
       lastName: '',
       name: null,
-      heading: '9876543212',
+      // The heading is text to read (owner, 21/10/2026); the phone stays the
+      // stored value, for anything that edits or sends it.
+      heading: '+91 98765 43212',
       phone: '9876543212',
     });
   });
@@ -268,7 +271,9 @@ describe('CustomerProfileScreen — what it shows', () => {
     expect(byTestID('profile-name')[0].props.children).toBe(
       'Venkata Subrahmanya Lakshmi Narasimhamurthy-Ramachandran',
     );
-    expect(labelOf('profile-phone')).toBe(`${COPY.phoneLabel}: 9876543211`);
+    // Written for reading, not as the stored digits (owner, 21/10/2026).
+    expect(labelOf('profile-phone')).toBe(`${COPY.phoneLabel}: +91 98765 43211`);
+    expect(labelOf('profile-phone')).not.toContain('9876543211');
     expect(labelOf('profile-email')).toBe(`${COPY.emailLabel}: ${LONG.email}`);
   });
 
@@ -298,7 +303,7 @@ describe('CustomerProfileScreen — what it shows', () => {
   it('heads a nameless account with its phone number and a glyph for an avatar', async () => {
     const { byTestID, labelOf } = await render(NAMELESS);
 
-    expect(byTestID('profile-name')[0].props.children).toBe('9876543212');
+    expect(byTestID('profile-name')[0].props.children).toBe('+91 98765 43212');
     expect(labelOf('profile-avatar')).toBe('Profile picture');
     const avatar = byTestID('profile-avatar')[0];
     // No letters at all: the fallback glyph, not an empty string of initials.

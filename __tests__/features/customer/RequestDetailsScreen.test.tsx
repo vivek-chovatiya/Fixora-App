@@ -1378,6 +1378,113 @@ describe('RequestDetailsScreen — review', () => {
 });
 
 /**
+ * The review group's checking view, and what follows it in the same place
+ * (3D-12) — the keyed loading region every list has had since 3G-3. The
+ * checking view and the prompt were one plain View updated in place, so on
+ * Android the prompt could keep the checking view's `busy`. Now only the
+ * checking region is named and busy, and what follows is a new host view with
+ * no name, role or state to inherit.
+ */
+describe('RequestDetailsScreen — how the review group is announced in every state', () => {
+  const COMPLETED: CustomerRequestDetails = {
+    ...DETAILS,
+    status: 'COMPLETED',
+    vendorName: 'Skyline Roofing',
+  };
+
+  const REVIEWED: RequestReview = {
+    requestId: DETAILS.id,
+    rating: 5,
+    submittedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+  };
+
+  /**
+   * The testID of every native view on screen that says it is busy.
+   *
+   * Ids, not the nodes: a failed match on a test instance makes jest print it,
+   * and printing one walks the whole fiber tree — the run never finishes (3G-3).
+   */
+  function busyOf(renderer: ReactTestRenderer.ReactTestRenderer) {
+    return renderer.root
+      .findAll(node => typeof node.type === 'string' && node.props?.accessibilityState?.busy === true)
+      .map(node => node.props.testID as string | undefined);
+  }
+
+  it('replaces the busy region once the review answers, and leaves the prompt unnamed', async () => {
+    let answer!: (review: RequestReview | null) => void;
+    const { renderer, byTestID, buttons } = await render({
+      getRequest: async () => COMPLETED,
+      getReview: () => new Promise<RequestReview | null>(resolve => (answer = resolve)),
+    });
+
+    const [waiting] = byTestID('request-details-review-loading');
+    expect(waiting.props.accessibilityLabel).toBe(REVIEW.loadingLabel);
+    expect(waiting.props.accessibilityState).toEqual({ busy: true });
+    expect(waiting.props.accessibilityRole).toBeUndefined();
+    expect(busyOf(renderer)).toEqual(['request-details-review-loading']);
+
+    await act(async () => {
+      answer(null);
+    });
+
+    expect(buttons()).toContain(REVIEW.detailsAction);
+    // Not hidden or emptied: no longer in the tree at all, so its busy cannot outlive it.
+    expect(byTestID('request-details-review-loading')).toHaveLength(0);
+    const [settled] = byTestID('request-details-review-settled');
+    expect(settled === waiting).toBe(false);
+    expect(settled.props.accessibilityLabel).toBeUndefined();
+    expect(settled.props.accessibilityState).toBeUndefined();
+    expect(settled.props.accessibilityRole).toBeUndefined();
+    // Nothing anywhere on the page still says busy.
+    expect(busyOf(renderer)).toEqual([]);
+  });
+
+  it('replaces the busy region with the failure, and the failure with it on Try again', async () => {
+    let calls = 0;
+    let fail!: (error: AppError) => void;
+    let answer!: (review: RequestReview | null) => void;
+    const { renderer, byTestID, press } = await render({
+      getRequest: async () => COMPLETED,
+      getReview: () => {
+        calls += 1;
+        return calls === 1
+          ? new Promise<RequestReview | null>((_, reject) => (fail = reject))
+          : new Promise<RequestReview | null>(resolve => (answer = resolve));
+      },
+    });
+
+    const [waiting] = byTestID('request-details-review-loading');
+
+    await act(async () => {
+      fail(new AppError({ kind: 'network', message: 'socket hang up' }));
+    });
+
+    expect(byTestID('request-details-review-error')).toHaveLength(1);
+    expect(byTestID('request-details-review-loading')).toHaveLength(0);
+    const [failed] = byTestID('request-details-review-settled');
+    expect(failed === waiting).toBe(false);
+    expect(failed.props.accessibilityLabel).toBeUndefined();
+    expect(failed.props.accessibilityState).toBeUndefined();
+    expect(busyOf(renderer)).toEqual([]);
+
+    await press('Try again');
+
+    const [again] = byTestID('request-details-review-loading');
+    expect(again === failed).toBe(false);
+    expect(again.props.accessibilityLabel).toBe(REVIEW.loadingLabel);
+    expect(busyOf(renderer)).toEqual(['request-details-review-loading']);
+    expect(byTestID('request-details-review-settled')).toHaveLength(0);
+
+    await act(async () => {
+      answer(REVIEWED);
+    });
+
+    expect(byTestID('request-details-review-summary')).toHaveLength(1);
+    expect(busyOf(renderer)).toEqual([]);
+  });
+});
+
+/**
  * The payment a professional recorded on completing the job (PROJECT_BIBLE.md
  * sections 36 and 37): shown only on a finished request that has one, said to
  * be the professional's record, and never as something Fixora processed.
@@ -1562,7 +1669,7 @@ describe('RequestDetailsScreen — cancelling a request nobody has accepted', ()
     await act(async () => {});
   }
 
-  it('sits beneath the whole record, as the danger button, saying what it does', async () => {
+  it('sits beneath the whole record, as the quiet danger button, saying what it does', async () => {
     const { byTestID, cancelButton } = await render();
 
     const [record] = byTestID('request-details-record');
@@ -1573,8 +1680,21 @@ describe('RequestDetailsScreen — cancelling a request nobody has accepted', ()
     const last = parts[parts.length - 1];
 
     expect(last.props.label).toBe(CANCEL.action);
-    expect(last.props.variant).toBe('danger');
+    // The red tint, not the fill (3G-4): it only opens the question.
+    expect(last.props.variant).toBe('dangerSecondary');
     expect(cancelButton()?.props.accessibilityHint).toBe(CANCEL.actionHint);
+  });
+
+  it('keeps the filled danger button for the dialog’s own Cancel request — the final step', async () => {
+    const screen = await render({ cancelRequest: cancelled });
+    await ask(screen);
+
+    const variants = screen
+      .dialog()
+      .findAll(node => typeof node.props?.variant === 'string' && typeof node.props?.label === 'string')
+      .map(node => [node.props.label, node.props.variant]);
+    expect(variants).toContainEqual([CANCEL.confirm, 'danger']);
+    expect(variants).not.toContainEqual([CANCEL.confirm, 'dangerSecondary']);
   });
 
   it('asks first, and sends nothing until it is confirmed', async () => {

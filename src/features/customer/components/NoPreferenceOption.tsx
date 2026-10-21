@@ -55,7 +55,7 @@ function NoPreferenceOptionComponent({ selected, onSelect, testID }: NoPreferenc
               height: theme.spacing.giant,
             },
           ]}>
-          <Icon name="team" size="md" color="primary" />
+          <Icon name="team" size="md" color="onPrimarySubtle" />
         </View>
 
         <View style={[styles.body, { gap: theme.spacing.xxs }]}>

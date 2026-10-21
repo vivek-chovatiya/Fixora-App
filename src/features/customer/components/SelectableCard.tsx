@@ -92,7 +92,7 @@ function SelectableCardComponent({
         moves down the list.
       */}
       <View style={[styles.tick, { width: theme.iconSize.lg, height: theme.iconSize.lg }]}>
-        {selected ? <Icon name="selected" size="lg" color="primary" /> : null}
+        {selected ? <Icon name="selected" size="lg" color="onPrimarySubtle" /> : null}
       </View>
     </Pressable>
   );

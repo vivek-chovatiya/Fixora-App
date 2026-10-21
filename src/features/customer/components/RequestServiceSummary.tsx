@@ -70,7 +70,7 @@ function RequestServiceSummaryComponent({
           request, which is what makes this block read as a summary rather than
           as another tappable service.
         */}
-        <DynamicIcon size="md" color="primary" />
+        <DynamicIcon size="md" color="onPrimarySubtle" />
       </View>
 
       {/*

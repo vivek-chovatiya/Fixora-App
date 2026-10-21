@@ -26,6 +26,13 @@
  * whether a vendor was chosen, so open dispatch is stated in words rather than
  * shown as an empty row that could be read as either.
  *
+ * ⚠️ A chosen professional is sent only once this screen's own read of the
+ * eligible list has them (`useCheckedVendorChoice`, Phase 3D-12). A resumed or
+ * restored draft can name one who has stopped being eligible: a loaded list
+ * without them takes them off the draft and sends the customer back to choose;
+ * a list still loading keeps Submit busy, and one that failed keeps it locked
+ * beside the failure and its retry. Open dispatch waits for nothing.
+ *
  * It assumes it was handed a complete draft, and checks anyway with the same
  * `completionOf` every other screen asks. A draft that has become incomplete is
  * not an error to report — it is a question still to be answered, so the customer
@@ -47,7 +54,6 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
-import { RequestPhotoStrip } from '@/features/customer/components/RequestPhotoStrip';
 import {
   RequestSummaryBlock,
   RequestSummaryLine,
@@ -57,8 +63,8 @@ import {
 import { CUSTOMER_COPY } from '@/features/customer/constants/customerCopy';
 import { presentPriority } from '@/features/customer/constants/requestPresentation';
 import { formatDateValue, formatTimeValue } from '@/features/customer/constants/requestScheduling';
+import { useCheckedVendorChoice } from '@/features/customer/hooks/useCheckedVendorChoice';
 import { useCreateRequest } from '@/features/customer/hooks/useCreateRequest';
-import { useEligibleVendors } from '@/features/customer/hooks/useEligibleVendors';
 import { useRequestServiceContext } from '@/features/customer/hooks/useRequestServiceContext';
 import { useRequestDraft } from '@/features/customer/state/RequestDraftContext';
 import type { CustomerStackParamList } from '@/navigation/types';
@@ -67,6 +73,7 @@ import {
   ErrorState,
   Icon,
   PrimaryButton,
+  RequestPhotoStrip,
   Screen,
   Text,
 } from '@/shared/components';
@@ -82,7 +89,20 @@ export function RequestConfirmationScreen({ navigation, route }: Props) {
 
   const { draft, completion, recordSubmission } = useRequestDraft();
   const service = useRequestServiceContext(categoryId, subCategoryId);
-  const vendors = useEligibleVendors(categoryId, subCategoryId);
+  /*
+    ⚠️ The professional, checked against this screen's own read of the list —
+    the latest one when Submit is pressed (3D-12). One the loaded list no longer
+    has is taken off the draft, which leaves it incomplete, so the effect below
+    goes back to Preferred Vendor, where the customer is told why. Until the
+    list has loaded, a chosen professional is not confirmed and nothing is sent:
+    Submit is busy while it loads, and locked beside the failure if it fails.
+  */
+  const { vendors, standing, isChoiceConfirmed } = useCheckedVendorChoice(
+    categoryId,
+    subCategoryId,
+  );
+  const isCheckingVendor = standing === 'unknown' && vendors.error === null;
+  const vendorCheckError = standing === 'unknown' ? vendors.error : null;
   const submission = useCreateRequest(categoryId, subCategoryId);
 
   /*
@@ -131,8 +151,10 @@ export function RequestConfirmationScreen({ navigation, route }: Props) {
 
     A name is display data, so it is resolved rather than carried: the draft
     holds an identifier, and this asks the catalogue what it is called. If the
-    lookup has not finished or the vendor has since gone, the row still says
-    which dispatch applies — which is the part section 19 insists on.
+    lookup has not finished or has failed, the row still says which dispatch
+    applies — which is the part section 19 insists on. A vendor who has since
+    gone from a loaded list is not named here at all: they are taken off the
+    draft and the customer goes back to choose (3D-12).
   */
   const vendorLabel = useMemo(() => {
     if (draft?.vendor.kind !== 'vendor') {
@@ -155,6 +177,16 @@ export function RequestConfirmationScreen({ navigation, route }: Props) {
 
   const submit = useCallback(() => {
     if (inFlight.current || !draft || !completion?.isReadyForReview || submission.isSubmitting) {
+      return;
+    }
+
+    /*
+      ⚠️ Never a professional this screen has not seen in a loaded list. Submit
+      is already locked while that is so, from the same render; this is the
+      rule itself, at the last line before a request goes out, so the lock is
+      not the only thing between a withdrawn choice and the wire.
+    */
+    if (!isChoiceConfirmed) {
       return;
     }
 
@@ -247,7 +279,16 @@ export function RequestConfirmationScreen({ navigation, route }: Props) {
         ],
       });
     })();
-  }, [draft, completion, submission, recordSubmission, navigation, categoryId, subCategoryId]);
+  }, [
+    draft,
+    completion,
+    isChoiceConfirmed,
+    submission,
+    recordSubmission,
+    navigation,
+    categoryId,
+    subCategoryId,
+  ]);
 
   if (!draft) {
     // The effect above is already on its way out; drawing a summary of nothing
@@ -367,7 +408,7 @@ export function RequestConfirmationScreen({ navigation, route }: Props) {
               />
             ) : null}
             {draft.imageUrls.length > 0 ? (
-              <RequestPhotoStrip urls={draft.imageUrls} testID="summary-photos" />
+              <RequestPhotoStrip urls={draft.imageUrls} copy={COPY} testID="summary-photos" />
             ) : null}
           </>
         ) : (
@@ -420,6 +461,27 @@ export function RequestConfirmationScreen({ navigation, route }: Props) {
 
       <View style={{ gap: theme.spacing.md, paddingTop: theme.spacing.xs }}>
         {/*
+          The professional could not be checked, so Submit is locked (3D-12),
+          and this says why beside it. With its own retry, unlike the failure
+          below: Submit cannot be the retry of a read it is waiting on. Change
+          professional, above, is the other way on — no preference needs no
+          check.
+        */}
+        {vendorCheckError ? (
+          <View style={{ gap: theme.spacing.sm }} testID="request-confirmation-vendor-check">
+            <ErrorState
+              error={vendorCheckError}
+              onRetry={vendors.retry}
+              fullScreen={false}
+              testID="request-confirmation-vendor-error"
+            />
+            <Text variant="caption" color="textSecondary" align="center">
+              {COPY.vendorCheckFailed}
+            </Text>
+          </View>
+        ) : null}
+
+        {/*
           Without its own retry: the button below is the retry, and a second
           full-width action saying the same thing is the mistake the details
           screen already made once.
@@ -443,9 +505,14 @@ export function RequestConfirmationScreen({ navigation, route }: Props) {
           label={COPY.submit}
           onPress={submit}
           fullWidth
-          // The lock that stops a double submit. There is no separate disabled
-          // state: an incomplete draft never reaches this screen.
-          isLoading={submission.isSubmitting}
+          // The lock that stops a double submit — and, while a chosen
+          // professional is still being checked, the wait for that. An
+          // incomplete draft never reaches this screen.
+          isLoading={submission.isSubmitting || isCheckingVendor}
+          // Locked whenever the professional is not confirmed: beside the
+          // failure above, and for the one frame in which a professional the
+          // list no longer has is being taken off the draft.
+          disabled={!isChoiceConfirmed}
           accessibilityHint={COPY.submitHint}
         />
       </View>

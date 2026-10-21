@@ -450,6 +450,18 @@ export const CUSTOMER_COPY = Object.freeze({
     errorFallback: 'You can still carry on with no preference.',
 
     /**
+     * Said when a resumed or restored draft named a professional the latest
+     * list no longer has, and the app has taken them off it (Phase 3D-12). One
+     * calm sentence: nothing is wrong with the request, nothing is blamed on
+     * anybody, and it names both ways on — the two answers section 19 needs.
+     * It says "not available for this service now" and nothing about why; the
+     * app is not told why, and a reason guessed would be a claim about a
+     * person.
+     */
+    vendorUnavailable:
+      'The professional you chose earlier is not available for this service now, so you can choose another or continue with no preference.',
+
+    /**
      * Not "Submit". PROJECT_BIBLE.md section 19 puts a summary between this
      * choice and sending, so a button here promising to send would be promising
      * something the next screen still asks about.
@@ -537,10 +549,20 @@ export const CUSTOMER_COPY = Object.freeze({
     vendorOpen: 'Any available professional',
     /**
      * The identifier is held but the name could not be resolved — the list has
-     * not loaded, or the professional is no longer offered. The request is still
-     * directed at them, so this says the choice stands without inventing a name.
+     * not loaded yet, or its read failed. The request is still directed at
+     * them, so this says the choice stands without inventing a name. A
+     * professional the loaded list no longer has is never shown here: they are
+     * taken off the draft and the customer is sent back to choose (3D-12).
      */
     vendorUnknown: 'The professional you chose',
+    /**
+     * Beside a failed read of the professionals while one is chosen: Submit
+     * stays locked, because a professional nobody could check is never sent
+     * (3D-12). Says what is needed and both ways on — try the check again, or
+     * change the choice (no preference needs no check).
+     */
+    vendorCheckFailed:
+      'We need to check that the professional you chose is still available before sending. Try again, or change professional.',
 
     /**
      * The reassurance beside Submit, and one the app keeps: a request can be
@@ -990,7 +1012,13 @@ export const CUSTOMER_COPY = Object.freeze({
     photoGallery: 'Choose a photo',
     photoRemove: 'Remove photo',
     photoRemoveHint: 'Deletes the picture from your account',
+    /** Before the upload has said how far it has got; spoken once. Then the bar's spoken name. */
     photoUploading: 'Saving your picture…',
+    /**
+     * Beside the bar once the upload reports a figure — the vendor photo cards'
+     * words (3G-4), so an upload reads the same in both apps.
+     */
+    photoProgress: (percent: number) => `Uploading… ${percent}%`,
     /** Heads the inline failure. The retry is the action beneath it. */
     photoFailedTitle: 'We could not save your picture',
     photoRetry: 'Try again',

@@ -70,7 +70,7 @@ function SubCategoryRowComponent({
             height: theme.spacing.huge,
           },
         ]}>
-        <DynamicIcon glyph={iconGlyph} size="md" color="primary" />
+        <DynamicIcon glyph={iconGlyph} size="md" color="onPrimarySubtle" />
       </View>
 
       <View style={[styles.body, { gap: theme.spacing.xxs }]}>

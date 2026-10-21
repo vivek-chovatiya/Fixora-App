@@ -28,6 +28,17 @@
  * (`customerRequestSync`) — Home stays mounted under it, and a cancelled request
  * must not come back to a card still saying "Searching". Only the requests: a
  * cancellation does not change the catalogue.
+ *
+ * ⚠️ The bell's unread count is read here too (`useUnreadNotifications`), so
+ * the pull re-reads it with everything else. It used to be the screen's own,
+ * and a pull left the badge as it was until the next focus (open item, 3F-2).
+ * It never joins `isRefreshing` or the stale notice: a badge is a hint, and a
+ * failed read is no badge, never a failure on this page.
+ *
+ * Whether there is a request to resume is decided here, whole: one that was
+ * emptied back out is not offered (`isDraftWorthKeeping`). That check used to
+ * sit in the screen, only because this hook was being edited by another slice
+ * that night (3G-2).
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
@@ -39,7 +50,12 @@ import { formatRequestDate } from '@/features/customer/constants/requestPresenta
 import { useCategories } from '@/features/customer/hooks/useCategories';
 import { onCustomerRequestsChanged } from '@/features/customer/state/customerRequestSync';
 import { useRequestDraft } from '@/features/customer/state/RequestDraftContext';
-import type { RequestDraft, RequestDraftStep } from '@/features/customer/state/requestDraft';
+import {
+  isDraftWorthKeeping,
+  type RequestDraft,
+  type RequestDraftStep,
+} from '@/features/customer/state/requestDraft';
+import { useUnreadNotifications } from '@/features/notifications/hooks/useUnreadNotificationCount';
 import { useServiceQuery, type UseServiceQueryResult } from '@/shared/hooks/useServiceQuery';
 import { useStaleState } from '@/shared/hooks/useStaleState';
 import { getService } from '@/shared/services/ServiceRegistry';
@@ -116,11 +132,20 @@ export interface CustomerHome {
   /**
    * Null when there is nothing to resume, and also while storage is still being
    * read — an offer that appears a moment after the screen has been taken in is
-   * worse than one that was never there.
+   * worse than one that was never there. Null too for a draft the form has
+   * emptied back out: the context keeps one in memory while the form that
+   * emptied it may still be writing to it, and offering it would be offering
+   * to resume nothing.
    */
   resume: ResumableRequest | null;
-  /** Pull-to-refresh. Refreshes both sections, because the gesture is the page's. */
+  /** The bell's unread count; null while unknown, which draws no badge. */
+  unreadNotifications: number | null;
+  /**
+   * Pull-to-refresh. Refreshes both sections and the bell's count, because the
+   * gesture is the page's.
+   */
   refresh: () => void;
+  /** The sections' reads only — the badge's read draws no spinner of its own. */
   isRefreshing: boolean;
 }
 
@@ -136,13 +161,22 @@ export function useCustomerHome(): CustomerHome {
     [],
   );
 
+  /*
+    The bell (section 57), read on arrival, on every return and after every
+    mark by its own hook — and on the pull below, which is why it is here
+    rather than on the screen.
+  */
+  const unread = useUnreadNotifications();
+
   const { refresh: refreshCategories } = categories;
   const { refresh: refreshRequests, retry: retryRequests } = requests;
+  const { refresh: refreshUnread } = unread;
 
   const refresh = useCallback(() => {
     refreshCategories();
     refreshRequests();
-  }, [refreshCategories, refreshRequests]);
+    refreshUnread();
+  }, [refreshCategories, refreshRequests, refreshUnread]);
 
   /*
     A request changed on the screen above: read the recent ones again.
@@ -185,7 +219,9 @@ export function useCustomerHome(): CustomerHome {
   const { draft, isRestored, savedAt, completion } = useRequestDraft();
 
   const resume = useMemo<ResumableRequest | null>(() => {
-    if (!isRestored || !draft || !completion) {
+    // The same rule that decides whether a draft is saved decides whether it
+    // is offered.
+    if (!isRestored || !draft || !completion || !isDraftWorthKeeping(draft)) {
       return null;
     }
 
@@ -216,6 +252,7 @@ export function useCustomerHome(): CustomerHome {
     isStale: categories.isStale || recentStale.isStale,
     staleError: categories.staleError ?? recentStale.staleError,
     resume,
+    unreadNotifications: unread.count,
     refresh,
     isRefreshing: categories.isRefreshing || requests.isRefreshing,
   };

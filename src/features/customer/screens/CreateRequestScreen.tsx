@@ -36,6 +36,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { FormSection } from '@/features/customer/components/FormSection';
+import { InfoNotice } from '@/features/customer/components/InfoNotice';
 import { PhotoAttachments } from '@/features/customer/components/PhotoAttachments';
 import { PrioritySelector } from '@/features/customer/components/PrioritySelector';
 import { RequestServiceSummary } from '@/features/customer/components/RequestServiceSummary';
@@ -64,9 +65,7 @@ import {
 import type { CustomerStackParamList } from '@/navigation/types';
 import {
   BackButton,
-  Card,
   ControlledInput,
-  Icon,
   Loader,
   PrimaryButton,
   Screen,
@@ -455,25 +454,15 @@ function RequestDetailsForm({ navigation, route }: Props) {
         Continue. One spoken element, so a screen reader hears both sentences
         together rather than the second without the first. Held back while a
         request in this same category cannot be named yet, so it never first
-        appears under this request's own category name (see the hook).
+        appears under this request's own category name (see the hook). Drawn
+        by `InfoNotice`, shared with Preferred Vendor since 3D-12.
       */}
       {elsewhere.draft && elsewhere.isNamed ? (
-        <Card bordered background="infoSubtle" shadow="none" testID="create-request-other-draft">
-          <View
-            style={[styles.notice, { gap: theme.spacing.sm }]}
-            accessible
-            accessibilityRole="text"
-            accessibilityLabel={`${otherDraftNotice} ${COPY.otherDraftConsequence}`}
-            testID="create-request-other-draft-text">
-            <Icon name="info" size="md" color="info" />
-            <View style={[styles.noticeCopy, { gap: theme.spacing.xxs }]}>
-              <Text variant="bodyStrong">{otherDraftNotice}</Text>
-              <Text variant="caption" color="textSecondary">
-                {COPY.otherDraftConsequence}
-              </Text>
-            </View>
-          </View>
-        </Card>
+        <InfoNotice
+          text={otherDraftNotice}
+          detail={COPY.otherDraftConsequence}
+          testID="create-request-other-draft"
+        />
       ) : null}
 
       <FormSection title={COPY.serviceTitle}>
@@ -621,14 +610,5 @@ const styles = StyleSheet.create({
   bar: {
     width: '100%',
     justifyContent: 'center',
-  },
-  notice: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  noticeCopy: {
-    // A definite width, so the sentence wraps inside the card rather than
-    // being measured at its own width and clipped (the 3E-3 lesson).
-    flex: 1,
   },
 });

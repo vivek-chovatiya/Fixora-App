@@ -38,7 +38,7 @@ import {
 } from '@/features/customer/constants/requestStatus';
 import { Icon, Text } from '@/shared/components';
 import type { RequestStatus } from '@/shared/services/types/RequestService';
-import { useTheme } from '@/shared/theme';
+import { SUBTLE_INK, useTheme } from '@/shared/theme';
 
 const COPY = CUSTOMER_COPY.requestDetails;
 
@@ -184,7 +184,12 @@ function RequestStatusOverviewComponent({ status, dispatch, testID }: RequestSta
               backgroundColor: theme.colors[`${presentation.tone}Subtle`],
             },
           ]}>
-          <Icon name={presentation.icon} size="lg" color={presentation.tone} />
+          <Icon
+            name={presentation.icon}
+            size="lg"
+            // The disc's own ink, never the tone's colour (3G-4).
+            color={SUBTLE_INK[`${presentation.tone}Subtle`]}
+          />
         </View>
 
         <View style={[styles.grow, { gap: theme.spacing.xxs }]}>

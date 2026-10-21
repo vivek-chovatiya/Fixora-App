@@ -12,7 +12,9 @@
  * Everything shown comes from the session (`useCustomerProfile`): the name —
  * or, for an account with no name, the phone number in its place — the phone,
  * and the email only when there is one. The avatar is the stored picture, then
- * initials, then the profile glyph.
+ * initials, then the profile glyph. The phone is written for reading
+ * (`formatPhone`, "+91 98765 43210") in both places it appears; what is stored
+ * and sent is unchanged.
  *
  * ⚠️ The picture saves as soon as it is chosen (owner decision, 2026-09-29),
  * because it is an action on this screen rather than a field on a form. The
@@ -48,10 +50,12 @@ import {
   Card,
   ConfirmDialog,
   ErrorState,
+  PhotoUploadProgress,
   Screen,
   SecondaryButton,
   Text,
 } from '@/shared/components';
+import { formatPhone } from '@/shared/presentation/phone';
 import { useTheme } from '@/shared/theme';
 
 const COPY = CUSTOMER_COPY.profile;
@@ -159,15 +163,18 @@ export function CustomerProfileScreen({ navigation }: Props) {
           />
         ) : null}
 
-        {photo.isBusy ? (
-          <Text
-            variant="caption"
-            color="textSecondary"
-            accessibilityLiveRegion="polite"
-            testID="profile-photo-busy">
-            {COPY.photoUploading}
-          </Text>
-        ) : null}
+        {/*
+          The upload's progress, as the vendor's photo cards show it (3G-4):
+          the waiting words once, then "Uploading… 42%" as one progressbar
+          whose figure never speaks. Shared, not copied (`PhotoUploadProgress`).
+        */}
+        <PhotoUploadProgress
+          isBusy={photo.isBusy}
+          progress={photo.progress}
+          waitingLabel={COPY.photoUploading}
+          progressLabel={COPY.photoProgress}
+          testID="profile-photo"
+        />
 
         {/*
           A failed picture and its retry, together. The image itself is not
@@ -204,7 +211,16 @@ export function CustomerProfileScreen({ navigation }: Props) {
       </Card>
 
       <RequestSummarySection title={COPY.contactTitle} testID="profile-contact">
-        <RequestSummaryBlock label={COPY.phoneLabel} value={profile.phone} testID="profile-phone" />
+        {/*
+          Written for reading — "+91 98765 43210", the owner's choice
+          (21/10/2026) — and never anything but display: the stored digits are
+          what any form or service still gets.
+        */}
+        <RequestSummaryBlock
+          label={COPY.phoneLabel}
+          value={formatPhone(profile.phone)}
+          testID="profile-phone"
+        />
         {/* Hidden, not "Add email": there is nowhere to add one yet. */}
         {profile.email ? (
           <RequestSummaryBlock

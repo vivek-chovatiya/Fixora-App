@@ -372,6 +372,33 @@ describe('CategoriesScreen — when the service fails', () => {
     expect(grid.props.accessibilityState).toBeUndefined();
     expect(busy()).toHaveLength(0);
   });
+
+  it('offers no pull over the failure, only its own retry — and the pull once there are tiles', async () => {
+    // The vendor lists' rule: a failed first read has its retry right there,
+    // and a pull over it would be a second, hidden one.
+    let calls = 0;
+    const { renderer, byTestID, press, tiles } = await render(async () => {
+      calls += 1;
+      if (calls === 1) {
+        throw failure;
+      }
+      return CATEGORIES;
+    });
+    // The list itself, not its native view: the list is what takes the pull.
+    const grid = () =>
+      renderer.root.findAll(
+        node => node.props?.testID === 'categories-grid' && 'data' in (node.props ?? {}),
+      )[0];
+
+    expect(byTestID('categories-error')).toHaveLength(1);
+    expect(grid().props.onRefresh).toBeUndefined();
+    expect(grid().props.refreshing).toBe(false);
+
+    await press('Try again');
+
+    expect(tiles()).toHaveLength(CATEGORIES.length);
+    expect(typeof grid().props.onRefresh).toBe('function');
+  });
 });
 
 /**

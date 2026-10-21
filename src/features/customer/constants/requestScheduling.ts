@@ -16,7 +16,12 @@
  * one. They live in the feature rather than in AppConfig for the reason the auth
  * schemas give for their own limits: each is used by exactly one control on one
  * screen, and AppConfig is for values that cross features.
+ *
+ * How a date and a time are read back out is shared (`calendarDate`,
+ * `clockTime`): the vendor reads the same preference the customer chose.
  */
+
+import { formatDayLabel } from '@/shared/presentation/calendarDate';
 
 /** How far ahead a preference may be expressed. */
 const DAYS_AHEAD = 14;
@@ -24,8 +29,6 @@ const DAYS_AHEAD = 14;
 /** First and last hour offered, inclusive. Not a statement about availability. */
 const FIRST_HOUR = 7;
 const LAST_HOUR = 20;
-
-const MS_PER_DAY = 86_400_000;
 
 /**
  * The absence of a preference, as a value the control can hold.
@@ -44,47 +47,15 @@ export interface ScheduleOption {
   label: string;
 }
 
-/** Local calendar date as `YYYY-MM-DD`. */
+/**
+ * Local calendar date as `YYYY-MM-DD` — from local components, never through
+ * `toISOString`, which converts to UTC first and would record half past
+ * midnight in Delhi as the day before.
+ */
 function toDateValue(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${date.getFullYear()}-${month}-${day}`;
-}
-
-/**
- * Midnight local time, so a day is a day.
- *
- * `toISOString` is the obvious way to get `YYYY-MM-DD` and the wrong one: it
- * converts to UTC first, so half past midnight in Delhi is still yesterday in
- * Greenwich and a customer asking for tomorrow would be recorded as asking for
- * today.
- */
-function startOfDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-/**
- * Names a day the way someone would say it out loud.
- *
- * The next two days get words because that is what they are called; after that
- * the weekday matters more than the ordinal, since "Thu 11 Sep" is something a
- * customer can check against their week and "11 Sep" is not.
- */
-function formatDayLabel(date: Date, today: Date, copy: ScheduleCopy): string {
-  const days = Math.round((startOfDay(date).getTime() - startOfDay(today).getTime()) / MS_PER_DAY);
-
-  if (days === 0) {
-    return copy.today;
-  }
-  if (days === 1) {
-    return copy.tomorrow;
-  }
-
-  return date.toLocaleDateString(undefined, {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  });
 }
 
 /** The words the rails need that are not dates. Passed in, never imported here. */
@@ -141,22 +112,13 @@ export function buildTimeOptions(copy: ScheduleCopy): ScheduleOption[] {
 }
 
 /**
- * Reads a stored date back out for a person.
- *
- * The value is the contract's `YYYY-MM-DD`; this is the sentence a customer
- * sees. Parsed into local components rather than handed to `new Date(value)`,
- * which reads a bare date as UTC midnight and can therefore print the day
- * before in any timezone behind Greenwich.
+ * Reads a stored date back out for a person. Moved, unchanged, to
+ * `shared/presentation/calendarDate.ts` when the vendor's request details
+ * needed the same date (21/10/2026); re-exported so every import of it here
+ * resolves. A `ScheduleCopy` is still what is passed — it carries the two day
+ * words the shared formatter asks for.
  */
-export function formatDateValue(value: string, copy: ScheduleCopy, now: Date = new Date()): string {
-  const [year, month, day] = value.split('-').map(Number);
-
-  if (!year || !month || !day) {
-    return value;
-  }
-
-  return formatDayLabel(new Date(year, month - 1, day), now, copy);
-}
+export { formatDateValue } from '@/shared/presentation/calendarDate';
 
 /**
  * Reads a stored `HH:mm` back out in the reader's own clock format. Moved,

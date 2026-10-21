@@ -54,6 +54,7 @@ import {
   Screen,
   Text,
 } from '@/shared/components';
+import { formatPhone } from '@/shared/presentation/phone';
 import { PROFILE_NAME_MAX_LENGTH } from '@/shared/services/types/ProfileService';
 import { useTheme } from '@/shared/theme';
 
@@ -232,11 +233,15 @@ export function EditProfileScreen({ navigation }: Props) {
         />
       </View>
 
-      {/* Not a field: shown as what it is, with the reason it cannot change. */}
+      {/*
+        Not a field: shown as what it is, with the reason it cannot change —
+        and written for reading ("+91 98765 43210"), as Profile writes it
+        (owner, 21/10/2026). Display only: nothing on this form sends it.
+      */}
       <RequestSummarySection title={COPY.phoneLabel} testID="edit-profile-identity">
         <RequestSummaryBlock
           label={COPY.phoneLabel}
-          value={profile.phone}
+          value={formatPhone(profile.phone)}
           testID="edit-profile-phone"
         />
         <Text variant="caption" color="textSecondary">

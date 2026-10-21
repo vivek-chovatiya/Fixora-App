@@ -90,8 +90,18 @@ function DraftSeed({ draft }: { draft: RequestDraft | null }) {
   return null;
 }
 
+/** The draft context as the screens around this one see it, for a test to read or change. */
+type DraftHandle = { current: ReturnType<typeof useRequestDraft> | null };
+
+function DraftProbe({ handle }: { handle: DraftHandle }) {
+  handle.current = useRequestDraft();
+  return null;
+}
+
 interface Stubs {
   draft?: RequestDraft | null;
+  /** The eligible list this screen reads for itself. */
+  vendors?: () => Promise<EligibleVendor[]>;
   /** The route's identifiers, for a test that needs ones the mock catalogue knows. */
   ids?: { categoryId: string; subCategoryId: string };
   createRequest?: (input: CreateRequestInput) => Promise<{
@@ -125,15 +135,14 @@ afterEach(() => {
   resetServices();
 });
 
-async function render({ draft = COMPLETE, createRequest, ids }: Stubs = {}) {
+async function render({ draft = COMPLETE, createRequest, ids, vendors }: Stubs = {}) {
   registerService('category', {
     listServiceCategories: jest.fn(async () => CATEGORIES),
     listSubCategories: jest.fn(async () => SERVICES),
   } as CategoryService);
 
-  registerService('vendor', {
-    listEligibleVendors: jest.fn(async () => VENDORS),
-  } as VendorService);
+  const listEligibleVendors = jest.fn(vendors ?? (async () => VENDORS));
+  registerService('vendor', { listEligibleVendors } as VendorService);
 
   const create = jest.fn(
     createRequest ??
@@ -172,6 +181,8 @@ async function render({ draft = COMPLETE, createRequest, ids }: Stubs = {}) {
     params: ids ?? { categoryId: CATEGORY_ID, subCategoryId: SUB_CATEGORY_ID },
   } as never;
 
+  const drafts: DraftHandle = { current: null };
+
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   await act(async () => {
     renderer = ReactTestRenderer.create(
@@ -180,6 +191,7 @@ async function render({ draft = COMPLETE, createRequest, ids }: Stubs = {}) {
           <RequestDraftProvider>
             <DraftSeed draft={draft} />
             <RequestConfirmationScreen navigation={navigation} route={route} />
+            <DraftProbe handle={drafts} />
           </RequestDraftProvider>
         </ToastProvider>
       </ThemeProvider>,
@@ -195,6 +207,16 @@ async function render({ draft = COMPLETE, createRequest, ids }: Stubs = {}) {
     navigate,
     reset,
     create,
+    listEligibleVendors,
+    drafts,
+    /** Submit's own host view, which carries its busy and disabled state. */
+    submitState: () =>
+      renderer.root.findAll(
+        node =>
+          typeof node.type === 'string' &&
+          node.props?.accessibilityRole === 'button' &&
+          node.props?.accessibilityLabel === COPY.submit,
+      )[0]?.props.accessibilityState as { busy?: boolean; disabled?: boolean } | undefined,
     /** The route names the success reset left in the stack, in order. */
     resetRoutes: () =>
       (reset.mock.calls[0]?.[0]?.routes ?? []).map((entry: { name: string }) => entry.name),
@@ -268,8 +290,12 @@ describe('RequestConfirmationScreen — what it shows', () => {
   });
 
   it('still says the choice stands when the vendor cannot be named', async () => {
+    // The list has not answered. (A loaded list without them is another
+    // matter: they are taken off the draft — see "a professional the list no
+    // longer has".)
     const { text } = await render({
-      draft: { ...COMPLETE, vendor: { kind: 'vendor', vendorId: 'ven_gone' } },
+      draft: { ...COMPLETE, vendor: { kind: 'vendor', vendorId: 'ven_zenith' } },
+      vendors: () => pending(),
     });
 
     // Section 19: the row must say which dispatch applies even when the list
@@ -353,6 +379,153 @@ describe('RequestConfirmationScreen — the payload', () => {
     expect(serialised).not.toContain('Fan Repair');
     expect(serialised).not.toContain('Electrician');
     expect(serialised).not.toContain('High');
+  });
+});
+
+/**
+ * A professional the list no longer has (Phase 3D-12). A resumed or restored
+ * draft can name one who stopped being eligible after it was saved. The rule:
+ * a request is never sent with a preferred professional who is not in the
+ * latest eligible list for its service — and this screen reads that list for
+ * itself, so its read is the latest when Submit is pressed. A loaded list
+ * without them takes them off the draft and sends the customer back to
+ * choose; a list still loading or failed clears nothing (nothing is known) and
+ * sends nothing. Open dispatch waits for no list at all.
+ */
+describe('RequestConfirmationScreen — a professional the list no longer has', () => {
+  const GONE: RequestDraft = { ...COMPLETE, vendor: { kind: 'vendor', vendorId: 'ven_gone' } };
+  const CHOSEN: RequestDraft = { ...COMPLETE, vendor: { kind: 'vendor', vendorId: 'ven_zenith' } };
+
+  /** A list this test answers when it chooses, and what going back had been asked before it did. */
+  async function answeredLater(draft: RequestDraft, list: EligibleVendor[]) {
+    let answer!: (vendors: EligibleVendor[]) => void;
+    const screen = await render({
+      draft,
+      vendors: () => new Promise<EligibleVendor[]>(resolve => (answer = resolve)),
+    });
+    // Seeding the draft draws one frame without it, which goes back by itself.
+    const wentBackBefore = screen.goBack.mock.calls.length;
+    await act(async () => {
+      answer(list);
+    });
+    return { ...screen, wentBack: () => screen.goBack.mock.calls.length > wentBackBefore };
+  }
+
+  it('takes them off the draft once the list has loaded without them, and goes back', async () => {
+    const { drafts, wentBack, press, create, text } = await answeredLater(GONE, VENDORS);
+
+    expect(drafts.current?.draft?.vendor).toEqual({ kind: 'none' });
+    // Said on Preferred Vendor, which is where this goes back to.
+    expect(drafts.current?.isVendorWithdrawn).toBe(true);
+    expect(wentBack()).toBe(true);
+    // Never "the professional you chose" for someone who is gone.
+    expect(text()).not.toContain(COPY.vendorUnknown);
+
+    await press(COPY.submit);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('keeps one the loaded list still has, and sends them', async () => {
+    const { drafts, wentBack, press, payload } = await answeredLater(CHOSEN, VENDORS);
+
+    expect(drafts.current?.draft?.vendor).toEqual({ kind: 'vendor', vendorId: 'ven_zenith' });
+    expect(drafts.current?.isVendorWithdrawn).toBe(false);
+    expect(wentBack()).toBe(false);
+
+    await press(COPY.submit);
+    expect(payload().vendorId).toBe('ven_zenith');
+  });
+
+  it('clears nothing and sends nothing while the list is still loading', async () => {
+    const { drafts, press, create, submitState } = await render({
+      draft: GONE,
+      vendors: () => pending(),
+    });
+
+    expect(drafts.current?.draft?.vendor).toEqual({ kind: 'vendor', vendorId: 'ven_gone' });
+    expect(drafts.current?.completion?.isReadyForReview).toBe(true);
+    // Waiting for the check, and saying so.
+    expect(submitState()?.busy).toBe(true);
+
+    await press(COPY.submit);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('clears nothing and sends nothing when the list failed, and says why beside Submit', async () => {
+    const { drafts, press, create, submitState, byTestID, text } = await render({
+      draft: GONE,
+      vendors: async () => {
+        throw new AppError({ kind: 'network', message: 'ECONNREFUSED 10.0.0.1:443' });
+      },
+    });
+
+    expect(drafts.current?.draft?.vendor).toEqual({ kind: 'vendor', vendorId: 'ven_gone' });
+    expect(drafts.current?.completion?.isReadyForReview).toBe(true);
+    expect(byTestID('request-confirmation-vendor-error')).toHaveLength(1);
+    expect(text()).toContain(COPY.vendorCheckFailed);
+    expect(text()).not.toContain('ECONNREFUSED');
+    expect(submitState()?.disabled).toBe(true);
+
+    await press(COPY.submit);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('checks again on Try again, and sends once the list has them', async () => {
+    let calls = 0;
+    const { press, payload, submitState, byTestID, listEligibleVendors } = await render({
+      draft: CHOSEN,
+      vendors: async () => {
+        calls += 1;
+        if (calls === 1) {
+          throw new AppError({ kind: 'network', message: 'offline' });
+        }
+        return VENDORS;
+      },
+    });
+    expect(submitState()?.disabled).toBe(true);
+
+    await press('Try again');
+
+    expect(listEligibleVendors).toHaveBeenCalledTimes(2);
+    expect(byTestID('request-confirmation-vendor-error')).toHaveLength(0);
+    expect(submitState()?.disabled).toBe(false);
+
+    await press(COPY.submit);
+    expect(payload().vendorId).toBe('ven_zenith');
+  });
+
+  it('never puts them on the payload, whatever the customer does next', async () => {
+    const { drafts, press, payload } = await render({ draft: GONE });
+
+    // Back on Preferred Vendor, the customer carries on with no preference.
+    await act(async () => {
+      drafts.current?.updateDraft({ vendor: { kind: 'open' } });
+    });
+    await press(COPY.submit);
+
+    // What reaches the wire: open dispatch, with no vendorId at all.
+    const sent = JSON.parse(JSON.stringify(payload()));
+    expect(Object.keys(sent).sort()).toEqual([
+      'address',
+      'categoryId',
+      'imageUrls',
+      'notes',
+      'preferredDate',
+      'preferredTime',
+      'priority',
+      'subCategoryId',
+    ]);
+    expect(payload().vendorId).toBeUndefined();
+    expect(JSON.stringify(payload())).not.toContain('ven_gone');
+  });
+
+  it('waits for no list when nobody was chosen', async () => {
+    const { press, payload, submitState } = await render({ vendors: () => pending() });
+
+    expect(submitState()?.busy).toBe(false);
+
+    await press(COPY.submit);
+    expect(payload().vendorId).toBeUndefined();
   });
 });
 

@@ -14,7 +14,9 @@
  *
  * - a name is the first and last name, trimmed, with blanks dropped; when both
  *   are blank there is no name, and the phone number heads the page instead —
- *   an account created on first verification (section 7A) has only a number
+ *   an account created on first verification (section 7A) has only a number —
+ *   written as `formatPhone` writes it ("+91 98765 43210"; owner, 21/10/2026),
+ *   since the heading is text to read, never a value to send
  * - an email is shown only when there is one; a blank one counts as none
  * - a picture is shown only when one has been stored; the avatar falls back to
  *   initials, and then to a glyph, exactly as it did before there was one
@@ -24,6 +26,7 @@ import { useMemo } from 'react';
 
 import { useAuthSession } from '@/features/auth/hooks/useAuth';
 import type { AuthUser } from '@/features/auth/types';
+import { formatPhone } from '@/shared/presentation/phone';
 
 export interface CustomerProfile {
   /**
@@ -37,9 +40,12 @@ export interface CustomerProfile {
   lastName: string;
   /** The customer's name, or null when the account has none. */
   name: string | null;
-  /** What heads the page: the name, or the phone number when there is no name. */
+  /** What heads the page: the name, or the phone number, formatted, when there is no name. */
   heading: string;
-  /** Exactly as the backend holds it. */
+  /**
+   * Exactly as the backend holds it. A screen writes it with `formatPhone`; it
+   * is never formatted here, because this is the value, not its display.
+   */
   phone: string;
   /** Absent when the account has no email. */
   email?: string;
@@ -59,7 +65,7 @@ export function profileOf(user: AuthUser): CustomerProfile {
     firstName,
     lastName,
     name: name || null,
-    heading: name || user.phone,
+    heading: name || formatPhone(user.phone),
     phone: user.phone,
     ...(email ? { email } : {}),
     ...(avatarUrl ? { avatarUrl } : {}),

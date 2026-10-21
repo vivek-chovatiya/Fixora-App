@@ -13,6 +13,8 @@
  *   category tile leads to that category's own services, by id
  * - a request card is one thing to a screen reader, and its status is a word
  *   rather than only a colour
+ * - a pull reads the bell's count again with both sections (3D-12); a count
+ *   that cannot be read is no badge, never a failure on the page
  *
  * Stub services are registered so the screen is exercised through the same
  * abstraction the real ones will arrive behind.
@@ -32,6 +34,7 @@ import { authReducer, signedIn } from '@/features/auth/state/authSlice';
 import type { SessionPayload } from '@/features/auth/types';
 import { CUSTOMER_COPY } from '@/features/customer/constants/customerCopy';
 import { HOME_RECENT_REQUEST_LIMIT } from '@/features/customer/hooks/useCustomerHome';
+import { NOTIFICATIONS_COPY } from '@/features/notifications/constants/notificationsCopy';
 import { CustomerHomeScreen } from '@/features/customer/screens/CustomerHomeScreen';
 import { customerRequestsChanged } from '@/features/customer/state/customerRequestSync';
 import {
@@ -48,6 +51,7 @@ import { MockRequestService } from '@/shared/services/mock/MockRequestService';
 import { NO_LATENCY } from '@/shared/services/mock/mockUtils';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { CategoryService, ServiceCategory } from '@/shared/services/types/CategoryService';
+import type { NotificationService } from '@/shared/services/types/NotificationService';
 import type { CustomerRequest, RequestService } from '@/shared/services/types/RequestService';
 import { ThemeProvider } from '@/shared/theme';
 import { AppError } from '@/shared/types/error';
@@ -101,11 +105,16 @@ function pending<T>(): Promise<T> {
 interface Stubs {
   categories?: () => Promise<ServiceCategory[]>;
   requests?: (limit: number) => Promise<CustomerRequest[]>;
+  /**
+   * The bell's count. Left out, no notification service is registered and the
+   * bell draws no badge — a failed count is never an error on Home.
+   */
+  unread?: () => Promise<number>;
   /** Rendered beside Home inside the draft provider, to change the draft as a form would. */
   probe?: React.ReactNode;
 }
 
-async function render({ categories, requests, probe }: Stubs = {}) {
+async function render({ categories, requests, unread, probe }: Stubs = {}) {
   const listServiceCategories = jest.fn(categories ?? (async () => CATEGORIES));
   // The default honours `limit` the way the real service does, so the screen is
   // exercised against a stub that could not accidentally return more than it
@@ -140,6 +149,23 @@ async function render({ categories, requests, probe }: Stubs = {}) {
       throw new Error('cancelRequest must never be called from home');
     }),
   } as RequestService);
+
+  const getUnreadCount = jest.fn(unread ?? (async () => 0));
+  if (unread) {
+    registerService('notification', {
+      getUnreadCount,
+      // Home counts; listing and marking are the inbox's.
+      list: jest.fn(() => {
+        throw new Error('list must not be called from home');
+      }),
+      markAsRead: jest.fn(() => {
+        throw new Error('markAsRead must not be called from home');
+      }),
+      markAllAsRead: jest.fn(() => {
+        throw new Error('markAllAsRead must not be called from home');
+      }),
+    } as unknown as NotificationService);
+  }
 
   const store = configureStore({ reducer: { auth: authReducer } });
   store.dispatch(signedIn(SESSION));
@@ -178,6 +204,15 @@ async function render({ categories, requests, probe }: Stubs = {}) {
     reset,
     listServiceCategories,
     listRecentRequests,
+    getUnreadCount,
+    /** What the bell says, as a screen reader hears it. */
+    bellLabel: () =>
+      renderer.root.findAll(
+        node =>
+          node.props?.testID === 'home-notifications' &&
+          node.props?.accessibilityRole === 'button' &&
+          typeof node.props?.onPress === 'function',
+      )[0]?.props.accessibilityLabel as string | undefined,
     text: () => textOf(renderer.toJSON()),
     byTestID: (id: string) => hosts(props => props.testID === id),
     /** Pull-to-refresh, as the scroll view's refresh control would. */
@@ -559,6 +594,96 @@ describe('CustomerHomeScreen — when a pull fails', () => {
       `${COPY.staleTitle}. ${COPY.staleMessage} ${failure.userMessage}`,
     );
     expect(spoken.props.accessibilityLabel).not.toContain('..');
+  });
+});
+
+/**
+ * The bell's count on a pull (open item, Phase 3F-2). It was read on arrival,
+ * on every return and after every mark — never by the pull, so a pull left the
+ * badge as it was until the next focus. The pull is the page's, so it reads the
+ * badge with everything else; the badge still draws no spinner and no failure
+ * of its own.
+ */
+describe('CustomerHomeScreen — the bell on a pull', () => {
+  const BELL = NOTIFICATIONS_COPY.bell;
+
+  it('reads the unread count again with the sections, and draws the new count', async () => {
+    let count = 2;
+    const { pull, getUnreadCount, listServiceCategories, listRecentRequests, bellLabel } =
+      await render({ unread: async () => count });
+    expect(getUnreadCount).toHaveBeenCalledTimes(1);
+    expect(bellLabel()).toBe(BELL.unreadSpoken(2));
+
+    count = 5;
+    await pull();
+
+    expect(getUnreadCount).toHaveBeenCalledTimes(2);
+    expect(listServiceCategories).toHaveBeenCalledTimes(2);
+    expect(listRecentRequests).toHaveBeenCalledTimes(2);
+    expect(bellLabel()).toBe(BELL.unreadSpoken(5));
+  });
+
+  it('reads it again from the stale notice’s Try again, which pulls again', async () => {
+    let calls = 0;
+    const { pull, press, getUnreadCount, byTestID } = await render({
+      unread: async () => 1,
+      requests: async limit => {
+        calls += 1;
+        if (calls === 2) {
+          throw new AppError({ kind: 'network', message: 'offline' });
+        }
+        return REQUESTS.slice(0, limit);
+      },
+    });
+
+    await pull();
+    expect(byTestID('home-stale')).toHaveLength(1);
+    expect(getUnreadCount).toHaveBeenCalledTimes(2);
+
+    await press(COPY.staleRetry);
+
+    expect(getUnreadCount).toHaveBeenCalledTimes(3);
+  });
+
+  it('never turns a count it could not read into a failure on the page', async () => {
+    let calls = 0;
+    const { pull, byTestID, bellLabel } = await render({
+      unread: async () => {
+        calls += 1;
+        if (calls === 2) {
+          throw new AppError({ kind: 'network', message: 'offline' });
+        }
+        return 3;
+      },
+    });
+    expect(bellLabel()).toBe(BELL.unreadSpoken(3));
+
+    await pull();
+
+    // No badge — never a notice, an error or a retry for a hint.
+    expect(bellLabel()).toBe(BELL.label);
+    expect(byTestID('home-stale')).toHaveLength(0);
+    expect(byTestID('home-category-grid-error')).toHaveLength(0);
+    expect(byTestID('home-recent-list-error')).toHaveLength(0);
+  });
+
+  it('does not hold the pull’s spinner for the badge', async () => {
+    let calls = 0;
+    const { renderer, pull } = await render({
+      // The second read — the pull's — never answers.
+      unread: () => {
+        calls += 1;
+        return calls === 1 ? Promise.resolve(1) : pending<number>();
+      },
+    });
+
+    await pull();
+
+    const [scroller] = renderer.root.findAll(node =>
+      React.isValidElement(node.props?.refreshControl),
+    );
+    // The sections answered; a badge still being read is not the page refreshing.
+    expect(scroller.props.refreshControl.props.refreshing).toBe(false);
   });
 });
 

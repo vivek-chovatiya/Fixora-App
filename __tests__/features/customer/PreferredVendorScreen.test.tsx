@@ -10,6 +10,10 @@
  * vendor question either way, which section 19 requires and which this screen is
  * the only place to enforce.
  *
+ * Since 3D-12, one more: a professional the loaded list no longer has is taken
+ * off a resumed draft and the customer is told so — never while the list is
+ * loading or failed, when nothing can be known.
+ *
  * The payload itself is proved on the confirmation screen, which builds it.
  */
 
@@ -96,6 +100,14 @@ function DraftSeed({ draft }: { draft: RequestDraft | null }) {
   return null;
 }
 
+/** The draft context as the screens around this one see it, for a test to read or change. */
+type DraftHandle = { current: ReturnType<typeof useRequestDraft> | null };
+
+function DraftProbe({ handle }: { handle: DraftHandle }) {
+  handle.current = useRequestDraft();
+  return null;
+}
+
 interface Stubs {
   vendors?: (categoryId: string, subCategoryId: string) => Promise<EligibleVendor[]>;
   draft?: RequestDraft | null;
@@ -143,6 +155,8 @@ async function render({ vendors, draft = DRAFT }: Stubs = {}) {
     params: { categoryId: CATEGORY_ID, subCategoryId: SUB_CATEGORY_ID },
   } as never;
 
+  const drafts: DraftHandle = { current: null };
+
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   await act(async () => {
     renderer = ReactTestRenderer.create(
@@ -151,6 +165,7 @@ async function render({ vendors, draft = DRAFT }: Stubs = {}) {
           <RequestDraftProvider>
             <DraftSeed draft={draft} />
             <PreferredVendorScreen navigation={navigation} route={route} />
+            <DraftProbe handle={drafts} />
           </RequestDraftProvider>
         </ToastProvider>
       </ThemeProvider>,
@@ -183,6 +198,7 @@ async function render({ vendors, draft = DRAFT }: Stubs = {}) {
     navigate,
     popToTop,
     listEligibleVendors,
+    drafts,
     text: () => textOf(renderer.toJSON()),
     option,
     /** Selects a vendor or "no preference" by the start of its spoken name. */
@@ -685,6 +701,119 @@ describe('PreferredVendorScreen — accessibility', () => {
  * nothing when it was. Its own question gets its own message; anything earlier
  * gets the screen that asks it.
  */
+/**
+ * A professional the list no longer has (Phase 3D-12). A resumed or restored
+ * draft can name one who stopped being eligible after it was saved; the
+ * request must never go to them. Once the list has loaded without them, the
+ * choice is cleared and one calm sentence says why, with both ways on. While
+ * the list is loading or failed nothing can be known, so nothing is cleared.
+ */
+describe('PreferredVendorScreen — a professional the list no longer has', () => {
+  const GONE: RequestDraft = { ...DRAFT, vendor: { kind: 'vendor', vendorId: 'ven_gone' } };
+
+  /** The notice, as the one element a screen reader stops on. */
+  function notice(byTestID: (id: string) => ReactTestRenderer.ReactTestInstance[]) {
+    return byTestID('preferred-vendor-withdrawn-text')[0];
+  }
+
+  it('clears the choice once the list has loaded without them, and says so', async () => {
+    const { drafts, byTestID, isSelected, text } = await render({ draft: GONE });
+
+    expect(drafts.current?.draft?.vendor).toEqual({ kind: 'none' });
+    // Nothing chosen on the customer's behalf — not even no preference.
+    expect(isSelected(COPY.noPreferenceTitle)).toBe(false);
+    for (const vendor of VENDORS) {
+      expect(isSelected(vendor.name)).toBe(false);
+    }
+
+    expect(text()).toContain(COPY.vendorUnavailable);
+    const spoken = notice(byTestID);
+    expect(spoken.props.accessibilityLabel).toBe(COPY.vendorUnavailable);
+    expect(spoken.props.accessibilityLiveRegion).toBe('polite');
+    // The identifier is never shown or spoken.
+    expect(text()).not.toContain('ven_gone');
+  });
+
+  it('asks the question again rather than letting the request through', async () => {
+    const { press, navigate, text } = await render({ draft: GONE });
+
+    await press(COPY.submit);
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(text()).toContain(COPY.chooseFirst);
+  });
+
+  it('keeps a choice the list still has, and says nothing', async () => {
+    const { drafts, byTestID, isSelected } = await render({
+      draft: { ...DRAFT, vendor: { kind: 'vendor', vendorId: 'ven_apex' } },
+    });
+
+    expect(drafts.current?.draft?.vendor).toEqual({ kind: 'vendor', vendorId: 'ven_apex' });
+    expect(isSelected('Apex Repairs')).toBe(true);
+    expect(byTestID('preferred-vendor-withdrawn')).toHaveLength(0);
+  });
+
+  it('clears nothing while the list is still loading', async () => {
+    const { drafts, byTestID } = await render({ draft: GONE, vendors: () => pending() });
+
+    expect(drafts.current?.draft?.vendor).toEqual({ kind: 'vendor', vendorId: 'ven_gone' });
+    expect(byTestID('preferred-vendor-withdrawn')).toHaveLength(0);
+  });
+
+  it('clears nothing when the list failed — and decides once Try again has loaded it', async () => {
+    let calls = 0;
+    const { drafts, byTestID, press } = await render({
+      draft: GONE,
+      vendors: async () => {
+        calls += 1;
+        if (calls === 1) {
+          throw new AppError({ kind: 'network', message: 'offline' });
+        }
+        return VENDORS;
+      },
+    });
+
+    expect(byTestID('preferred-vendor-error')).toHaveLength(1);
+    expect(drafts.current?.draft?.vendor).toEqual({ kind: 'vendor', vendorId: 'ven_gone' });
+    expect(byTestID('preferred-vendor-withdrawn')).toHaveLength(0);
+
+    await press('Try again');
+
+    expect(drafts.current?.draft?.vendor).toEqual({ kind: 'none' });
+    expect(byTestID('preferred-vendor-withdrawn')).toHaveLength(1);
+  });
+
+  it('stops saying so once the question is answered again', async () => {
+    const { byTestID, choose, isSelected, press, navigate } = await render({ draft: GONE });
+    expect(byTestID('preferred-vendor-withdrawn')).toHaveLength(1);
+
+    await choose(COPY.noPreferenceTitle);
+
+    expect(isSelected(COPY.noPreferenceTitle)).toBe(true);
+    expect(byTestID('preferred-vendor-withdrawn')).toHaveLength(0);
+
+    await press(COPY.submit);
+    expect(navigate).toHaveBeenCalledWith('RequestConfirmation', {
+      categoryId: CATEGORY_ID,
+      subCategoryId: SUB_CATEGORY_ID,
+    });
+  });
+
+  it('says why when it was the summary that found them gone', async () => {
+    // The summary reads the list for itself and can settle first; it then goes
+    // back here, to a question this screen did not see cleared.
+    const { drafts, byTestID, text } = await render({ draft: GONE, vendors: () => pending() });
+    expect(byTestID('preferred-vendor-withdrawn')).toHaveLength(0);
+
+    await act(async () => {
+      drafts.current?.withdrawVendor('ven_gone');
+    });
+
+    expect(drafts.current?.draft?.vendor).toEqual({ kind: 'none' });
+    expect(text()).toContain(COPY.vendorUnavailable);
+  });
+});
+
 describe('PreferredVendorScreen — when an earlier answer is missing', () => {
   it('goes back for the address rather than refusing in silence', async () => {
     const { press, navigate } = await render({
