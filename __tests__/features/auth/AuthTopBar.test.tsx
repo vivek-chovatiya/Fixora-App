@@ -17,6 +17,7 @@ import React from 'react';
 import ReactTestRenderer, { act, type ReactTestRendererJSON } from 'react-test-renderer';
 
 import { AuthTopBar } from '@/features/auth/components/AuthTopBar';
+import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { ThemeProvider, lightTheme } from '@/shared/theme';
 
 /** Flattens every string in the rendered tree so copy can be asserted on. */
@@ -32,6 +33,17 @@ function textOf(node: ReactTestRendererJSON | ReactTestRendererJSON[] | null): s
     .join(' ');
 }
 
+/** Every renderer a test made, unmounted after it (CLAUDE.md section 7). */
+const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
+
+afterEach(() => {
+  for (const renderer of mounted.splice(0)) {
+    act(() => {
+      renderer.unmount();
+    });
+  }
+});
+
 async function render(props: Partial<React.ComponentProps<typeof AuthTopBar>> = {}) {
   let renderer!: ReactTestRenderer.ReactTestRenderer;
 
@@ -42,6 +54,7 @@ async function render(props: Partial<React.ComponentProps<typeof AuthTopBar>> = 
       </ThemeProvider>,
     );
   });
+  mounted.push(renderer);
 
   return {
     renderer,
@@ -104,6 +117,32 @@ describe('AuthTopBar', () => {
     // Role selection is the first route and has nothing behind it.
     const without = await render();
     expect(without.has('bar-back')).toBe(false);
+  });
+
+  it('draws the app’s back control in the flow’s own words, and hands it the press', async () => {
+    // Auth kept its own copy of this control until 21/10/2026; it now draws the
+    // shared one, and must still say what it said and do what it did.
+    const onBack = jest.fn();
+    const { renderer } = await render({ onBack });
+
+    // The Pressable: the one node with the role and the handler together.
+    const [control] = renderer.root.findAll(
+      node =>
+        node.props?.testID === 'bar-back' &&
+        node.props?.accessibilityRole === 'button' &&
+        typeof node.props?.onPress === 'function',
+    );
+    expect(control.props.accessibilityRole).toBe('button');
+    expect(control.props.accessibilityLabel).toBe(AUTH_COPY.common.back);
+    expect(control.props.accessibilityHint).toBe(AUTH_COPY.common.backHint);
+    expect(onBack).not.toHaveBeenCalled();
+
+    await act(async () => {
+      control.props.onPress();
+    });
+
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(onBack).toHaveBeenCalledWith();
   });
 
   it('keeps the mark centred whether or not it can go back', async () => {

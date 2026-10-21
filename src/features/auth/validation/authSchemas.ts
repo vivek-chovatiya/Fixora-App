@@ -14,6 +14,7 @@ import { z } from 'zod';
 
 import { AppConfig } from '@/core/config/AppConfig';
 import { optionalEmailSchema } from '@/shared/validation/email';
+import { VENDOR_BUSINESS_NAME_MAX_LENGTH } from '@/shared/services/types/VendorProfileService';
 import { phoneSchema } from '@/shared/validation/phone';
 
 /**
@@ -27,19 +28,55 @@ import { phoneSchema } from '@/shared/validation/phone';
  * limits and remains the authority.
  */
 export const VENDOR_NAME_MAX_LENGTH = 60;
-export const VENDOR_BUSINESS_NAME_MAX_LENGTH = 80;
+/*
+ * The business name's ceiling is the vendor profile's, so a name accepted at
+ * registration is never refused by setup (Phase 3E-1).
+ */
+export { VENDOR_BUSINESS_NAME_MAX_LENGTH };
 
 /**
- * Ceiling on the vendor auth code, in characters.
+ * What a person may put between the digits of a vendor auth code: any space
+ * (the no-break space the code is displayed with included — `\s` covers it) and
+ * any hyphen or dash, including the typographic ones a notes app substitutes.
  *
- * Deliberately far above any code in use — issued codes are twelve characters —
- * because this is a bound on absurdity, not a description of the format. The
- * code is opaque by contract, so a tight limit would be the app inventing a
- * shape it was never promised and rejecting valid codes the day generation
- * changes. Wide enough to be wrong about nothing; narrow enough that a pasted
- * document is refused.
+ * And the characters nobody can see, which arrive with a paste: zero-width
+ * spaces and joiners and the direction marks (U+200B–U+200F), the direction
+ * embeddings and overrides (U+202A–U+202E), the word joiner and the invisible
+ * operators and isolates (U+2060–U+2069), and the byte-order mark (U+FEFF,
+ * which `\s` already covers — listed so the set reads whole). A messaging app
+ * wraps a number in direction isolates, and a code that looks like "482913"
+ * would otherwise be refused as not numbers only, with nothing on screen to fix.
+ *
+ * ⚠️ Escapes, never the characters themselves: in this file they would be as
+ * invisible to the next reader as they are to the vendor.
  */
-export const VENDOR_AUTH_CODE_MAX_LENGTH = 64;
+const VENDOR_AUTH_CODE_SEPARATORS =
+  /[\s\-‐-―−\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
+
+/**
+ * The vendor auth code as the backend receives it: the digits, nothing between.
+ *
+ * "482 913", "482-913" and " 482913 " are all the same code read off a screen,
+ * copied from a message or written down in groups. Removing separators is not
+ * correcting the entry — a letter or a seventh digit is left exactly where it is
+ * for the schema to refuse.
+ *
+ * ⚠️ Always a string. A leading zero is part of the code, and a number type
+ * would drop it.
+ */
+export function normaliseVendorAuthCode(raw: string): string {
+  return raw.replace(VENDOR_AUTH_CODE_SEPARATORS, '');
+}
+
+/**
+ * Ceiling on what the auth code field accepts, in characters.
+ *
+ * Twice the code's length rather than the length itself: the field must take a
+ * pasted grouped code — "4 8 2 9 1 3" is eleven characters — and refuse a wrong
+ * one with a reason, rather than have `maxLength` silently cut it to something
+ * that looks complete. Short enough that a pasted paragraph is stopped.
+ */
+export const VENDOR_AUTH_CODE_INPUT_MAX_LENGTH = AppConfig.vendorAuthCode.length * 2;
 
 /** Customer sign in, step one: the number a one-time code is sent to. */
 export const customerPhoneSchema = z.object({
@@ -105,23 +142,35 @@ export const vendorRegistrationSchema = z.object({
 export type VendorRegistrationForm = z.infer<typeof vendorRegistrationSchema>;
 
 /**
- * The vendor's permanent auth code, as typed by a person.
+ * The vendor's permanent auth code, as typed or pasted by a person.
  *
- * Completeness only. `VendorAuthCode.code` is an opaque string in the contract —
- * the backend owns generation and format — so checking it looks like anything in
- * particular would encode a format the app was never promised, and would reject
- * a valid code the day generation changes. Whether a code is the right one is
- * never the app's decision.
+ * Exactly `AppConfig.vendorAuthCode.length` digits once separators are removed
+ * (owner's decision, 21/10/2026 — the code used to be opaque, and this rule used
+ * to check completeness only). Each check reads the normalised value, so
+ * "482 913" passes and the message for "48291a" is about the letter, not about
+ * a space the person never typed.
+ *
+ * The checks run in order and the field shows the first that fails: empty, then
+ * not digits, then the wrong count — so "abc" is told about letters rather than
+ * about length. The value itself is not rewritten here; callers send
+ * `normaliseVendorAuthCode(value)`, as phone fields send `normalisePhone`.
+ *
+ * Shape only. Whether a code is the right one is never the app's decision
+ * (PROJECT_BIBLE.md section 7A.4).
  */
 const vendorAuthCodeField = z
   .string()
-  .trim()
-  .min(1, 'Enter your authentication code.')
-  .max(
-    VENDOR_AUTH_CODE_MAX_LENGTH,
-    // Says the entry is wrong, not that the code has a length. A message naming
-    // the ceiling would teach a format the backend never promised.
-    'That does not look like an authentication code. Please check it.',
+  .refine(
+    value => normaliseVendorAuthCode(value).length > 0,
+    'Enter your authentication code.',
+  )
+  .refine(
+    value => /^\d*$/.test(normaliseVendorAuthCode(value)),
+    'Your authentication code is numbers only.',
+  )
+  .refine(
+    value => normaliseVendorAuthCode(value).length === AppConfig.vendorAuthCode.length,
+    `Your authentication code is ${AppConfig.vendorAuthCode.length} digits.`,
   );
 
 /** Confirmation, during onboarding, that the vendor saved the code they were shown. */

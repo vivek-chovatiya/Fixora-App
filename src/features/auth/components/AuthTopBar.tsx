@@ -27,8 +27,8 @@
 import React, { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { AuthBackButton } from '@/features/auth/components/AuthBackButton';
-import { BrandMark } from '@/shared/components';
+import { AUTH_COPY } from '@/features/auth/constants/authCopy';
+import { BackButton, BrandMark } from '@/shared/components';
 import { useTheme } from '@/shared/theme';
 
 export interface AuthTopBarProps {
@@ -61,9 +61,28 @@ function AuthTopBarComponent({ onBack, testID }: AuthTopBarProps) {
       */}
       <BrandMark size="sm" testID={testID ? `${testID}-mark` : undefined} />
 
+      {/*
+        The app's one back control, worded from the auth copy file so the flow
+        keeps its own words. It used to be `AuthBackButton`, a copy of this
+        control kept inside auth; the two drew the same disc and said the same
+        words, and two copies of one control are two places for it to drift.
+
+        It adds an affordance, not a route: sign in, vendor sign in and vendor
+        registration were always returnable-from by the hardware button and the
+        edge swipe, but neither is visible, and with no header nothing showed
+        the way. Not every auth screen gets one — role selection has nothing
+        behind it, and the verification screens offer their own way back to the
+        number or the details (a second control beside it would be the
+        unnecessary navigation button PROJECT_BIBLE.md section 13 warns about).
+      */}
       {onBack ? (
         <View style={[styles.leading, { left: theme.spacing.sm }]}>
-          <AuthBackButton onBack={onBack} testID={testID ? `${testID}-back` : undefined} />
+          <BackButton
+            onPress={onBack}
+            accessibilityLabel={AUTH_COPY.common.back}
+            accessibilityHint={AUTH_COPY.common.backHint}
+            testID={testID ? `${testID}-back` : undefined}
+          />
         </View>
       ) : null}
     </View>

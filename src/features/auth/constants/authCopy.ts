@@ -136,10 +136,12 @@ export const AUTH_COPY = Object.freeze({
     codeLabel: 'Authentication code',
     codePlaceholder: 'Your authentication code',
     /**
-     * States where the code came from without hinting at what it looks like or
-     * offering a recovery route the backend does not yet support.
+     * States where the code came from, and — now that its shape is fixed
+     * (21/10/2026) — how long it is, without offering a recovery route the
+     * backend does not yet support. `{length}` is
+     * `AppConfig.vendorAuthCode.length`.
      */
-    codeHelper: 'The code you saved when you registered your business.',
+    codeHelper: 'The {length}-digit code you saved when you registered your business.',
     /** Names what the reveal control acts on, rather than leaving it "button". */
     codeReveal: 'Show authentication code',
     codeHide: 'Hide authentication code',
@@ -147,6 +149,34 @@ export const AUTH_COPY = Object.freeze({
     submitHint: 'Signs you in to your vendor account',
     registerPrompt: 'New to Fixora?',
     registerAction: 'Register your business',
+
+    /**
+     * A returning vendor on the device they last signed in on: the number is
+     * remembered, so only the code is asked for.
+     */
+    welcomeTitle: 'Welcome back',
+    welcomeSubtitle: 'Enter your authentication code to sign in.',
+    /**
+     * Spoken in place of the masked number. `{digits}` is the last four, spelt
+     * one at a time — the bullets mean nothing read aloud, and "zero zero zero
+     * one" is recognisable where "one" is not.
+     */
+    rememberedPhoneSpoken: 'Phone number ending {digits}',
+    useDifferentNumber: 'Use a different number',
+    useDifferentNumberHint: 'Forgets this number on this device so you can enter another',
+
+    /**
+     * What a refused sign in says. Chosen by the app rather than taken from the
+     * service, because a refusal is `unauthorized` and that kind's default copy
+     * is "your session has expired" — about a session nobody has yet.
+     *
+     * Both allow for a code an administrator has changed, and neither repeats
+     * the code or says which half was wrong: the backend refuses an unknown
+     * number and a wrong code alike, and the copy must not undo that.
+     */
+    codeRefused: "That code didn't work. Check it, or if your code was changed, use the new one.",
+    detailsRefused:
+      "That number and code didn't work. Check them, or if your code was changed, use the new one.",
   }),
 
   vendorRegistration: Object.freeze({
@@ -216,7 +246,8 @@ export const AUTH_COPY = Object.freeze({
     continueHint: 'Continues to confirm the code you just saved',
 
     confirmTitle: 'Confirm your code',
-    confirmBody: 'Enter the authentication code you just saved.',
+    /** `{length}` is `AppConfig.vendorAuthCode.length`. */
+    confirmBody: 'Enter the {length}-digit authentication code you just saved.',
     confirmLabel: 'Authentication code',
     confirmPlaceholder: 'Enter your code',
     confirmAction: 'Continue',

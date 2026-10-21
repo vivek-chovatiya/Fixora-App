@@ -96,6 +96,7 @@ async function render(service: AuthService, categories: CategoryService = stubCa
       </ThemeProvider>,
     );
   });
+  mounted.push(renderer);
 
   /**
    * The text input itself, not the ControlledInput wrapper that also carries the
@@ -157,7 +158,23 @@ function textOf(node: ReactTestRendererJSON | ReactTestRendererJSON[] | null): s
     .join(' ');
 }
 
+/**
+ * Every screen a test rendered, unmounted after it.
+ *
+ * Found tracing jest's "A worker process has failed to exit gracefully": a test
+ * that raised a toast left its dismiss timer running in a tree nobody
+ * unmounted, so the file's last tests were followed by renders after jest had
+ * torn the environment down and a worker that could not exit on time.
+ * Unmounting runs the cleanup `ToastProvider` already has.
+ */
+const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
+
 afterEach(() => {
+  for (const renderer of mounted.splice(0)) {
+    act(() => {
+      renderer.unmount();
+    });
+  }
   resetServices();
   jest.restoreAllMocks();
 });
@@ -450,21 +467,27 @@ describe('VendorRegistrationScreen — submission', () => {
     });
   });
 
-  it('hands verification the registration id, not the phone number', async () => {
-    const { fillValid, submit, navigate } = await render(stubAuthService());
+  it('hands verification the registration id as its identity, and the number sent only to be remembered', async () => {
+    const service = stubAuthService();
+    const { fillValid, submit, navigate } = await render(service);
 
     await fillValid();
     await submit();
 
+    // Onboarding is identified by the handle — every onboarding call is keyed
+    // by it (VendorOtpScreen's tests). The phone travels beside it as the
+    // digits registration sent, to be remembered once onboarding finishes,
+    // and nothing else does: no code, no other detail.
     expect(navigate).toHaveBeenCalledWith('VendorOtp', {
       registrationId: REGISTRATION.registrationId,
+      phone: VALID.normalisedPhone,
       challenge: REGISTRATION.challenge,
     });
-
-    // Onboarding is identified by the handle. Knowing the number must not be
-    // enough to resume someone else's registration.
     const params = navigate.mock.calls[0][1];
-    expect(JSON.stringify(params)).not.toContain(VALID.normalisedPhone);
+    expect(Object.keys(params).sort()).toEqual(['challenge', 'phone', 'registrationId']);
+    expect(params.phone).toBe(
+      (service.registerVendor as jest.Mock).mock.calls[0][0].phone,
+    );
   });
 });
 

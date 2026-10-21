@@ -29,6 +29,8 @@ import {
   findMockAccount,
   generateMockVendorAuthCode,
   maskPhone,
+  nextMockVendorAuthCode,
+  type MockRandomSource,
 } from '@/shared/services/mock/mockAuthData';
 import { mockId, simulateNetwork, type MockLatency } from '@/shared/services/mock/mockUtils';
 import type {
@@ -63,10 +65,11 @@ interface ActiveVendor {
 }
 
 /**
- * Both fields exist so tests can remove the two things that make a mock slow to
- * assert against: waiting for a clock, and waiting for a network.
+ * The clock and the latency exist so tests can remove the two things that make
+ * a mock slow to assert against: waiting for a clock, and waiting for a network.
+ * The random source exists so a test can know the code it will be issued.
  *
- * Neither is set by the running app, which keeps real-feeling latency.
+ * None is set by the running app, which keeps real-feeling latency and codes.
  */
 export interface MockAuthServiceOptions {
   /**
@@ -79,6 +82,11 @@ export interface MockAuthServiceOptions {
    * so a suite is not billed hundreds of milliseconds per call.
    */
   latency?: MockLatency;
+  /**
+   * Where issued vendor auth codes come from. Defaults to `Math.random`; a test
+   * passes a fixed sequence to pin the code a registration receives.
+   */
+  random?: MockRandomSource;
 }
 
 export class MockAuthService implements AuthService {
@@ -95,9 +103,12 @@ export class MockAuthService implements AuthService {
 
   private readonly latency: MockLatency | undefined;
 
+  private readonly random: MockRandomSource;
+
   constructor(options: MockAuthServiceOptions = {}) {
     this.now = options.now ?? (() => Date.now());
     this.latency = options.latency;
+    this.random = options.random ?? Math.random;
   }
 
   /**
@@ -207,7 +218,7 @@ export class MockAuthService implements AuthService {
       // Verification activates the vendor. There is no administrator approval
       // step in the approved flow.
       onboarding.otpVerified = true;
-      onboarding.authCode = generateMockVendorAuthCode();
+      onboarding.authCode = this.issueVendorAuthCode(onboarding.authCode);
 
       // The code itself is never logged.
       log.info('Mock vendor activated and auth code issued', {
@@ -225,7 +236,7 @@ export class MockAuthService implements AuthService {
 
       // Replacing the value is what revokes the previous one: every check
       // compares against the current code only.
-      onboarding.authCode = generateMockVendorAuthCode();
+      onboarding.authCode = this.issueVendorAuthCode(onboarding.authCode);
       log.info('Mock vendor auth code regenerated', { phone: maskPhone(onboarding.phone) });
 
       return { code: onboarding.authCode, issuedAt: new Date(this.now()).toISOString() };
@@ -377,6 +388,18 @@ export class MockAuthService implements AuthService {
     }
 
     return undefined;
+  }
+
+  /**
+   * A fresh code, never the one it replaces.
+   *
+   * Six random digits repeat one time in a million — and every time, from a
+   * pinned test source. A "regenerated" code equal to the revoked one would
+   * revoke nothing, so a repeat is stepped past rather than trusted to luck.
+   */
+  private issueVendorAuthCode(previous: string | null): string {
+    const code = generateMockVendorAuthCode(this.random);
+    return code === previous ? nextMockVendorAuthCode(code) : code;
   }
 
   private expiryFromNow(): number {

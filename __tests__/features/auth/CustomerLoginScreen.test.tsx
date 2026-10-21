@@ -96,6 +96,7 @@ async function render(service: AuthService = stubAuthService()) {
       </Provider>,
     );
   });
+  mounted.push(renderer);
 
   /**
    * The host text input, not the ControlledInput or PhoneInput wrappers that
@@ -153,7 +154,23 @@ function textOf(node: ReactTestRendererJSON | ReactTestRendererJSON[] | null): s
     .join(' ');
 }
 
+/**
+ * Every screen a test rendered, unmounted after it.
+ *
+ * Found tracing jest's "A worker process has failed to exit gracefully": a test
+ * that raised a toast left its dismiss timer running in a tree nobody
+ * unmounted, so the file's last tests were followed by renders after jest had
+ * torn the environment down and a worker that could not exit on time.
+ * Unmounting runs the cleanup `ToastProvider` already has.
+ */
+const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
+
 afterEach(() => {
+  for (const renderer of mounted.splice(0)) {
+    act(() => {
+      renderer.unmount();
+    });
+  }
   resetServices();
   jest.restoreAllMocks();
 });

@@ -23,6 +23,17 @@ export interface AuthUser {
   email?: string;
   /** The identifier for both roles. */
   phone: string;
+  /**
+   * The uploaded profile picture, once there is one (PROJECT_BIBLE.md section
+   * 25, Phase 3D-8).
+   *
+   * A remote URL and never a local file path: a `file://` URI belongs to the
+   * device that picked it, so persisting one would restore a broken image on
+   * the next launch and show nothing at all on another device. The local file
+   * exists only between picking and a successful upload, and lives in the
+   * screen's own state for exactly that long.
+   */
+  avatarUrl?: string;
   role: UserRole;
 }
 

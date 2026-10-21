@@ -7,9 +7,12 @@
  * copy and continue. It holds no service call and no navigation, so the one
  * place the credential can be acted upon stays the container above it.
  *
- * The code is treated as an opaque string: not split, not reformatted, not
- * validated. The backend owns its shape, and a display that assumed one would
- * break the day generation changes (PROJECT_BIBLE.md section 7A.2).
+ * The code is six digits (owner's decision, 21/10/2026), and it is drawn the way
+ * a person reads six digits back: in two groups, "482 913". That is the eye's
+ * version only. It is spoken digit by digit, so TalkBack says "4 8 2 9 1 3"
+ * rather than a number in the hundreds of thousands, and the container copies
+ * the code as issued — the bare digits, no space. A code that is not all digits
+ * is shown untouched rather than mangled (`groupVendorAuthCode`).
  *
  * Copying must never authenticate. That is a rule about this screen, not just a
  * detail of it: a vendor who copies their code has still not proved they saved
@@ -20,13 +23,17 @@ import React, { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AUTH_COPY } from '@/features/auth/constants/authCopy';
+import {
+  groupVendorAuthCode,
+  spellOut,
+} from '@/features/auth/constants/vendorAuthPresentation';
 import { Card, Icon, PrimaryButton, SecondaryButton, Text } from '@/shared/components';
 import { useTheme } from '@/shared/theme';
 
 const COPY = AUTH_COPY.vendorAuthCode;
 
 export interface VendorAuthCodeDisplayProps {
-  /** The code itself. Rendered verbatim. */
+  /** The code itself, as issued. Grouped for display; never altered. */
   code: string;
   /** Copies the code. Resolves false when the clipboard could not be written. */
   onCopy: () => Promise<boolean>;
@@ -60,8 +67,11 @@ export function VendorAuthCodeDisplay({ code, onCopy, onContinue }: VendorAuthCo
         <Text variant="overline" color="textTertiary">
           {COPY.codeLabel}
         </Text>
-        <Text variant="h2" testID="vendor-auth-code-value">
-          {code}
+        <Text
+          variant="h2"
+          accessibilityLabel={spellOut(code)}
+          testID="vendor-auth-code-value">
+          {groupVendorAuthCode(code)}
         </Text>
       </Card>
 

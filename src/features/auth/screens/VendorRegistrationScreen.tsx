@@ -27,7 +27,6 @@ import { AuthCityscape } from '@/features/auth/components/AuthCityscape';
 import { AuthHeading } from '@/features/auth/components/AuthHeading';
 import { AuthTopBar } from '@/features/auth/components/AuthTopBar';
 import { AUTH_COPY } from '@/features/auth/constants/authCopy';
-import { ServiceCategoryField } from '@/features/auth/components/ServiceCategoryField';
 import { useVendorRegistration } from '@/features/auth/hooks/useAuth';
 import {
   VENDOR_BUSINESS_NAME_MAX_LENGTH,
@@ -42,6 +41,7 @@ import {
   PhoneInput,
   PrimaryButton,
   Screen,
+  ServiceCategoryField,
   Text,
   useErrorToast,
 } from '@/shared/components';
@@ -81,18 +81,22 @@ export function VendorRegistrationScreen({ navigation }: Props) {
       // doing before this leaves the app: the phone is reduced to digits, and a
       // blank email is sent as absent rather than as an empty string. A failure
       // leaves the form exactly as it is, so nothing typed is lost.
+      const phone = normalisePhone(values.phone);
       const registration = await register({
         ...values,
-        phone: normalisePhone(values.phone),
+        phone,
         email: values.email === '' ? undefined : values.email,
       });
 
       if (registration) {
         // `registrationId` is the onboarding identity from here on — the phone
-        // number is not carried forward as one. The challenge holds only the
-        // masked destination and timings; no code travels in params.
+        // number is not carried forward as one. It travels only to be
+        // remembered for the next sign in once onboarding finishes, as the
+        // digits sent here. The challenge holds only the masked destination
+        // and timings; no code travels in params.
         navigation.navigate('VendorOtp', {
           registrationId: registration.registrationId,
+          phone,
           challenge: registration.challenge,
         });
       }

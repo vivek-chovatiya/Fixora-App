@@ -18,7 +18,10 @@ import { Provider } from 'react-redux';
 import { setClipboard } from '@/core/clipboard/Clipboard';
 import { setSessionStorage, type PersistedSession } from '@/core/storage/SessionStorage';
 import { AUTH_COPY } from '@/features/auth/constants/authCopy';
+import { groupVendorAuthCode } from '@/features/auth/constants/vendorAuthPresentation';
 import { authReducer } from '@/features/auth/state/authSlice';
+import { setRememberedVendorStorage } from '@/features/auth/state/rememberedVendorStorage';
+import { VENDOR_AUTH_CODE_INPUT_MAX_LENGTH } from '@/features/auth/validation/authSchemas';
 import { VendorOtpScreen } from '@/features/auth/screens/VendorOtpScreen';
 import type { SessionPayload } from '@/features/auth/types';
 import { MockAuthService } from '@/shared/services/mock/MockAuthService';
@@ -38,11 +41,18 @@ const REGISTRATION_ID = 'reg_test_1';
 const VENDOR_PHONE = '9123456780';
 const TYPED_OTP = '246810';
 
-const ISSUED_CODE: VendorAuthCode = { code: 'FX-ABCD-2345', issuedAt: new Date().toISOString() };
+/** A leading zero on purpose: it is part of the code and must survive display and copy. */
+const ISSUED_CODE: VendorAuthCode = { code: '048213', issuedAt: new Date().toISOString() };
 const REPLACEMENT_CODE: VendorAuthCode = {
-  code: 'FX-WXYZ-6789',
+  code: '907316',
   issuedAt: new Date().toISOString(),
 };
+const WRONG_CODE = '111111';
+
+/** Whether a code is anywhere in this text, bare or as it is displayed. */
+function containsCode(text: string, code: string): boolean {
+  return text.includes(code) || text.includes(groupVendorAuthCode(code));
+}
 
 const VENDOR_SESSION: SessionPayload = {
   token: 'token_vendor',
@@ -107,6 +117,14 @@ async function render(
   const storage = memoryStorage();
   setSessionStorage(storage);
 
+  // Confirming remembers the vendor's phone on the device; kept in memory here.
+  const remember = jest.fn<Promise<boolean>, [string]>(async () => true);
+  setRememberedVendorStorage({
+    read: jest.fn(async () => null),
+    remember,
+    forget: jest.fn(async () => undefined),
+  });
+
   const copy = jest.fn(async () => undefined);
   setClipboard({ copy });
 
@@ -125,6 +143,8 @@ async function render(
     name: 'VendorOtp' as const,
     params: {
       registrationId: options.registrationId ?? REGISTRATION_ID,
+      // The digits registration sent, which is what onboarding remembers.
+      phone: VENDOR_PHONE,
       challenge: options.challenge ?? CHALLENGE,
     },
   } as never;
@@ -170,9 +190,22 @@ async function render(
   const button = (accessibilityLabel: string) =>
     renderer.root.findByProps({ accessibilityLabel }).props;
 
-  /** The code as the vendor reads it off the screen. */
+  /** The code as the vendor reads it off the screen — grouped, "048 213". */
   const displayedCode = (): string =>
     textOf(renderer.root.findByProps({ testID: 'vendor-auth-code-value' }).props.children);
+
+  /** The code as a screen reader speaks it. */
+  const spokenCode = (): string =>
+    renderer.root.findByProps({ testID: 'vendor-auth-code-value' }).props.accessibilityLabel;
+
+  /** The confirmation step's host text input. */
+  const confirmField = () =>
+    renderer.root.findAll(
+      node =>
+        typeof node.type === 'string' &&
+        node.props.testID === 'vendor-auth-code-input' &&
+        typeof node.props.onChangeText === 'function',
+    )[0].props;
 
   /**
    * Verifies the phone, landing on the auth code display.
@@ -232,6 +265,7 @@ async function render(
     renderer,
     store,
     storage,
+    remember,
     copy,
     goBack,
     navigate,
@@ -245,6 +279,8 @@ async function render(
     codeField,
     button,
     displayedCode,
+    spokenCode,
+    confirmField,
     completeOtp,
     settleVerified,
   };
@@ -344,7 +380,7 @@ describe('VendorOtpScreen — the one-time code step', () => {
   it('shows no auth code before the phone is verified', async () => {
     const { text } = await render(stubAuthService());
 
-    expect(text()).not.toContain(ISSUED_CODE.code);
+    expect(containsCode(text(), ISSUED_CODE.code)).toBe(false);
     expect(text()).not.toContain('Phone verified');
   });
 
@@ -508,7 +544,25 @@ describe('VendorOtpScreen — the auth code is shown', () => {
     await completeOtp();
 
     expect(text()).toContain('Phone verified');
-    expect(displayedCode()).toBe(ISSUED_CODE.code);
+    expect(displayedCode().replace(/\s/g, '')).toBe(ISSUED_CODE.code);
+  });
+
+  it('groups the code in threes for reading, kept on one line', async () => {
+    const { completeOtp, displayedCode } = await render(stubAuthService());
+
+    await completeOtp();
+
+    // A no-break space: visually a gap, never a place to wrap.
+    expect(displayedCode()).toBe('048 213');
+  });
+
+  it('is spoken digit by digit, leading zero included', async () => {
+    const { completeOtp, spokenCode } = await render(stubAuthService());
+
+    await completeOtp();
+
+    // Not "forty-eight thousand two hundred thirteen".
+    expect(spokenCode()).toBe('0 4 8 2 1 3');
   });
 
   it('describes what happened without claiming approval or a sign in', async () => {
@@ -529,7 +583,9 @@ describe('VendorOtpScreen — the auth code is shown', () => {
     await completeOtp();
     await press('Copy code');
 
-    expect(copy).toHaveBeenCalledWith(ISSUED_CODE.code);
+    // The six digits as issued: no group space, leading zero kept.
+    expect(copy).toHaveBeenCalledTimes(1);
+    expect(copy).toHaveBeenCalledWith('048213');
     expect(text()).toContain('Copied');
 
     // Copying is not a claim that the vendor saved it, and not a sign in.
@@ -592,6 +648,52 @@ describe('VendorOtpScreen — confirmation creates the session', () => {
     expect(service.signInVendor).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['as it was displayed', '048 213'],
+    ['in groups with a space', '048 213'],
+    ['with a hyphen', '048-213'],
+  ])('accepts the code typed back %s, and sends its bare digits', async (_label, typed) => {
+    const service = stubAuthService();
+    const { type, press } = await reachConfirmation(service);
+
+    await type('vendor-auth-code-input', typed);
+    await press('Continue');
+
+    expect(service.verifyVendorAuthCode).toHaveBeenCalledWith(REGISTRATION_ID, '048213');
+  });
+
+  it.each([
+    ['five digits', '04821', 'Your authentication code is 6 digits.'],
+    ['seven digits', '0482134', 'Your authentication code is 6 digits.'],
+    ['a letter', '04821a', 'Your authentication code is numbers only.'],
+  ])('refuses %s beside the field, keeping what was typed', async (_label, typed, message) => {
+    const service = stubAuthService();
+    const { type, press, text, confirmField } = await reachConfirmation(service);
+
+    await type('vendor-auth-code-input', typed);
+    await press('Continue');
+
+    expect(text()).toContain(message);
+    expect(confirmField().accessibilityHint).toBe(message);
+    expect(confirmField().value).toBe(typed);
+    expect(service.verifyVendorAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('takes the code on a number pad, out of autofill, with room for groups', async () => {
+    const { confirmField, text } = await reachConfirmation(stubAuthService());
+    const props = confirmField();
+
+    expect(props.keyboardType).toBe('number-pad');
+    expect(props.maxLength).toBe(VENDOR_AUTH_CODE_INPUT_MAX_LENGTH);
+    expect(props.maxLength).toBeGreaterThanOrEqual('0 4 8 2 1 3'.length);
+    // Not `oneTimeCode`: the one-time code that just arrived is exactly what
+    // the keyboard would offer, and it is the wrong code.
+    expect(props.autoComplete).toBe('off');
+    expect(props.importantForAutofill).toBe('no');
+    expect(props.textContentType).toBe('none');
+    expect(text()).toContain('Enter the 6-digit authentication code you just saved.');
+  });
+
   it('publishes the session through auth state, without navigating', async () => {
     const service = stubAuthService();
     const { type, press, store, storage, navigate, goBack, settlePublish } =
@@ -615,6 +717,26 @@ describe('VendorOtpScreen — confirmation creates the session', () => {
     expect(goBack).not.toHaveBeenCalled();
   });
 
+  it('remembers the number registration sent, not the account’s formatting of it', async () => {
+    // The account's number has no format contract; this one, remembered,
+    // would make the next code-only sign in send twelve digits.
+    const service = stubAuthService({
+      verifyVendorAuthCode: jest.fn(async () => ({
+        ...VENDOR_SESSION,
+        user: { ...VENDOR_SESSION.user, phone: `+91${VENDOR_PHONE}` },
+      })),
+    });
+    const { type, press, remember, settlePublish } = await reachConfirmation(service);
+
+    await type('vendor-auth-code-input', ISSUED_CODE.code);
+    await press('Continue');
+    await settlePublish();
+
+    // Keyed by the registration id; the number is remembered, never sent.
+    expect(service.verifyVendorAuthCode).toHaveBeenCalledWith(REGISTRATION_ID, ISSUED_CODE.code);
+    expect(remember.mock.calls).toEqual([[VENDOR_PHONE]]);
+  });
+
   it('keeps the vendor on the step, with the code intact, when confirmation fails', async () => {
     const failure = new AppError({
       kind: 'validation',
@@ -628,7 +750,7 @@ describe('VendorOtpScreen — confirmation creates the session', () => {
     });
     const { type, press, text, store, displayedCode } = await reachConfirmation(service);
 
-    await type('vendor-auth-code-input', 'FX-WRON-GXXX');
+    await type('vendor-auth-code-input', WRONG_CODE);
     await press('Continue');
 
     expect(text()).toContain(failure.userMessage);
@@ -638,7 +760,7 @@ describe('VendorOtpScreen — confirmation creates the session', () => {
 
     // A wrong guess does not destroy the code the vendor was issued.
     await press('Show my code again');
-    expect(displayedCode()).toBe(ISSUED_CODE.code);
+    expect(displayedCode()).toBe(groupVendorAuthCode(ISSUED_CODE.code));
   });
 });
 
@@ -658,9 +780,9 @@ describe('VendorOtpScreen — regeneration', () => {
 
     expect(service.regenerateVendorAuthCode).toHaveBeenCalledWith(REGISTRATION_ID);
     expect(text()).toContain('Phone verified');
-    expect(displayedCode()).toBe(REPLACEMENT_CODE.code);
-    // The replaced code is gone from the screen entirely.
-    expect(text()).not.toContain(ISSUED_CODE.code);
+    expect(displayedCode()).toBe(groupVendorAuthCode(REPLACEMENT_CODE.code));
+    // The replaced code is gone from the screen entirely, in either form.
+    expect(containsCode(text(), ISSUED_CODE.code)).toBe(false);
   });
 
   it('does not authenticate or auto-confirm', async () => {
@@ -746,7 +868,7 @@ describe('VendorOtpScreen — the credential does not escape', () => {
     await completeOtp();
 
     // The screen has it, because it is on the display step showing it...
-    expect(displayedCode()).toBe(ISSUED_CODE.code);
+    expect(displayedCode()).toBe(groupVendorAuthCode(ISSUED_CODE.code));
 
     // ...and no mutation hook is holding a second copy in its own `data`.
     const retained = renderer.root.findAll(

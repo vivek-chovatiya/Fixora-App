@@ -108,6 +108,7 @@ async function render(service: AuthService, challenge: OtpChallenge = CHALLENGE)
       </Provider>,
     );
   });
+  mounted.push(renderer);
 
   const press = async (accessibilityLabel: string) => {
     const button = renderer.root.findByProps({ accessibilityLabel });
@@ -202,7 +203,23 @@ function textOf(node: ReactTestRendererJSON | ReactTestRendererJSON[] | null): s
     .join(' ');
 }
 
+/**
+ * Every screen a test rendered, unmounted after it.
+ *
+ * Found tracing jest's "A worker process has failed to exit gracefully": the
+ * screen's timers — a toast's dismiss and the resend countdown — kept running
+ * in trees nobody unmounted, so the file's last tests were followed by renders
+ * after jest had torn the environment down and a worker that could not exit on
+ * time. Unmounting runs the cleanup the components already have.
+ */
+const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
+
 afterEach(() => {
+  for (const renderer of mounted.splice(0)) {
+    act(() => {
+      renderer.unmount();
+    });
+  }
   resetServices();
   jest.restoreAllMocks();
 });

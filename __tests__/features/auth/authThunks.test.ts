@@ -22,6 +22,10 @@ import {
   signInVendor,
   signOut,
 } from '@/features/auth/state/authThunks';
+import {
+  setRememberedVendorStorage,
+  type RememberedVendorStorage,
+} from '@/features/auth/state/rememberedVendorStorage';
 import type { SessionPayload } from '@/features/auth/types';
 import {
   configureServices,
@@ -65,7 +69,31 @@ const VENDOR_SESSION: SessionPayload = {
   },
 };
 
-const VENDOR_AUTH_CODE = 'FX-ABCD-2345';
+const VENDOR_AUTH_CODE = '482913';
+
+/** The number a vendor typed at registration, normalised as it was sent. */
+const REGISTERED_PHONE = '9000000001';
+
+/**
+ * A remembered-vendor store that records every value it is handed, and the
+ * order it was handed them in relative to the session write.
+ */
+function createRememberedStorage(initial: string | null = null) {
+  let phone = initial;
+  const given: unknown[] = [];
+  const storage: RememberedVendorStorage = {
+    read: jest.fn(async () => phone),
+    remember: jest.fn(async (value: string) => {
+      given.push(value);
+      phone = value;
+      return true;
+    }),
+    forget: jest.fn(async () => {
+      phone = null;
+    }),
+  };
+  return { storage, given, peek: () => phone };
+}
 
 function createMemoryStorage(initial: PersistedSession | null = null) {
   let value = initial;
@@ -106,6 +134,12 @@ function createStubAuthService(overrides: Partial<AuthService> = {}): AuthServic
     ...overrides,
   };
 }
+
+beforeEach(() => {
+  // Kept off the device for every test; the block that is about it installs
+  // its own and reads it.
+  setRememberedVendorStorage(createRememberedStorage().storage);
+});
 
 afterEach(() => {
   resetServices();
@@ -225,7 +259,7 @@ describe('confirmVendorAuthCode', () => {
     registerService('auth', service);
     const store = createStore();
 
-    await confirmVendorAuthCode(store.dispatch, 'reg_1', VENDOR_AUTH_CODE);
+    await confirmVendorAuthCode(store.dispatch, 'reg_1', REGISTERED_PHONE, VENDOR_AUTH_CODE);
 
     expect(service.verifyVendorAuthCode).toHaveBeenCalledWith('reg_1', VENDOR_AUTH_CODE);
     // Persisted before it is published, and published only once the vendor has
@@ -244,7 +278,7 @@ describe('confirmVendorAuthCode', () => {
     registerService('auth', createStubAuthService());
     const store = createStore();
 
-    await confirmVendorAuthCode(store.dispatch, 'reg_1', VENDOR_AUTH_CODE);
+    await confirmVendorAuthCode(store.dispatch, 'reg_1', REGISTERED_PHONE, VENDOR_AUTH_CODE);
 
     expect(JSON.stringify(store.getState())).not.toContain(VENDOR_AUTH_CODE);
   });
@@ -263,11 +297,165 @@ describe('confirmVendorAuthCode', () => {
     const store = createStore();
 
     await expect(
-      confirmVendorAuthCode(store.dispatch, 'reg_1', 'FX-WRON-GXXX'),
+      confirmVendorAuthCode(store.dispatch, 'reg_1', REGISTERED_PHONE, '111111'),
     ).rejects.toBeInstanceOf(AppError);
 
     expect(peek()).toBeNull();
     expect(store.getState().auth.status).toBe('bootstrapping');
+  });
+});
+
+/**
+ * A returning vendor on the same device types only their code, because the
+ * phone they signed in with is remembered. These pin when it is remembered,
+ * which number, and above all that the code is never what is kept.
+ */
+describe('remembering the vendor phone', () => {
+  it('remembers the number a vendor signed in with, once the session is stored', async () => {
+    const order: string[] = [];
+    const session = createMemoryStorage();
+    setSessionStorage({
+      ...session.storage,
+      write: jest.fn(async (value: PersistedSession) => {
+        order.push('session');
+        await session.storage.write(value);
+      }),
+    });
+    const remembered = createRememberedStorage();
+    setRememberedVendorStorage({
+      ...remembered.storage,
+      remember: jest.fn(async (value: string) => {
+        order.push('remember');
+        return remembered.storage.remember(value);
+      }),
+    });
+    registerService('auth', createStubAuthService());
+    const store = createStore();
+
+    await signInVendor(store.dispatch, '919000000001', VENDOR_AUTH_CODE);
+
+    // The number that just worked with this call — not the account's own
+    // formatting of it.
+    expect(remembered.peek()).toBe('919000000001');
+    expect(order).toEqual(['session', 'remember']);
+  });
+
+  it('remembers the number typed at registration when onboarding finishes, not the account’s formatting of it', async () => {
+    setSessionStorage(createMemoryStorage().storage);
+    const remembered = createRememberedStorage();
+    setRememberedVendorStorage(remembered.storage);
+    // The account's number has no format contract. Remembered as given, this
+    // one would be twelve digits, and the next code-only sign in would send
+    // them and fail as a wrong code.
+    const service = createStubAuthService({
+      verifyVendorAuthCode: jest.fn(async () => ({
+        ...VENDOR_SESSION,
+        user: { ...VENDOR_SESSION.user, phone: '+919000000001' },
+      })),
+    });
+    registerService('auth', service);
+    const store = createStore();
+
+    await confirmVendorAuthCode(store.dispatch, 'reg_1', REGISTERED_PHONE, VENDOR_AUTH_CODE);
+
+    expect(remembered.given).toEqual([REGISTERED_PHONE]);
+    // And the number is remembered, never sent: onboarding is keyed by the id.
+    expect(service.verifyVendorAuthCode).toHaveBeenCalledWith('reg_1', VENDOR_AUTH_CODE);
+    await settlePublish();
+  });
+
+  it('never hands the auth code to the device, from either flow', async () => {
+    setSessionStorage(createMemoryStorage().storage);
+    const remembered = createRememberedStorage();
+    setRememberedVendorStorage(remembered.storage);
+    registerService('auth', createStubAuthService());
+    const store = createStore();
+
+    await signInVendor(store.dispatch, '9000000001', VENDOR_AUTH_CODE);
+    await confirmVendorAuthCode(store.dispatch, 'reg_1', REGISTERED_PHONE, VENDOR_AUTH_CODE);
+    await settlePublish();
+
+    expect(remembered.given).toHaveLength(2);
+    expect(JSON.stringify(remembered.given)).not.toContain(VENDOR_AUTH_CODE);
+  });
+
+  it('keeps the previous number when a sign in is refused', async () => {
+    setSessionStorage(createMemoryStorage().storage);
+    const remembered = createRememberedStorage('9000000002');
+    setRememberedVendorStorage(remembered.storage);
+    registerService(
+      'auth',
+      createStubAuthService({
+        signInVendor: jest.fn(async () => {
+          throw new AppError({ kind: 'unauthorized' });
+        }),
+      }),
+    );
+    const store = createStore();
+
+    await expect(
+      signInVendor(store.dispatch, '9000000001', '111111'),
+    ).rejects.toBeInstanceOf(AppError);
+
+    // The refusal says nothing about whether the account exists, so the
+    // number that worked last time stays.
+    expect(remembered.storage.remember).not.toHaveBeenCalled();
+    expect(remembered.storage.forget).not.toHaveBeenCalled();
+    expect(remembered.peek()).toBe('9000000002');
+  });
+
+  it('does not let a broken store undo a sign in', async () => {
+    const { storage, peek } = createMemoryStorage();
+    setSessionStorage(storage);
+    setRememberedVendorStorage({
+      read: jest.fn(async () => null),
+      remember: jest.fn(async () => {
+        throw new Error('device unavailable');
+      }),
+      forget: jest.fn(async () => undefined),
+    });
+    registerService('auth', createStubAuthService());
+    const store = createStore();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(
+      signInVendor(store.dispatch, '9000000001', VENDOR_AUTH_CODE),
+    ).resolves.toEqual(VENDOR_SESSION);
+
+    expect(peek()).toEqual(VENDOR_SESSION);
+    expect(store.getState().auth.status).toBe('authenticated');
+    // Said, not swallowed — and said without the number.
+    expect(JSON.stringify(warn.mock.calls)).toContain('Could not remember the vendor phone');
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('9000000001');
+    warn.mockRestore();
+  });
+
+  it('remembers nothing for a customer', async () => {
+    setSessionStorage(createMemoryStorage().storage);
+    const remembered = createRememberedStorage();
+    setRememberedVendorStorage(remembered.storage);
+    registerService('auth', createStubAuthService());
+    const store = createStore();
+
+    await signInCustomer(store.dispatch, '9876543210', '123456');
+    await settlePublish();
+
+    expect(remembered.storage.remember).not.toHaveBeenCalled();
+  });
+
+  it('survives signing out — that is what it is for', async () => {
+    const { storage } = createMemoryStorage(VENDOR_SESSION);
+    setSessionStorage(storage);
+    const remembered = createRememberedStorage('9000000001');
+    setRememberedVendorStorage(remembered.storage);
+    registerService('auth', createStubAuthService());
+    const store = createStore();
+    await restoreSession(store.dispatch);
+
+    await signOut(store.dispatch);
+
+    expect(remembered.storage.forget).not.toHaveBeenCalled();
+    expect(remembered.peek()).toBe('9000000001');
   });
 });
 

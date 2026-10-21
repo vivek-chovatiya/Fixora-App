@@ -18,9 +18,10 @@
  * keeps the generated auth code out of Redux.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { useAppDispatch, useAppSelector } from '@/app/hooks';
+import { createLogger } from '@/core/logger/Logger';
 import {
   selectAuthStatus,
   selectCurrentUser,
@@ -33,6 +34,7 @@ import {
   signInVendor,
   signOut as signOutThunk,
 } from '@/features/auth/state/authThunks';
+import { getRememberedVendorStorage } from '@/features/auth/state/rememberedVendorStorage';
 import type { SessionPayload } from '@/features/auth/types';
 import { useServiceMutation } from '@/shared/hooks/useServiceMutation';
 import { getService } from '@/shared/services/ServiceRegistry';
@@ -42,6 +44,9 @@ import type {
   VendorRegistration,
   VendorRegistrationDetails,
 } from '@/shared/services/types/AuthService';
+import { AppError } from '@/shared/types/error';
+
+const log = createLogger('useAuth');
 
 /** Read-only view of the current session. */
 export function useAuthSession() {
@@ -151,17 +156,21 @@ export function useRegenerateVendorAuthCode() {
  *
  * The only onboarding step that creates a session. Copying the code must not
  * call this — the vendor has to enter it.
+ *
+ * `phone` is the number typed at registration, remembered for the next sign in
+ * once the session exists; the service is called with the registration id and
+ * the code only.
  */
 export function useConfirmVendorAuthCode() {
   const dispatch = useAppDispatch();
 
   const confirm = useCallback(
-    (registrationId: string, authCode: string): Promise<SessionPayload> =>
-      confirmVendorAuthCode(dispatch, registrationId, authCode),
+    (registrationId: string, phone: string, authCode: string): Promise<SessionPayload> =>
+      confirmVendorAuthCode(dispatch, registrationId, phone, authCode),
     [dispatch],
   );
 
-  return useServiceMutation<[string, string], SessionPayload>(confirm);
+  return useServiceMutation<[string, string, string], SessionPayload>(confirm);
 }
 
 /* Vendor sign in ---------------------------------------------------------- */
@@ -177,6 +186,69 @@ export function useVendorSignIn() {
   );
 
   return useServiceMutation<[string, string], SessionPayload>(submit);
+}
+
+export interface RememberedVendorPhone {
+  /** Digits only, or null when none is remembered, it could not be read, or it was forgotten. */
+  phone: string | null;
+  /** True until the device has answered, once, on mount. */
+  isReading: boolean;
+  /** Forgets the number here and on the device, so the phone field comes back. */
+  forget: () => void;
+}
+
+/**
+ * The phone number the last vendor signed in with on this device, if any.
+ *
+ * Read once, on mount. Remembering is the sign-in thunks' job, after a session
+ * exists; this only reads and forgets.
+ *
+ * ⚠️ Never in the way of signing in. A read that fails — even one that throws
+ * despite the storage module promising not to — settles as "nothing
+ * remembered", which is the full phone-and-code form every vendor already knows.
+ */
+export function useRememberedVendorPhone(): RememberedVendorPhone {
+  const [state, setState] = useState<{ phone: string | null; isReading: boolean }>({
+    phone: null,
+    isReading: true,
+  });
+
+  useEffect(() => {
+    // An answer that arrives after the screen has gone has nowhere to land.
+    let isCurrent = true;
+
+    const settle = (phone: string | null) => {
+      if (isCurrent) {
+        setState({ phone, isReading: false });
+      }
+    };
+
+    getRememberedVendorStorage()
+      .read()
+      .then(settle, (caught: unknown) => {
+        log.warn('Remembered vendor could not be read', { kind: AppError.from(caught).kind });
+        settle(null);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
+
+  const forget = useCallback(() => {
+    // The screen changes now; the device catches up. A forget that fails only
+    // means the number may be offered again next time — the module logs it.
+    setState({ phone: null, isReading: false });
+    getRememberedVendorStorage()
+      .forget()
+      .catch((caught: unknown) => {
+        log.warn('Remembered vendor could not be forgotten', {
+          kind: AppError.from(caught).kind,
+        });
+      });
+  }, []);
+
+  return { phone: state.phone, isReading: state.isReading, forget };
 }
 
 /* Common ------------------------------------------------------------------ */

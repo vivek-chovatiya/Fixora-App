@@ -58,7 +58,9 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'VendorOtp'>;
 
 export function VendorOtpScreen({ route, navigation }: Props) {
   const theme = useTheme();
-  const { registrationId, challenge } = route.params;
+  // `phone` is never sent with an onboarding call — only remembered once the
+  // session exists (navigation/types.ts, `VendorOtp`).
+  const { registrationId, phone, challenge } = route.params;
 
   const [step, setStep] = useState<OnboardingStep>('otp');
 
@@ -197,11 +199,11 @@ export function VendorOtpScreen({ route, navigation }: Props) {
     // Only whether it arrived is reported back, so the field can show the code
     // it was given as accepted rather than inferring it from silence.
     async (enteredCode: string) => {
-      const session = await confirmCode(registrationId, enteredCode);
+      const session = await confirmCode(registrationId, phone, enteredCode);
 
       return session !== null;
     },
-    [confirmCode, registrationId],
+    [confirmCode, registrationId, phone],
   );
 
   const handleRegenerate = useCallback(() => {

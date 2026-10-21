@@ -8,16 +8,19 @@
  * it up. That is what makes it impossible for this component to compare the two
  * locally, which the backend must decide.
  *
- * Validation is completeness only, for the same reason: the code is opaque, so
- * the app has no format to check against.
+ * Validation is shape only: six digits once spaces and hyphens are removed
+ * (owner's decision, 21/10/2026), so a code typed back as it was displayed —
+ * "482 913" — or pasted from wherever the vendor saved it is accepted, and
+ * anything else is refused beside the field with the reason.
  *
- * That opacity is also why this step keeps a plain field rather than the cells
- * the one-time code steps use. Cells have to be drawn before anything is typed,
- * which means committing to a length — and a length is precisely what the
- * contract does not promise. It shares the verification animation instead: once
- * the code is sent, the characters the vendor typed curl onto the same ring the
- * other two flows use, so the experience matches without the app inventing a
- * shape for a credential it is meant to treat as opaque.
+ * It keeps a plain field rather than the cells the one-time code steps use, even
+ * now the length is known. Cells strip what is not a digit and stop at the last
+ * cell, so a pasted "4829135" would arrive as a complete-looking wrong code and
+ * a letter would vanish without a word — where this field says what is wrong.
+ * And confirming stays an act, with its own button: the sixth digit is not the
+ * vendor saying they saved the code. It shares the verification animation
+ * instead: once the code is sent, its digits curl onto the same ring the other
+ * two flows use.
  */
 
 import React, { useCallback, useState } from 'react';
@@ -25,9 +28,11 @@ import { View } from 'react-native';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 
-import { AUTH_COPY } from '@/features/auth/constants/authCopy';
+import { AppConfig } from '@/core/config/AppConfig';
+import { AUTH_COPY, formatCopy } from '@/features/auth/constants/authCopy';
 import {
-  VENDOR_AUTH_CODE_MAX_LENGTH,
+  VENDOR_AUTH_CODE_INPUT_MAX_LENGTH,
+  normaliseVendorAuthCode,
   vendorAuthCodeSchema,
   type VendorAuthCodeForm,
 } from '@/features/auth/validation/authSchemas';
@@ -93,7 +98,8 @@ export function VendorAuthCodeConfirmation({
 
   const submit = useCallback(
     async ({ authCode }: VendorAuthCodeForm) => {
-      const accepted = await onConfirm(authCode.trim());
+      // The digits alone, however they were typed or pasted.
+      const accepted = await onConfirm(normaliseVendorAuthCode(authCode));
 
       if (accepted) {
         setIsVerified(true);
@@ -115,7 +121,7 @@ export function VendorAuthCodeConfirmation({
       <View style={{ gap: theme.spacing.xs }}>
         <Text variant="h1">{COPY.confirmTitle}</Text>
         <Text variant="body" color="textSecondary">
-          {COPY.confirmBody}
+          {formatCopy(COPY.confirmBody, { length: AppConfig.vendorAuthCode.length })}
         </Text>
       </View>
 
@@ -130,11 +136,12 @@ export function VendorAuthCodeConfirmation({
                 disabled beneath it. What orbits is the characters the vendor
                 actually typed, so this is the same code being checked and not a
                 decoration playing over it — and what settles into the hub at the
-                end is that same code, accepted.
+                end is that same code, accepted. Its digits, that is: the spaces
+                a vendor typed it back with are not part of it and get no node.
               */
               <VerificationScene
                 status={isVerified ? 'verified' : 'verifying'}
-                characters={Array.from(value)}
+                characters={Array.from(normaliseVendorAuthCode(value))}
                 testID="vendor-auth-code-scene"
               />
             ) : (
@@ -147,11 +154,18 @@ export function VendorAuthCodeConfirmation({
                 onBlur={onBlur}
                 error={fieldError?.message}
                 editable={!isBusy}
+                keyboardType="number-pad"
                 // The same ceiling the returning-vendor form uses, so one field
-                // cannot accept a code the other would refuse.
-                maxLength={VENDOR_AUTH_CODE_MAX_LENGTH}
-                autoCapitalize="characters"
+                // cannot accept a code the other would refuse — room for a code
+                // pasted in groups, refused with a reason when it is not one.
+                maxLength={VENDOR_AUTH_CODE_INPUT_MAX_LENGTH}
                 autoCorrect={false}
+                // Out of autofill, and deliberately not `oneTimeCode`: the
+                // one-time code sent minutes ago is exactly what the keyboard
+                // would offer here, and it is the wrong code.
+                autoComplete="off"
+                importantForAutofill="no"
+                textContentType="none"
                 returnKeyType="done"
                 onSubmitEditing={handleConfirmPress}
                 testID="vendor-auth-code-input"
