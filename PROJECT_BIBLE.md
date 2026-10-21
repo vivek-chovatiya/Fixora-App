@@ -763,6 +763,14 @@ Vendor's main screen. Shows: Today's Requests, Pending Requests, Accepted Reques
 
 Dashboard should prioritize **active work**. Do not overload it with unnecessary analytics during Phase 1.
 
+**Today's Requests and Rating — amended 21/10/2026 (owner).** The dashboard
+shows Today's Requests and the vendor's Rating (the average and the number of
+reviews, or "No reviews yet"); the Rating opens the vendor's reviews. Accepted
+and In Progress are shown as separate counts only once the backend reports them
+separately — until then they stay together as active work, and the app does not
+work them out itself. The dashboard reads itself again, quietly, whenever the
+vendor comes back to it.
+
 ---
 
 # 31. VENDOR REQUEST LIST
@@ -772,6 +780,13 @@ Dashboard should prioritize **active work**. Do not overload it with unnecessary
 Each request card: Request ID, Service, Customer, Priority, Date, Status.
 
 **Emergency/high-priority requests should be visually distinguishable.**
+
+**The customer on a card — amended 21/10/2026 (owner).** Cards follow the
+privacy rule in §32. Until the vendor holds the work (a request still waiting
+for their answer, or one they rejected), a card shows the **area** where the
+customer's name would be, never the name. Once they hold it (accepted, in
+progress, completed, closed), the card shows the customer's name. The list
+reads itself again, quietly, whenever the vendor comes back to it.
 
 ## 31.1 The "New" tab contains two kinds of request
 
@@ -799,6 +814,18 @@ it first. This is normal, not an error.
 Vendor sees: Request ID, Customer Information, Service, Sub Service, Priority, Description, Images, Notes, Address, Preferred Date/Time, Current Status.
 
 Actions depend on current state.
+
+**What the vendor sees depends on whether they hold the work — amended
+21/10/2026 (owner).** Before the vendor holds the work — a request still waiting
+for their answer, or one they rejected — they see the Service, Sub Service,
+Priority, Description/Notes, Images, Preferred Date/Time and the **area only**.
+No customer name, no phone number, no full address. Once they hold it —
+Accepted, In Progress, Completed, Closed — they also see the full Address and
+the Customer Information (name and phone). The backend must leave the withheld
+fields off records the vendor does not hold, and the app must not show them in
+those states even if they arrive. Description and Notes are the customer's one
+free-text answer, shown once. Phase 1 shows the phone as text, written for
+reading; it does not dial it, and there is no full-screen photo viewer.
 
 ---
 
@@ -898,6 +925,13 @@ The frontend should clearly distinguish:
 
 Fixora does not process online payment during Phase 1.
 
+**Recording a payment later — amended 21/10/2026 (owner).** A vendor may change
+a finished request's recorded payment from **Not paid yet** to **Paid**, once,
+choosing the method from the backend's list and confirming before it is sent.
+Only that direction; once Paid it is final. Nothing else in the completion
+record changes — the final amount, currency and completion notes stay as
+recorded. This is still a record, not a payment: Fixora processes nothing.
+
 ---
 
 # 38. VENDOR PROFILE
@@ -905,6 +939,12 @@ Fixora does not process online payment during Phase 1.
 Includes: Business Name, Owner Name, Profile Image, Shop Images, Description, Phone, Email, Service Categories, Working Areas, Working Hours, Availability, Rating.
 
 **Actions:** Edit Profile, Upload Shop Images, Manage Availability, Manage Team
+
+**Rating on the profile — amended 21/10/2026 (owner).** The vendor profile
+shows the Rating (the average and the number of reviews, or "No reviews yet")
+with the way into the vendor's reviews. Phone numbers are shown formatted for
+reading (for example "+91 98765 43210"), here and everywhere a stored number is
+displayed; what is stored and sent is unchanged.
 
 ---
 
@@ -943,6 +983,10 @@ Shows: Average Rating, Total Reviews, Rating Breakdown, Review List.
 ```
 
 **Vendor cannot edit customer reviews.**
+
+**The reviewer's name — amended 21/10/2026 (owner).** A review shows the
+customer's first name and the initial of their last name ("Priya S."), never the
+full surname. A review without a name shows none.
 
 ---
 

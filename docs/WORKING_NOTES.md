@@ -221,6 +221,9 @@ should keep it to a single `void` inside such a `run`, as `useProfileImage` and
 `useCurrentLocation` only moved its existing one down a few lines. The six
 slices of 21/10/2026 (3C-2, 3E-12, 3D-11, 3E-13, 3G-1, 3G-2) added none
 either: still 30. `useNetworkStatus` was written without a `void` on purpose.
+The four later slices of 21/10/2026 (3D-12, 3E-14, 3E-15, 3G-4) added none
+(verified: 30): `refreshQuietly`'s two fire-and-forget calls use
+`.catch(() => undefined)`, the repo's other idiom, instead.
 
 Metro and the app. **Fixora's Metro is on port 8085**, set in two places that
 must agree: `server.port` in `metro.config.js` and `reactNativeDevServerPort`
@@ -470,6 +473,7 @@ Service Address → Choose Saved Address → back, address filled (3D-10)
 
 Requests tab → My Requests (§23) → Request Details
      (COMPLETED / CLOSED with a record: the Payment group, read-only — 3E-9)
+     (My Requests read again quietly when the tab is shown again — 3E-15)
 
 Request Details (COMPLETED / CLOSED) → Rate Your Experience (§24)
      → submitReview() → read-only review → Back to Request Details
@@ -489,16 +493,21 @@ The vendor side, after registration and profile setup (3E-1), each phase below:
 Vendor sign in → phone + 6-digit code; on a device signed in before, the code alone (3C-2)
 Dashboard (3E-2) → bell → Notifications → Vendor Request Details (3F-2)
      (while new requests are off: a notice with Turn on — 3E-12)
+     Today's requests and Rating figures; Rating → Customer reviews (3E-15)
 Requests tab (3E-3) → Vendor Request Details → Accept / Reject (3E-4)
+     (until accepted: the area, never the customer's name, phone or address — 3E-14)
      → Start work → Mark completed (3E-5) → Complete Work form → confirm
      → completeRequest(id, completion) → back, completed with its Payment card (3E-9)
+Completed, "Not paid yet" → Record payment → choose a method → confirm
+     → recordPayment(id, payment) → back, "Paid · <method>" (3E-14)
 Requests tab → Rejected → a declined request, read-only (3E-13)
+Dashboard and Requests tab: read again quietly when shown again (3E-15)
 Team tab (3E-7) → Edit team member, with a photo (3E-13) → Disable / Enable member (3E-11)
 Profile tab → Availability card: Accepting new requests switch (3E-12)
             → Edit working hours → Working hours (3E-12)
             → Shop images card → Manage shop images (3E-10)
             → Manage team (switches to the Team tab)
-            → Customer reviews, with the rating breakdown (3E-6, 3E-11)
+            → Customer reviews, the rating under it (3E-15), with the rating breakdown (3E-6, 3E-11)
             → Reports: Today / This week / This month (3E-8)
             → Edit business profile · Log out
 ```
@@ -517,13 +526,13 @@ still no cancel (see "Customer actions" below).
 | `AuthService` | customer OTP, vendor registration / OTP / auth code; since 3C-2 the vendor auth code is exactly six digits, always a string (`AppConfig.vendorAuthCode.length`), sent bare, and a wrong, revoked or unknown-number sign in is `unauthorized` alike |
 | `CategoryService` | `listServiceCategories()`, `listSubCategories(categoryId)` |
 | `RequestService` | `listRecentRequests(limit)`, `listRequests(filter, { page, pageSize })` → `Page`, `getRequest(requestId)` → record or `null`, `createRequest(input)`; since 3E-9 a completed record may carry `payment?` (`CustomerPaymentRecord`: amount, currency, status, method label — no notes, no method id); since 3D-11 `cancelRequest(requestId)` → `{ outcome: 'cancelled', request }` or `{ outcome: 'refused', reason: 'notCancellable' }` |
-| `ReviewService` | customer: `getReview(requestId)` → review or `null`, `submitReview({ requestId, rating, comment? })`; vendor (3E-6): `getVendorReviews()` → `{ averageRating, totalReviews, ratingBreakdown, reviews }` — `ratingBreakdown` (3E-11) is five `{ stars, count }`, five stars first, zeros included |
+| `ReviewService` | customer: `getReview(requestId)` → review or `null`, `submitReview({ requestId, rating, comment? })`; vendor (3E-6): `getVendorReviews()` → `{ averageRating, totalReviews, ratingBreakdown, reviews }` — `ratingBreakdown` (3E-11) is five `{ stars, count }`, five stars first, zeros included; since 3E-15 the Dashboard and the Profile tab read it too, for the rating figure |
 | `AddressService`, `LocationService` | address search and reverse lookup; device coordinates (mock only — no geolocation library) |
 | `VendorService` | `listEligibleVendors(categoryId, subCategoryId)` |
 | `VendorProfileService` (3E-1) | `getProfile()`, `saveProfile(update)`; since 3E-10 `VendorProfile.shopImageUrls` (always a list) and `updateShopImages(imageUrls)` — replaces the whole list, answers with the whole profile; `saveProfile` never carries shop images; since 3E-12 `VendorProfile.acceptingRequests` and `workingHours` (always seven days, Monday first), `setAcceptingRequests(accepting)` and `updateWorkingHours(days)`, each answering with the whole profile — neither is ever carried by `saveProfile` |
-| `VendorRequestService` (3E-3 to 3E-5) | `listRequests()`, `getRequest(id)`, `acceptRequest(id)`, `rejectRequest(id)`, `startRequest(id)`; since 3E-9 `completeRequest(requestId, completion)` with `VendorCompletionInput` and `listPaymentMethods()`; since 3E-13 `listRequests()` also answers `rejected` (this vendor's declines, latest first) and a summary may carry `rejectedAt?` |
+| `VendorRequestService` (3E-3 to 3E-5) | `listRequests()`, `getRequest(id)`, `acceptRequest(id)`, `rejectRequest(id)`, `startRequest(id)`; since 3E-9 `completeRequest(requestId, completion)` with `VendorCompletionInput` and `listPaymentMethods()`; since 3E-13 `listRequests()` also answers `rejected` (this vendor's declines, latest first) and a summary may carry `rejectedAt?`; since 3E-14 `VendorRequestDetails` carries `imageUrls?`, `preferredDate?`, `preferredTime?` and, on held work only (accepted onwards), `customerPhone?` and `address?` — `customerName` is absent from waiting and declined details and summaries — and `recordPayment(requestId, { paymentStatus: 'PAID', paymentMethodId })` → `{ outcome: 'recorded', request }` (an already-paid record answers so, unchanged) or `{ outcome: 'refused', reason: 'invalidTransition' }` |
 | `VendorTeamService` (3E-7) | `listMembers()`, `addMember(input)`, `updateMember(memberId, input)`, `removeMember(memberId)` — every mutation answers with the whole team; since 3E-11 `TeamMember.status` (a plain string) and `setMemberStatus(memberId, 'ACTIVE' \| 'DISABLED')`; since 3E-13 `TeamMember.photoUrl?` (an http(s) URL; absent on an edit removes it) |
-| `VendorReportService` (3E-8) | `getReport(period)` → `VendorReport` — `'today' \| 'week' \| 'month'` sent as a key; the server's figures, scoped by the session |
+| `VendorReportService` (3E-8) | `getReport(period)` → `VendorReport` — `'today' \| 'week' \| 'month'` sent as a key; the server's figures, scoped by the session; since 3E-15 the Dashboard reads `getReport('today')` for Today's requests (`totalRequests`) |
 | `AnalyticsService`, `CrashReporter` (3F-1) | `track(event, properties?)`, `identify(user \| null)`; `recordError(error, { fatal?, source? })`, `setUser(user \| null)` — synchronous, fire and forget, never throwing, reached through `shared/services/telemetry.ts` only |
 | `ImageService` | pick / compress / validate / upload+progress / retry / remove |
 | `NotificationService`, `PermissionService` | since 3F-2 a session-scoped inbox: `list(page)` newest first, `getUnreadCount()`, `markAsRead(id)`, `markAllAsRead()`, `remove(id)` (on the contract, offered nowhere), push registration inert; camera, location, notifications |
@@ -1230,6 +1239,8 @@ Requests tab — the request list since 3E-3). It adds no route. Since 3E-12
   the hook stops a second press sending a second request. It is released by the
   *answer* (`data`/`error` identity), not by `isLoading` — see Lessons.
 - **Pull-to-refresh** re-reads the work. There is no refresh on tab focus.
+  (Since 3E-15, 21/10/2026: the pull also re-reads the figures and the bell, and
+  the page re-reads quietly when its tab is shown again.)
 
 **Contract.** `shared/services/types/VendorDashboardService.ts`:
 `getDashboard(previewLimit): VendorDashboard`.
@@ -1238,7 +1249,8 @@ Requests tab — the request list since 3E-3). It adds no route. Since 3E-12
   group) + `pending[]`, `active[]`, `recentlyCompleted[]` (at most
   `previewLimit` each; the screen asks for 3, `DASHBOARD_PREVIEW_LIMIT`).
 - `VendorJobSummary` = §31's card fields: `id` (reference), `serviceName`,
-  `customerName`, `locality?`, `priority`, `status` (backend's, verbatim),
+  `customerName` (optional since 3E-14: held work only), `locality?`,
+  `priority`, `status` (backend's, verbatim),
   `dispatch?: 'directed' | 'broadcast'` (§31.1, only when the backend says),
   `createdAt`, `completedAt?`.
 - **The service sorts work into the three groups; the app never buckets
@@ -1299,6 +1311,8 @@ previews per group. "Completed" counts all finished work, not a period.
 
 **Known limitations.** No refresh on tab focus. A failed pull-to-refresh keeps
 the old data and says nothing (the `useServiceQuery` defect already listed).
+Both answered in 3E-15 (21/10/2026): a quiet re-read on returning focus, and
+one `StaleNotice` for the page when a read fails over data.
 Job cards open nothing until request details exist. In a debug build the
 query-failure `log.error` raises React Native's developer toast over the error
 state; release builds have none.
@@ -3726,6 +3740,496 @@ errors / 30 warnings; jest 126 suites / 2,842 tests; release bundle builds;
   a mismatch Jest prints the node and walks the whole tree, and the run hangs.
   Compare testIDs, and check identity with `a === b` as a boolean.
 
+### Customer tidy-ups (Phase 3D-12, 21/10/2026)
+
+Nine customer-side open items from section 10 in one slice, approved in the
+brief, and three more the lead added the same night. No contract changed; the
+create-request payload is as it was.
+
+- ⚠️ **A preferred professional the list no longer has is never sent.** A
+  resumed or restored draft could name one who had stopped being eligible.
+  `useCheckedVendorChoice` (Preferred Vendor and Request Confirmation) checks
+  the draft's professional against the eligible list once it has *settled* —
+  not loading, not refreshing, no error; a list held from an earlier read is
+  not the latest (`vendorChoiceStanding`, pure, in `requestDraft.ts`). Loaded
+  without them: `withdrawVendor` takes them off the draft (the question is open
+  again — `none`, never `open`, which would choose open dispatch for the
+  customer, §19), writes the draft down, and sets `isVendorWithdrawn` on the
+  draft context; Preferred Vendor then says, under its heading, "The
+  professional you chose earlier is not available for this service now, so you
+  can choose another or continue with no preference." (an info notice, a live
+  region). The flag lives on the context because Confirmation reads the list
+  for itself and can settle first; it then goes back by its existing
+  incomplete-draft effect, and the screen that says why is not the one that saw
+  it. Memory only. Loading or failed: nothing is cleared. On Confirmation, a
+  chosen professional not yet confirmed keeps Submit busy (loading) or locked
+  beside the failure, with its own Try again and one caption (failed); open
+  dispatch waits for nothing.
+- **The bell on a pull.** Home's pull (and the stale notice's Try again, which
+  pulls again) reads the unread count again: the read moved into
+  `useCustomerHome` through `useUnreadNotifications()` (`{ count, refresh }`),
+  which replaced the count-only `useUnreadNotificationCount` (the file kept its
+  name); the vendor Dashboard takes it too (3E-15). The badge draws no spinner
+  of its own, and a failed count is still no badge, never a stale notice.
+- **Home's resume check** (`isDraftWorthKeeping`) moved into
+  `useCustomerHome`'s `resume`; behaviour unchanged.
+- **Request Details' review group** uses the keyed loading region (3G-3): a
+  `loading` view named and busy, then a `settled` view with no name, role or
+  state; the `progressbar` role went, as on the lists.
+- **Categories** offers no pull over a first read that failed (the vendor
+  lists' rule); a failed pull over tiles still pulls.
+- **Phones are written for reading** (`formatPhone`, "+91 98765 43210"; see
+  3G-4): the profile's contact row, a nameless account's heading and Edit
+  Profile's read-only phone row. Display only — the stored value is unchanged
+  everywhere else, and the save payload never carries the phone (tested).
+- **The customer's picture shows the upload's own progress**, as the vendor
+  photo cards do (3G-4): "Saving your picture…" once, then one `progressbar`
+  stop with "Uploading… 42%", not a live region. Drawn by the shared
+  `PhotoUploadProgress`, taken out of the vendor `PhotoField` — the cards stay
+  apart (the customer's is the identity card), this part of them is the same.
+- **One info notice.** Create Request's other-draft notice and Preferred
+  Vendor's withdrawn notice are `InfoNotice` (customer components, since both
+  consumers are customer screens): one spoken element, a live region only when
+  it arrives after the screen was read (`announce`, Preferred Vendor only), the
+  sentence strong only when it heads a detail. Existing notices were checked
+  first — `StaleNotice` (a failed refresh, with a retry), `AvailabilityNotice`
+  (a state the vendor chose, with an action) and `OfflineBanner` — and none is
+  a calm note with no action.
+- `CreateRequestInput`'s docblock corrected (the address book exists; a saved
+  address is copied by value). `RootNavigator.test.tsx` pins that only a vendor
+  tree has `WorkingHours`. `package.json` is 1.0.0; `proguard-rules.pro` says
+  why it has no rules and where they would go.
+
+**Lead decision, 21/10/2026.** The withdrawn notice does not survive a restart
+(memory only): after a relaunch the professional question is simply
+unanswered, with no sentence saying why. Accepted.
+
+**Tests.** 33 new in the slice: Preferred Vendor 7, Confirmation 7 (+1
+rewritten), `checkedVendorChoice` 4, `vendorChoiceStanding` 4, draft context
+2, Home 4, Request Details 2, Categories 1, RootNavigator 1, bell 1; Profile's
+3 updated. Then `InfoNotice` 5 and `profileImage` +3 (the waiting words once;
+one progressbar at 42 then 80 with no live region inside; no bar after save).
+Mutation-checked; the one survivor is Confirmation's `submit` guard, which the
+Button's lock (same condition, same render) already covers — kept as the rule
+at the last line.
+
+**Review fix — pure updaters (21/10/2026).** `withdrawVendor` first ran its
+storage write, its clear and its flag inside a `setDraft(current => …)`
+updater, which React may call during render and twice under StrictMode. The
+review also caught the older `updateDraft` doing the same. Both now build the
+next draft from `draftRef` (kept in step by `commitDraft`, the only `setDraft`
+call), so two calls in one tick still compose, and save or clear outside the
+update. Pinned under `React.StrictMode` in `requestDraftPersistence.test.tsx`:
+one write per withdrawal, two `updateDraft` calls in one `act()` both land
+with one write each, an emptied draft cleared exactly once; the old shape
+fails them. `PhotoUploadProgress` keeps `fontVariant: ['tabular-nums']` — the
+theme has no numeric variant, and it is a font feature, not a size or colour
+token (lead decision).
+
+### Vendor request details and a later payment (Phase 3E-14, 21/10/2026)
+
+Two vendor changes: Request Details now shows what PROJECT_BIBLE.md §32 lists,
+under a privacy rule that the list and dashboard cards follow too; and a
+finished job recorded "Not paid yet" can later be recorded "Paid".
+
+**Owner decisions, 21/10/2026** (taken by the lead under the owner's
+authority).
+
+- **What a vendor sees before they hold the work** — a request waiting for
+  their answer, or one they declined: the service, its category, the priority,
+  what the customer said, the photographs, the preferred date and time, and
+  the **area only** (`locality`). No customer name, no phone, no full address.
+  **Once they hold it** (accepted, in progress, completed, closed): also the
+  full address, the name and the phone. Defence in depth: the backend leaves
+  the three off a record the vendor does not hold, and the screen draws them
+  only for held work (`holdsWork`) even when a record carries them.
+- **Cards follow the same rule** (§31). A waiting or declined card shows the
+  area where a held card shows the customer: spoken "Area: Koramangala" where a
+  held one says "Customer: Asha Patel, Koramangala"; a waiting card with no
+  area says neither.
+- **Payment later.** A vendor may change a finished request's payment from
+  "Not paid yet" to "Paid" — once, with a confirmation. Only that direction;
+  once paid it is final; nothing else in the completion record changes.
+
+**Decisions taken in the slice.**
+
+- §32's "Description" and "Notes" are one field: the customer's request has a
+  single free-text box (`CreateRequestInput.notes`), so `description` is that
+  text, read back as "What the customer said". No notes field was invented.
+- The area is the summary's `locality` — never the postcode, coordinates or
+  `placeId`, each of which narrows to a place.
+- `holdsWork(job)` (`jobPresentation.ts`) = `nextWorkStep(job) !== null ||
+  isFinishedWork(job)`; an unrecognised status shows the less. The mock decides
+  "held" by group (active or completed), its own knowledge, not by parsing a
+  status.
+- ⚠️ The cards keep the rule too (lead decision, 21/10/2026): a waiting or
+  declined request's summary — on the list and the dashboard — comes without
+  the customer's name (`unheld` in `MockVendorRequestBook`, the one cut, shared
+  with the details record), and `JobPreviewCard` draws and says it only for
+  held work (`holdsWork`). §31's card "Customer" is read as the customer once
+  the work is the vendor's, and the area until then. `customerName` is
+  optional on `VendorJobSummary` for that reason. It also removed a flicker:
+  the Rejected card used to lose its name until the re-read landed.
+- Photos reuse the customer's strip, moved to
+  `shared/components/RequestPhotoStrip` (words through a `copy` prop, so each
+  feature keeps its own copy file). No full-screen viewer — the strip never had
+  one. The preferred date uses `formatDateValue`, moved to
+  `shared/presentation/calendarDate` (re-exported by `requestScheduling`), the
+  `clockTime` precedent.
+- No call button (§32 lists information, not a way to ring it); the phone is
+  `formatPhone` text.
+- A waiting request's Location card says "The customer’s name, phone number
+  and full address are shared once you accept." (not on a declined one).
+- Record payment is its own screen (`RecordPayment: { requestId }`, vendor
+  stack only), not a mode of Complete Work, so that form and its tests are
+  untouched. They share `PaymentMethodField` (extracted, test ids built from a
+  prefix, so Complete Work's are byte-for-byte what they were),
+  `usePaymentMethods` (extracted) and the paid half of the completion rules
+  (`recordPaymentSchema`). The button shows only on a "Not paid yet" record
+  (`isUnpaidStatus`). It asks once more before sending (lead decision,
+  21/10/2026): the shared `ConfirmDialog`, as Complete Work's — "Mark as paid
+  by UPI?" (the method's own label; "Mark this job as paid?" without one, never
+  the id) / "This can't be changed later.", Cancel / "Mark as paid", primary
+  tone, busy and undismissable while the call is out; five confirms send one
+  call. A failure closes the dialog, keeps the chosen method, and the button is
+  the retry.
+- It goes through `useVendorRequestDecision.recordPayment` — the same guard,
+  toasts ("Payment recorded. This job is now marked paid." / "The payment was
+  not recorded.") and `VendorWorkSync` signal; the details re-read on return,
+  exactly as after a completion. §54 lists no event for it, so none is sent
+  (`DONE_EVENT` is now partial).
+
+**Contract** (`VendorRequestService`; every field the app's guess).
+
+- `VendorRequestDetails` gains `imageUrls?`, `preferredDate?` (`YYYY-MM-DD`),
+  `preferredTime?` (`HH:mm`), `customerPhone?` (stored digits) and
+  `address?: RequestAddress` (the customer's own shape) — the last two held
+  only; `customerName` absent on waiting and declined details and summaries.
+  Absent means absent — never `null`, `""` or `[]`.
+- `recordPayment(requestId, { paymentStatus: 'PAID', paymentMethodId })`
+  (`VendorPaymentInput`, exact keys; the amount is not re-entered) →
+  `VendorPaymentResult`: `{ outcome: 'recorded', request }` or
+  `{ outcome: 'refused', reason: 'invalidTransition' }` (no "Not paid yet"
+  record: not finished, finished without a record, or a status nobody worded).
+  ⚠️ An already-paid record answers `recorded` unchanged — a retried call is not
+  a failure, and the first method stands. `validation` for a status other than
+  `PAID` or a method the service does not offer; the body is checked before the
+  request.
+
+**Mock.** `MockVendorRequestService.RECORDS` holds each request in full
+(photos as picsum seeds, phones the fixtures' 90000 numbers, preferred days
+relative to the clock); `details(vendorId, summary, held)` is the one
+projection, and every path (get, accept, reject, start, complete,
+recordPayment) goes through it, so the address arrives on the accept answer
+and on every read after. Payments recorded later live in the book's own
+`payments` map (not `progress`, so the completed order does not move). Allowed
+on `COMPLETED` and `CLOSED`.
+
+**Tests.** 91 new in the slice (mock privacy 15, mock payment 21, details
+screen 13, record-payment flow 17 — both through the real navigator —
+`calendarDate` 5, `holdsWork` 10, `isUnpaidStatus` 5, schema 4, RootNavigator
+1); 7 existing rewritten where they pinned the old "no address ever" rule.
+Then the confirmation (+3, the flow now 20) and the cards' rule (mock privacy
++3, now 18; list and dashboard cards serialised without a waiting or declined
+customer's name, held work still named). Mutation-proved: 12 mutations, each
+caught — among them the mock keeping names on waiting summaries (the cards
+still hid them: the screen half held) and sending on "Record payment" without
+asking (7 failed).
+
+**Backend reconciliation.** The endpoint and body for a later payment; whether
+a CLOSED request's payment may be amended; whether a payment date is recorded;
+whether the customer is told and their `payment` record updates; the shape of
+the vendor's view of an address; and that summaries of work the vendor does not
+hold come without the customer's name.
+
+**Review fix — the notifications inbox (21/10/2026).** The review found the
+rule broken by a path neither the cards nor the details cover: the vendor
+notification fixtures named customers of requests still waiting ("Rahul Menon
+chose you for a Ceiling fan installation…", deep link to a pending request) and
+a reviewer in full. They now read "A customer in HSR Layout chose you for…"
+(or "A customer needs…" where the request has no area — none invented) and
+"Karthik I.". `MockNotificationPrivacy.test.ts` (4) derives every customer name
+from the vendor mock data, resolves held-or-not from the vendor request mock,
+and fails if a notification about work the vendor does not hold — title or
+body, whole name or any word of it — names one, or if a review notification
+carries a surname; three restored old bodies each failed it. ⚠️ Notification
+text is composed by the backend and shown as given: the backend must apply the
+same rule (§10).
+
+### Dashboard figures, refresh on focus and reviewer names (Phase 3E-15, 21/10/2026)
+
+Owner-approved. No new contract, no new token, no new dependency.
+
+**Dashboard: Today's Requests and Rating (§30).** `useVendorDashboard` →
+`useDashboardFigures` (`features/vendor/hooks/useVendorFigures.ts`) →
+`VendorReportService.getReport('today')` and `ReviewService.getVendorReviews()`
+— two reads that already existed, composed on the device. Each is its own
+`useSingleFlightQuery` with its own placeholder, failure and retry
+(`DashboardFigure`), never holding back or blanking the work or each other.
+The placeholder is `ReportFigureCard`'s own frame with a disc and two bars sized
+from theme spacing and the h1 / caption line heights — the first version's
+`FIGURE_HEIGHT = 128` was a screen-local size, removed in review.
+Drawn with the Reports card (`ReportFigureCard`, a second real consumer, which
+gained an optional `onPress`: the card becomes the one button, with a chevron),
+two to a row under the business card and above the overview (lead decision:
+kept there — they are independent of the work's load branch, and inside it the
+placeholders would jump). Today: the report's `totalRequests` ("Today's
+requests, 4"; a non-count is a dash, said "not available"). Rating: the
+reviews' average, stars and "N reviews", said as the reviews' sentence; none is
+"No reviews yet", never "0.0"; reviews with an untrusted average show the count
+alone. The rating opens the existing Reviews screen, whose Back now says "Back"
+(it is reached from two places). A failed figure takes the whole row — at 360dp
+half a row leaves 128dp inside the card and the retry button needs ~150dp —
+with the failure's `userMessage` and, for a retryable failure only, "Try again"
+(spoken "Try again to load your rating", which keeps the visible word for voice
+control). Accepted and In Progress are not drawn: `counts` has only pending,
+active and completed, and `active[]` is a preview of at most three, so counting
+statuses there would be wrong — and would be the app bucketing statuses.
+
+**Dashboard: pull and stale.** The pull reads everything on the page: work,
+both figures and the bell's count (`useUnreadNotifications`, 3D-12). A read
+that fails with something on screen — work or figure, pulled or quiet — keeps
+it, and one `StaleNotice` above the figures says "Could not refresh" / "Your
+dashboard may be out of date." with Try again (the pull). This replaces 3E-2's
+silent failed pull.
+
+**Read again when shown again** (owner decision). The vendor Dashboard, the
+vendor Requests list and customer My Requests re-read when their tab is focused
+again (also on coming back from a pushed screen), not on arrival:
+`useNavigationEvent('focus', refreshQuietly, { onlyOnReturn: true })`.
+`refreshQuietly` is new on `useServiceQuery`, `useSingleFlightQuery` and
+`usePaginatedQuery`: no loading or refreshing flag (no placeholders, no
+spinner), the previous failure kept until the answer (a stale notice does not
+blink or re-announce), never started beside a read already in the air (released
+only by the newest read), a newer load, filter or pull still wins, nothing read
+when `enabled` is false. ⚠️ It is a mode of the shared queries, not a mask in
+each feature hook, because the flags drive the placeholders and the
+RefreshControl, and `useStaleState` needs the old failure kept while the quiet
+read is out. Filters and scroll position are the screens' and are untouched.
+The paginated version reads the pages on screen again one at a time, at the
+list's own page size, stops early at a page that says there is no more, and
+swaps the whole list in only when the last page lands; `page`, `hasMore` and
+`total` come from what was actually read, so a list scrolled into page two is
+not cut back and the next "Show more" is still the page after. ⚠️ Page by page
+on purpose (review fix, 21/10/2026): the first version asked for
+`pageSize × pagesShown` in one request, which a backend that caps the page size
+would answer short, leaving the page counter pointing past the end — the next
+"Show more" would then skip rows. The same review fixed two neighbours: a quiet
+failure no longer overwrites a pending "Show more" failure (`failedDuring:
+'more'` is kept, so Try again continues from the page after the last that
+arrived), and a "Show more" asked for while a quiet read is out is held — at
+most one — and run when it lands, instead of being dropped. Only the quiet read
+ever defers: a pull or a Try again pressed while one is out starts at once and
+the quiet answer is dropped by request id. A failed quiet read keeps the rows: the Requests list and the Dashboard raise
+their stale notice; My Requests shows its existing failed-pull inline error
+under the list. The two new fire-and-forget calls use `.catch(() => undefined)`,
+so the `no-void` baseline stays 30.
+
+**Reviewer names** (owner decision). `reviewerName` in
+`features/vendor/constants/reviewPresentation.ts`: trims, collapses spaces, one
+word stays as it is, otherwise the first word + the last word's first character
++ "." ("Priya Sharma" → "Priya S."; middle names dropped). The initial is taken
+by code point and upper-cased ("priya sharma" → "priya S." — only the initial
+the app makes; first names are never re-cased; a letter with no case stays as
+it is). Applied in `presentVendorReview`, so neither the card nor the spoken
+sentence ever has the surname. Blank or missing → no name drawn and "Customer
+review" said, as before (the contract forbids a placeholder name). The spoken
+sentence no longer doubles a full stop after an initial ("Review from Priya
+S.. 5 out of 5" was the bug — the same defect 3D-10 fixed in `StaleNotice`).
+
+**Profile shows the rating (§38).** A centred line under the "Customer reviews"
+button — stars, average and count, or "No reviews yet" — read by
+`useVendorRating` and worded by `presentRatingFigure` (the dashboard's wording;
+its copy is `reviews.figure…`, role-neutral). The line is hidden from TalkBack;
+the button says it: "Customer reviews. Rating 4.3 out of 5, based on 4
+reviews." (`profile.reviewsWithRating`, its own words first). One read when
+Profile mounts; no placeholder while loading; a failed read shows nothing here
+and the button still opens Reviews, which has the full error and retry. Not
+re-read on focus — accepted by the lead: a vendor cannot change their own
+reviews.
+
+**Tests.** 74 new in the slice: dashboard 22 (figures, independent failure,
+retry counted once, no retry for a refusal, zero-reviews wording, tap →
+Reviews, labels, pull re-reads all four, stale notice, quiet focus read, single
+flight, failed quiet read), Requests list shown again (new suite, 6, through the
+real navigator), My Requests shown again 8 (a fake focus context),
+`refreshQuietly` on both shared queries (new `useServiceQuery.test.tsx`),
+`reviewerName` / `presentTodayRequests` and the rating figure 23, the surname
+never appearing on the Reviews screen (serialised). Then
+`VendorProfileRating.test.tsx` (6). The Reviews and Reports suites route the
+dashboard's own first reads to a second, unspied service (the dashboard is the
+first screen and now reads both services); the dashboard suite now unmounts in
+`afterEach`. Mutation-proved; the one survivor showed a redundant branch in the
+figure's pull, which was removed.
+
+### Quieter danger, upload progress, one photo field, formatted phones, and the tint-ink rule (Phase 3G-4, 21/10/2026)
+
+Shared UI items the owner approved from section 10, then the lead's follow-ups
+the same night under the owner's authority: every subtle tint's ink, the rule
+behind it, and one progress bar. New shared colour tokens, approved by the
+lead. No contract changed.
+
+**Two reds.** `Button` gained `dangerSecondary`: a `dangerSubtle` tint,
+`dangerSubtlePressed` under a finger, `onDangerSubtle` words, icon and spinner
+(`colors.ts`: red700 / red300 on red100 / red950; pressed red200 / red800).
+⚠️ The words are not `danger`: the base red on its own tint is 3.9:1 light,
+3.3:1 dark; `onDangerSubtle` is 6.8 / 5.7:1 light and 8.5 / 5.3:1 dark, rest /
+pressed. The filled `danger` now presses to `dangerPressed` (red600, white on
+it 6.5:1) — before, a press showed nothing. Used on exactly two buttons — the
+team form's Disable member and the customer's Cancel request — because each
+only opens a dialog; ⚠️ the dialogs' own confirms, Log out and every Remove stay
+filled. No `DangerSecondaryButton` wrapper: both call sites already write
+`<Button variant=…>`. `Button.test.tsx` (7 → 29) computes the ratios from the
+theme and holds both labels to 4.5:1 on both fills in both modes.
+
+**Upload progress.** `useImageUpload` passes `onProgress` and exposes
+`progress`: 0–1, ⚠️ `null` until the first report (never 0% — picking and
+compressing come first), clamped, a non-number ignored. Each action is
+counted, and a report from an attempt that has ended or failed, or after
+unmount, is dropped; it is cleared when an action starts and ends.
+`isRunning()` and the one-at-a-time guard are unchanged. The photo field keeps
+its polite waiting line ("Uploading your photo…" on the business picture,
+"Uploading the photo…" on the team photo) until the first report, then
+replaces it with one `progressbar` stop (label = those words, value 0–100)
+holding "Uploading… 42%" over a bar. ⚠️ No live region round the figure — it
+would read out every step. That piece is the shared `PhotoUploadProgress`,
+which the customer's picture uses too (3D-12). `MockImageService` already
+reports five steps 120 ms apart, then waits the mock latency at 100%.
+
+**One photo field.** `PhotoField` (`features/vendor/components`) replaces
+`TeamMemberPhotoField` and the inline card in `VendorProfileFormScreen`: copy,
+actions, `pictureSpoken` (business: named; team: hidden) and `fallbackIcon`
+are the caller's. Both screens keep their tests; the 3E-3 stretched caption
+now applies to both. Two side effects, both deliberate: the business picture's
+Try again and Discard now wait while the form saves or signs out, as its other
+photo buttons and the team form's already did; its avatar's testID is
+`vendor-profile-photo-avatar`. ⚠️ The customer's avatar card is not merged: it
+is the identity card (the name as heading, no "Photo" heading, saved at once
+rather than with a form, different row sizing).
+
+**Formatted phones.** `formatPhone` (`shared/presentation/phone.ts`, written by
+the lead): "9876543210" → "+91 98765 43210". Display only — what the app sends
+is still the stored digits, and a formatted number is never compared with a
+stored one. By table, keyed by `AppConfig.phone.dialCode` (`+91`: 5 + 5), the
+seam multi-country widens, as `money.ts`'s currency table is; a number already
+carrying its country code is accepted, and anything that does not fit is
+returned as stored, trimmed. Used on the team card (shown and spoken — what is
+heard is what is seen), the vendor Profile tab's contact row, the business
+profile form's contact card, the vendor's view of a customer (3E-14) and the
+customer profile (3D-12). Inputs and the masked "Welcome back" phone are
+untouched. `phone.test.ts`: 19 tests.
+
+**Badges.** Every `StatusBadge` tone reads at 4.5:1 or more in both themes.
+Each coloured tint has its own ink — `onDangerSubtle`, `onInfoSubtle`,
+`onSuccessSubtle`, `onWarningSubtle` — and neutral uses `textSecondary`. A
+tone's base colour on its own tint had been 2.9–4.4:1 (success 3.0 and warning
+2.9 in light, info 4.2 / 4.0). The new `StatusBadge.test.tsx` (31) measures
+every tone in both themes from the theme.
+
+**One rule for tints.** A coloured mark (a tone or brand colour used for text
+or an icon) on a `…Subtle` tint uses that tint's own ink. That is `SUBTLE_INK`
+in `colors.ts`, exported from `@/shared/theme` with the `SubtleTint` type:
+`onPrimarySubtle` / `onInfoSubtle` / `onSuccessSubtle` / `onWarningSubtle` /
+`onDangerSubtle`, with `textSecondary` for neutral. Every pair is 5.5–9.0:1 in
+both themes, and `__tests__/shared/theme/subtleInk.test.ts` (18) holds them to
+4.5:1. Neutral text inks may sit on a tint when they reach 4.5:1 — a selected
+`SelectableCard`'s contents do (4.8–14.5:1), so they stay as they are.
+`onPrimarySubtle` has `onInfoSubtle`'s values because `primarySubtle` and
+`infoSubtle` have the same values; they are named apart so either can move
+alone. Applied to badges, the four notices (stale, offline, availability,
+info — words as well as glyphs), the Reports and dashboard circles, the
+request-status circle, the Request Submitted circle, the role cards, avatars,
+the glyph circles on `primarySubtle`, the selected service chip,
+SelectableCard's tick and the pressed add-photo tile. Components that pick
+their tint at run time (`StatusBadge`, `RequestStatusOverview`,
+`ReportFigureCard`, the dashboard counts) look the ink up rather than naming
+it; ⚠️ `ReportFigureCard` and the dashboard's tiles take one `tint` prop, so a
+mismatched tint and ink can no longer be written. A chevron or icon on a
+`surface` circle keeps its accent colour — it is not on the tint. Light mode
+barely changes; in dark, words and glyphs on tints get lighter (#3B82F6 →
+#93C5FD, and so on).
+
+**One bar.** `ProgressBar` (shared, with `progressPercent`) draws the rating
+breakdown, the shop tile's upload edge and the picture upload line. It takes a
+fraction, holds it to 0–1, and a value that is not a finite number draws an
+empty bar; the width is a whole percent, and the words beside a bar take their
+figure from `progressPercent`, so the two cannot round differently. Track,
+fill and thickness are theme tokens (`borderStrong`, `primary`, `xs` by
+default); `rounded={false}` for an edge. It is silent — no role, no value; the
+caller speaks the value (a rating row's one stop, a tile's "Uploading", the
+picture line's own `progressbar` stop). No consumer test changed.
+
+**Tests.** `Button` 7 → 29; `useImageUpload` 11 new; `VendorTeam` +6
+(formatted phone, four progress tests including "no live region anywhere in
+the bar", the quiet Disable with the dialog's filled Disable);
+`VendorProfileSetup` +1 and two phone assertions; `RequestDetailsScreen` +1
+(the dialog's confirm stays filled); `StatusBadge` 31, `subtleInk` 18,
+`RoleCard` 4, `RequestStatusOverview` 20, `figureInk` 14 (the dashboard counts
+and `ReportFigureCard` on every tint, both modes), `ProgressBar` 18 — all new.
+Every change was mutation-checked.
+
+### Gates and device pass for 3D-12, 3E-14, 3E-15 and 3G-4 (21/10/2026)
+
+Two reviews ran over the four slices (vendor side; shared and customer side),
+then a second pass over the fixes, which found nothing. The fixes are written
+into each slice above.
+
+**Gates**, from the repo root, after the last fix: `tsc` 0 errors; ESLint 0
+errors, 30 warnings (the `no-void` baseline); Jest 146 suites, 3,259 tests, all
+green on a quiet run (the two suites that failed once while agents edited in
+parallel passed there); release bundle written; `assembleDebug` exit 0.
+`grep -rn "TEMPORARY-VERIFICATION" src/` returns nothing; `failureRate` is 0.
+
+**Device, Fixora_Pixel7 1080×2400 Dark**, debug APK from that build, cold start:
+
+- Vendor (Ravi). Dashboard: Today "4", Rating "4.3", five stars, "4 reviews";
+  the New card reads "Area: Koramangala", no name. Requests: waiting cards by
+  area, held cards ("In progress", "Accepted") by name. REQ-31042 (waiting):
+  area only and "The customer's name, phone number and full address are shared
+  once you accept."; no name, phone or street anywhere in the dump. REQ-30954
+  (in progress): name, "+91 90000 30954", the street address, area, preferred
+  time 11:00 AM, the customer's words, one photo (the thumbnail filled in once
+  the image arrived over the network).
+- Record payment on REQ-30833: the empty press says "Choose how the customer
+  paid."; UPI → "Mark as paid by UPI? This can't be changed later." (stacked,
+  primary confirm) → the details read "Paid · UPI" and the button is gone.
+- Team: rows spoken with "+91 90000 00101"; Edit → "Disable member" in the
+  quiet danger style, the "Active" badge in the success ink; Take a photo shows
+  "Uploading the photo…", then "Uploading… 60%" over a filling bar (caught with
+  on-device screencaps — a uiautomator dump is slower than the upload); Back
+  with the change → "Discard your changes?".
+- Profile: "+91 90000 00001"; the rating line under Customer reviews, spoken
+  as "Customer reviews. Rating 4.3 out of 5, based on 4 reviews.". Reviews:
+  "Karthik I.", "Sana K.", "Joseph M.", "Pooja N."; no surname in the dump.
+  Notifications: "A customer in HSR Layout chose you for a Ceiling fan
+  installation.", "A customer needs a Light fitting replacement."; no customer
+  name in the dump.
+- **Refresh on focus, counted.** A `console.log` marked
+  `// TEMPORARY-VERIFICATION-ONLY` in `getDashboard` and `listRequests` (both
+  files backed up, restored after, grep clean): cold start 1 dashboard read;
+  first visit to Requests 1 list read; back to the Dashboard 1 dashboard read
+  (plus 1 report, 1 reviews and 1 badge read, from the logs the mocks already
+  write); back to Requests 1 list read. No placeholder or spinner in the dumps.
+- Customer (Asha). Home pull: 1 categories, 1 recent requests and 1 unread
+  count read. REQ-24083: "Cancel request" in the quiet danger style; its dialog
+  keeps the filled "Cancel request" over "Keep request" (kept). Profile:
+  "+91 98765 43210". Request form for a second service: the other-draft
+  `InfoNotice` in the info tint with its ink. Network off: the offline banner in
+  the warning tint and ink (the debug build's own "Fast Refresh disconnected"
+  bar and a Metro-connection warning sit over it while the network is off —
+  dev tooling, not the app).
+- Role selection: "Get things done" and "Grow your business" in their tints'
+  inks.
+
+**Small screens, by calculation** (÷ 2.625 from the 1080-wide bounds): the
+rating line on Profile is about 174dp wide — fits 360dp. The dashboard figure
+cards are two to a row; at 360dp each leaves about 124dp inside its padding,
+less than the 132dp the average and five stars take on one line, so the stars
+wrap under the average there by rule (B measured the same). Record payment's
+method chips wrap; Disable member, Cancel request and the dialogs are full width.
+
+---
+
 ## 10. Open items
 
 Carried forward, all raised with the owner and none yet decided:
@@ -3742,10 +4246,9 @@ Carried forward, all raised with the owner and none yet decided:
 
 **My Requests (Phase 3D-5), for the owner.**
 
-- Whether My Requests should refresh itself when its tab is focused again.
-  Today it reads on mount, on a filter change, on pull and on retry. The success
-  screen's `reset` remounts the tabs, so a just-sent request does appear, but a
-  status changed on the server while the tab stayed mounted waits for a pull.
+- ~~Whether My Requests should refresh itself when its tab is focused again~~
+  — resolved in 3E-15: it re-reads quietly when the tab is shown again (owner
+  decision).
 - Page size is `AppConfig.pagination.defaultPageSize` (20); §23 names none.
 - The filter mapping is the mock's stand-in for the backend's. The real one may
   differ, and nothing above the service would change if it does.
@@ -3757,8 +4260,9 @@ Carried forward, all raised with the owner and none yet decided:
   delete, "first address is default", default-first ordering, no maximum count,
   and no duplicate detection. Whether a real backend issues address ids or
   accepts client ones is open — the mock issues them.
-- The phone is shown exactly as stored; formatting it (dial code, grouping) is
-  a display decision nobody has made.
+- ~~The phone is shown exactly as stored~~ — resolved in 3D-12: written by
+  `formatPhone` ("+91 98765 43210"), display only (owner decision); the vendor
+  side in 3G-4 and 3E-14.
 - **Backend reconciliation for 3D-8.** The profile update call, its field names
   and its error shapes are this app's guess. So are: the 50-character name
   ceiling, whether a first name is genuinely required, whether an email may be
@@ -3768,15 +4272,74 @@ Carried forward, all raised with the owner and none yet decided:
   a square crop is the obvious thing a real contract might want and there is no
   cropping operation on `ImageService` to do it with.
 
+**Shared UI and the tint-ink rule (Phase 3G-4), for the owner.**
+
+- There is no `DangerSecondaryButton` wrapper beside `PrimaryButton` /
+  `SecondaryButton` / `DangerButton` (CLAUDE.md §5's naming); both call sites
+  write `<Button variant="dangerSecondary">`. One line if wanted.
+
+**Dashboard figures and refresh on focus (Phase 3E-15), for the owner and the
+backend.**
+
+- **Accepted and In Progress as separate dashboard counts (§30)** need a
+  contract field (for example the backend splitting `counts.active`);
+  `active[]` is a preview of at most three, so counting there would be wrong.
+  Not invented.
+- **Returning to a list N pages deep sends N requests** (the quiet re-read goes
+  page by page at the list's own page size, so it depends on no backend page
+  limit). Fine for Phase 1 lists; a backend with a "changed since" query would
+  make it one.
+- Reviews and Reports read on open, on pull and on Try again; not on focus
+  (unchanged).
+- Profile's rating is not re-read on focus — coming back from Reviews shows the
+  figure read when Profile opened. Accepted by the lead: a vendor cannot change
+  their own reviews.
+
+**Vendor request details and a later payment (Phase 3E-14), for the owner and
+the backend.**
+
+- **Tap-to-call** — out of §32's scope (§32 lists information); it would need a
+  `Linking` seam in core and the owner's OK.
+- **A full-screen photo viewer** — out of §32's scope; the shared strip never
+  had one.
+- Backend: the endpoint and body for a later payment; whether a CLOSED
+  request's payment may be amended (the mock allows `COMPLETED` and `CLOSED`);
+  whether a payment date is recorded; whether the customer is told and their
+  `payment` record updates (the vendor and customer mocks are still not joined,
+  3E-9); the shape of the vendor's view of an address; that summaries of work
+  the vendor does not hold come without the customer's name.
+- **Backend: notification text follows the same rule.** The app shows a
+  notification's title and body as given, so a notification about work the
+  vendor does not hold must carry no customer name, phone or street, and a
+  review notification only the short reviewer name. The mock now does
+  (`MockNotificationPrivacy.test.ts`); the backend must too.
+- **A details record adopted after an answer** (`adopted ?? fresh` in
+  `useVendorRequestDetails`) wins over later reads until a work-sync revision
+  arrives while the screen is out of view, or an action comes back
+  `unavailable`. No privacy risk (an adopted record is one the service returned
+  as held); with a real backend that can change work elsewhere, the screen may
+  want to drop it on its next own read.
+
+**Customer tidy-ups (Phase 3D-12), for the owner.**
+
+- The withdrawn-professional notice does not survive a restart (memory only);
+  after one, the question is simply unanswered. Accepted by the lead.
+- The draft restore at launch replaces a draft the customer started before the
+  storage read answered (milliseconds after launch). The old
+  `setDraft(saved.draft)` did the same; found by the second review, not
+  changed.
+- Confirmation's Submit is busy for the length of one eligible-list read when a
+  professional is chosen (sub-second on the mock).
+
 **Finishing polish (Phase 3G-2), for the owner.**
 
 - ~~Nine more lists keep the always-labelled pattern~~ — resolved in 3G-3: every
   list now uses the keyed loading region.
-- **The danger button's pressed state shows no change**: its pressed fill is
-  `danger` itself. A pressed red would be a new shared colour token.
-- The Home resume check (`isDraftWorthKeeping`) sits in `CustomerHomeScreen`
-  only because `useCustomerHome` was being edited by another slice that night;
-  its natural home is one line in the hook's `resume`.
+- ~~**The danger button's pressed state shows no change**~~ — resolved in 3G-4:
+  it presses to `dangerPressed`.
+- ~~The Home resume check (`isDraftWorthKeeping`) sits in
+  `CustomerHomeScreen`~~ — resolved in 3D-12: it is in `useCustomerHome`'s
+  `resume`.
 - `ConfirmDialog`'s 0.6 em a character is for the Latin script the app ships
   in; a translation into a script with wider glyphs needs its own figure.
 - `Toast`'s own exit animation runs once more after its provider unmounts —
@@ -3792,20 +4355,16 @@ Carried forward, all raised with the owner and none yet decided:
   it on the next React Native upgrade.
 - The header comment in `~/.gradle/gradle.properties` says a project's own file
   overrides it; section 7 (verified) says the opposite. Worth correcting there.
-- Cosmetic: `android/app/proguard-rules.pro` still carries the template's text
-  and no rules (none are needed); `package.json`'s `version` is still "0.0.1"
-  (Android does not read it).
+- ~~Cosmetic: `android/app/proguard-rules.pro` still carries the template's
+  text; `package.json`'s `version` is still "0.0.1"~~ — resolved in 3D-12: the
+  file says why it has no rules, and the version is 1.0.0.
 
 **Rejected requests and team photos (Phase 3E-13), for the owner and the
 backend.**
 
-- **Two photo cards.** `TeamMemberPhotoField` and the business picture card in
-  `VendorProfileFormScreen` are the same UI written twice. With two real
-  consumers, one shared component is justified, but it changes a locked screen —
-  the owner's call.
-- **Upload progress** is an indeterminate line on both photo fields;
-  `ImageService.upload` supports `onProgress`, but `useImageUpload` does not pass
-  it. A percentage is a shared-hook change.
+- ~~**Two photo cards.**~~ — resolved in 3G-4: one `PhotoField`.
+- ~~**Upload progress** is an indeterminate line on both photo fields~~ —
+  resolved in 3G-4: `useImageUpload` exposes `progress`, shown as a percentage.
 - Backend, rejected: whether it lists a vendor's rejections at all, the field
   name and place, `rejectedAt`, the order, paging (the history only grows),
   whether a decline stays visible after a re-dispatch, and whether a reason is
@@ -3823,8 +4382,8 @@ backend.**
   contract and its own sentence; not invented.
 - **"Already cancelled answers cancelled"** is this app's assumption of the
   backend; so are the endpoint and the result's shape.
-- **Cancel request uses the filled danger button** — the same question as 3E-11's
-  "quieter Disable button" below.
+- ~~**Cancel request uses the filled danger button**~~ — resolved in 3G-4: it is
+  `dangerSecondary`; the dialog's own Cancel request stays filled.
 - **Mock only:** a seeded request's cancellation lasts until a relaunch, and the
   vendor app keeps offering a request the customer cancelled.
 - **A corner of My Requests:** an empty view whose pull failed, then a
@@ -3846,8 +4405,8 @@ backend.**
   list item — the backend's to supply; nothing was added to the customer side).
 - Whether the backend pauses availability by itself outside working hours — the
   app would simply show the stored value.
-- `RootNavigator.test.tsx` could also pin that a customer tree never has
-  `WorkingHours`, as it does for `VendorReviews`.
+- ~~`RootNavigator.test.tsx` could also pin that a customer tree never has
+  `WorkingHours`~~ — resolved in 3D-12.
 
 **Vendor auth code and returning vendors (Phase 3C-2), for the owner and the
 backend.**
@@ -3868,28 +4427,28 @@ backend.**
 
 **Customer fixes and the saved-address picker (Phase 3D-10), for the owner.**
 
-- **Preferred Vendor accepts a professional who is not in the eligible list.**
-  No longer reachable from the cross-service path, but a resumed or restored
-  draft could still carry one if a vendor stopped being eligible.
-- `RequestDetailsScreen`'s review "checking" view (progressbar, busy) is
-  followed by a different view at the same place — the exposure Home's regions
-  had. Worth the same check.
-- Categories still offers pull-to-refresh over its first-load `ErrorState`; the
-  vendor lists remove it there. Pre-existing.
+- ~~**Preferred Vendor accepts a professional who is not in the eligible
+  list.**~~ — resolved in 3D-12: `useCheckedVendorChoice` withdraws one the
+  settled list no longer has, and says why.
+- ~~`RequestDetailsScreen`'s review "checking" view (progressbar, busy)~~ —
+  resolved in 3D-12: the keyed loading region.
+- ~~Categories still offers pull-to-refresh over its first-load
+  `ErrorState`~~ — resolved in 3D-12.
 - Saved addresses are read when Service Address mounts and again when the picker
   opens — two reads a visit. A real backend may want caching.
 - The saved-address shortcut uses the `home` glyph so it does not look like the
   location shortcut beside it; `location` is a one-line swap.
-- `CreateRequestInput`'s docblock in `RequestService.ts` still says a saved
-  address book has "no service and no screen" — stale since 3D-9.
+- ~~`CreateRequestInput`'s docblock in `RequestService.ts` still says a saved
+  address book has "no service and no screen"~~ — resolved in 3D-12.
 
 **Notifications inbox (Phase 3F-2), for the owner and the backend.**
 
 - **Unread weight.** "Bold when unread" is the `bodyStrong` variant (medium
   500) plus the dot and the tinted disc, not a 700 override. Say if a heavier
   weight is wanted.
-- **Pull-to-refresh on Home and the Dashboard does not re-read the badge**; it
-  re-reads on every focus and after every mark.
+- ~~**Pull-to-refresh on Home and the Dashboard does not re-read the
+  badge**~~ — resolved in 3D-12 (Home) and 3E-15 (Dashboard):
+  `useUnreadNotifications().refresh` is part of each pull.
 - **Read state is memory-only in the mock** — a restart brings the fixtures back
   unread. Intended.
 - A failed mark's toast can appear over the request it opened (the mark is not
@@ -3931,11 +4490,9 @@ backend.**
 **Rating breakdown and team member status (Phase 3E-11), for the owner and the
 backend.**
 
-- **A quieter Disable button.** The brief asked for a "danger-styled
-  secondary"; the shared `Button` has primary, secondary and danger only, so
-  Disable uses the filled danger variant, as Log out does. A tonal-danger
-  variant would be a new shared variant and needs approval. The customer's
-  Cancel request (3D-11) is the same case.
+- ~~**A quieter Disable button.**~~ — resolved in 3G-4: `Button`'s new
+  `dangerSecondary` variant, on Disable member and the customer's Cancel
+  request.
 - Backend: breakdown field names, "always five, zeros included", star order,
   and whether percentages could ever be sent instead of counts; the status
   endpoint, vocabulary and casing, the same status as a no-op or an error,
@@ -3962,9 +4519,9 @@ backend.**
 **Complete work and the offline payment record (Phase 3E-9), for the owner and
 the backend.**
 
-- **Can a payment record change after completion** ("Not paid yet" → "Paid" a
-  week later)? Not built: completing cannot be undone, there is no call to
-  amend, and §37 does not say. One more call and a form mode if wanted.
+- ~~**Can a payment record change after completion** ("Not paid yet" → "Paid"
+  a week later)?~~ — resolved in 3E-14: yes, once, with a confirmation; Paid is
+  final (owner decision). `recordPayment`, its own screen.
 - Server `validation` is a toast, not field messages, until a contract gives
   `fieldErrors`.
 - The vendor and customer mocks are not joined; a recorded payment reaches the
@@ -3995,17 +4552,15 @@ the backend.**
   under a second at real latency, with the pull spinner showing) the list
   shows the team as it was. Adopting the form's answer directly would need a
   shared signal between the two screens; not built.
-- **The phone is shown as stored digits**, unformatted, as on the customer
-  profile.
+- ~~**The phone is shown as stored digits**~~ — resolved in 3G-4: the team card
+  writes it with `formatPhone`, shown and spoken.
 
 **Vendor reviews (Phase 3E-6), for the owner and the backend.**
 
-- **Where else the rating appears.** §30 (dashboard) and §38 (profile) both
-  list Rating; neither screen shows the number — the dashboard is locked and
-  the profile only links to Reviews. Decide whether either should.
-- **The customer's name.** Shown as the backend gives it (the vendor already
-  sees it on the job). Whether a review shows the full name, a first name or
-  nothing is a product and privacy decision nobody has made.
+- ~~**Where else the rating appears.**~~ — resolved in 3E-15: the Dashboard
+  (§30) and the Profile tab (§38) both show it (owner decision).
+- ~~**The customer's name.**~~ — resolved in 3E-15: first name and last
+  initial, "Priya S." (owner decision).
 - **Paging and order.** The list is whole and newest first; a busy vendor
   will need pages, and `totalReviews` is already separate from the list.
 - **Refresh.** Reads on open, on pull and on Try again; not on focus.
@@ -4047,8 +4602,8 @@ the backend.**
   is assumed for answers too.
 - **Consistency**: the app re-reads list and dashboard after every answer. A
   push or a version number would let it notice changes made elsewhere.
-- **What a vendor sees after accepting** — address, photographs, phone — is
-  still not on the record; the accept flow is where it would arrive (§32).
+- ~~**What a vendor sees after accepting** — address, photographs, phone~~ —
+  resolved in 3E-14: on the details record, held work only (owner decision).
 - Delete `MockVendorRequestBook` with the other vendor mocks when the real
   service lands.
 
@@ -4058,13 +4613,14 @@ the backend.**
   Progress, Completed and Rejected. Here Accepted and In Progress are both
   "Active" (each card says which). Rejected has been its own filter since
   3E-13.
-- **What a vendor may see before accepting**: address, photographs, preferred
-  date and time, the customer's phone. None are on the details record yet.
+- ~~**What a vendor may see before accepting**~~ — resolved in 3E-14 (owner
+  decision): photographs, preferred date and time and the area; never the
+  name, phone or full address until the vendor holds the work.
 - Whether the dashboard's "See all" should open the list already filtered
   (Pending from New requests, and so on), and whether dashboard cards should
   open the request. Both would touch the locked dashboard.
-- Paging for the completed group, and whether the list should refresh when its
-  tab is focused again.
+- Paging for the completed group. (~~Whether the list should refresh when its
+  tab is focused again~~ — resolved in 3E-15: it re-reads quietly.)
 - Backend reconciliation: endpoints, field names, how groups and `dispatch` are
   expressed, `notFound` versus `forbidden` for somebody else's request, and
   whether a broadcast request that was taken disappears or comes back marked.
@@ -4073,17 +4629,14 @@ the backend.**
 
 **Vendor dashboard (Phase 3E-2), for the owner.**
 
-- §30's other figures: **Today's Requests**, **Accepted** and **In Progress** as
-  separate counts, and **Rating**. Not drawn — there is no contract for "today"
-  and ratings belong to the reviews phase. Since 3E-6 the rating exists
-  (`getVendorReviews`), reached from Profile; the dashboard still does not
-  show it. Since 3E-8 today's counts exist too, on Reports
-  (`getReport('today')`); the dashboard does not show those either.
+- §30's other figures: ~~**Today's Requests** and **Rating**~~ — resolved in
+  3E-15, drawn from `getReport('today')` and `getVendorReviews()`.
+  **Accepted** and **In Progress** as separate counts still wait for a
+  contract field (see 3E-15 above).
 - Whether job cards on the dashboard should open the request once details (§32)
   exist, and whether the counts should become filters into the request list.
-- Whether the dashboard should refresh when its tab is focused again. Since
-  3E-4 it re-reads whenever a request is answered (`VendorWorkSync`); changes
-  made elsewhere (another device, the backend) still wait for a pull.
+- ~~Whether the dashboard should refresh when its tab is focused again~~ —
+  resolved in 3E-15: it re-reads quietly when shown again (owner decision).
 - Backend reconciliation: the endpoint, its field names, how `dispatch` is
   expressed, which statuses fall in which group, what "completed" spans and the
   preview size are all this app's guess. Delete `MockVendorDashboardService` and
@@ -4123,6 +4676,22 @@ the backend.**
 ## 11. Lessons this flow paid for
 
 Written down because each one cost a device session to find.
+
+- **A full Jest run fails in files nobody touched while agents are editing
+  (21/10/2026).** Four agents' full runs each failed somewhere else — 59 tests
+  in three suites that render the whole vendor navigator, a Reports test under
+  load, a dashboard test counting a review read from a Profile screen being
+  edited — and every one passed on re-run alone. Re-run a stranger's failure in
+  isolation before chasing it; count the full gates only on the finished tree.
+- **When the first screen starts reading a service, every suite that mounts the
+  navigator counts those reads (3E-15).** The Dashboard began reading reviews
+  and reports, and the Reviews and Reports suites' spies counted them. Route the
+  first screen's own reads to a second, unspied service, and record only while
+  the screen under test is in front.
+- **A spoken join must not add a full stop to a part that ends in one — twice
+  now (3E-15).** "Priya S." joined with ". " read "Review from Priya S.. 5 out
+  of 5". 3D-10 fixed the same thing in `StaleNotice`; any sentence built from
+  parts that can end in an abbreviation needs the check.
 
 - **After agents edit a mounted screen, cold-start before judging a hook-order
   error (21/10/2026).** A red "Should have a queue … calling Hooks

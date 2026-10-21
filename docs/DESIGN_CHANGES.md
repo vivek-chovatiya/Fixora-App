@@ -3,8 +3,10 @@
 State of the UI on `feature/FIX-001-navigation-and-auth-state`, as of 2026-08-25.
 Section 2's tokens, section 3.3, rule 12 and the open items were brought up to
 date on 20/10/2026; `onDanger`, `Button`, section 3.4, section 4's back control,
-the vendor sign-in row, rule 13 and the open items on 21/10/2026. The rest still
-describes the August state.
+the vendor sign-in row, rule 13 and the open items on 21/10/2026; later that day
+(Phase 3G-4) the press and tint-ink tokens, `SUBTLE_INK`, `dangerSecondary`,
+section 3.5, rules 14–17 and the open items again. The rest still describes the
+August state.
 
 This is a **design reference**, not a changelog to append to. It records what the
 interface now is, what tokens exist to build it from, and the rules that must not
@@ -56,6 +58,14 @@ Scope: Phase 1 only. Nothing here implements a Phase 2 feature — see
 | `icons.homeSelected` / `requestsSelected` / `profileSelected` / `teamSelected` | filled counterparts | same | Tab selection must change shape, not only colour. |
 | `colors.onOverlay` | `palette.white`, both themes | `theme/colors.ts` | Text and icons drawn directly on `overlay`. The scrim is dark in both themes, so its ink must be light in both; `textInverse` flips to near-black in dark and all but vanished there — the request photo tiles' "Uploading", "Upload failed" and × (fixed in `RequestPhotoTile`, 20/10/2026). |
 | `colors.onDanger` | `palette.white`, both themes | same | Ink on a `danger` fill — the notification badge, and since 21/10/2026 the danger button's label, icon and spinner. White on red500 is 4.8:1; `textInverse` there is 4.2:1 in dark. |
+| `colors.dangerPressed` | red600 `#B91C1C`, both themes | same | The filled danger button's press (3G-4, 21/10/2026). Before it the pressed fill was `danger` itself and a press showed nothing. White on it 6.5:1; 1.3:1 against `danger`, the primary's own step. |
+| `colors.dangerSubtlePressed` | red200 `#FECACA` light / red800 `#7F1D1D` dark | same | The tonal danger button's press (`dangerSecondary`). 1.38:1 / 2.01:1 against the page, where the resting `dangerSubtle` is 1.17:1 / 1.25:1. |
+| `colors.onDangerSubtle` | red700 `#991B1B` light / red300 `#FCA5A5` dark | same | Ink on `dangerSubtle` and its pressed step — the tonal danger button's label, icon and spinner, a danger badge's words. 6.8 / 5.7:1 light, 8.5 / 5.3:1 dark (rest / pressed). Not `danger`, which is 3.9:1 / 3.3:1 on its own tint. |
+| `colors.onInfoSubtle` | blue600 `#1D4ED8` light / blue300 `#93C5FD` dark | same | Words and glyphs on `infoSubtle`; 5.5:1 / 8.2:1. `info` there is 4.2 / 4.0. |
+| `colors.onSuccessSubtle` | green700 `#166534` light / green400 `#4ADE80` dark | same | On `successSubtle`; 6.5 / 8.6. `success` there is 3.0 in light. |
+| `colors.onWarningSubtle` | amber700 `#92400E` light / amber400 `#FBBF24` dark | same | On `warningSubtle`; 6.4 / 9.0. `warning` there is 2.9 in light. Not for a `warning` mark on `surface` or the page. |
+| `colors.onPrimarySubtle` | blue600 `#1D4ED8` light / blue300 `#93C5FD` dark | same | Words and glyphs on `primarySubtle` — avatars, glyph circles, selected chips, tinted cards; 5.5 / 8.2. `primary` there is 4.2 / 4.0. The same values as `onInfoSubtle` because the two tints are the same values; named apart so either can move alone. |
+| `SUBTLE_INK` (+ type `SubtleTint`) | tint → ink table | same, exported from `@/shared/theme` | The one place a tint's ink is named: each `…Subtle` tint maps to its `on…Subtle` token, and `neutralSubtle` to `textSecondary` (no neutral token). Components whose tint follows a tone look it up. Rule 16. |
 | `icons.cancelled` | `cancel` | `theme/icons.ts` | A request called off (Reports, 3E-8). Not `reject`: declining and being cancelled are different outcomes, and side by side on the report they must differ in shape, not only in word. |
 | `icons.markAllRead` | `check-all` | same | Marking every notification read (3F-2). Two ticks, not `selected`'s one: it acts on the whole list. |
 | `icons.accept` / `reject` / `startWork` / `completeWork` / `copy` | `check` / `close-circle-outline` / `play-circle-outline` / `check-circle-outline` / `content-copy` | same | Earlier phases, recorded here for completeness: answering a request (3E-4), moving work along (3E-5), and copying a reference — distinct from `document`, which read as "open the paperwork". |
@@ -78,7 +88,13 @@ Scope: Phase 1 only. Nothing here implements a Phase 2 feature — see
   `success`/`successSubtle` pair rather than a second green. The two colour
   tokens added since (`onOverlay`, `onDanger`, 20/10/2026) are not new colours
   either: both are `palette.white`, named for the fill they sit on, so ink on a
-  fixed fill stops borrowing `textInverse`, which follows the theme.
+  fixed fill stops borrowing `textInverse`, which follows the theme. Phase 3G-4
+  (21/10/2026) added palette steps — red200/300/600/700/800, blue300,
+  green400/700, amber400/700 — for the danger presses and the tint inks: new
+  values of the four existing hues, no new hue. (The palette's numbering keeps
+  the file's offset: its red500 is Tailwind's 600, so Tailwind's 800 is
+  `red700`.) Since then the vendor role card's badge and glyph are
+  `onSuccessSubtle` on the same green tint.
 
 ---
 
@@ -129,7 +145,15 @@ you could scan for and one you could not. Indentation is the caller's business.
   its icon and the busy spinner are white in both themes, 4.8:1 on red500,
   where `textInverse` was near-black in dark at 4.2:1. Light mode looks as it
   did. Every danger button and every `ConfirmDialog` confirm moved with it. Its
-  pressed fill is still `danger` itself, so a press shows no change (open item).
+  pressed fill is `dangerPressed` (3G-4, 21/10/2026).
+- **New `dangerSecondary` variant** (approved 21/10/2026): the secondary's shape
+  in danger's colours — `dangerSubtle` fill, `dangerSubtlePressed` pressed,
+  `onDangerSubtle` label, icon and spinner, no border; disabled and busy
+  exactly as every variant. **Where it is used:** a control that only *opens* a
+  danger dialog — the team member form's Disable member, the customer's Cancel
+  request. **Where it must not be used:** a `ConfirmDialog`'s final confirm (the
+  last step is the loud one), Log out, Remove on the address book and team
+  card, the vendor reject dialog — all stay filled `danger`. Rule 14.
 - The capsule's horizontal padding is exported as `BUTTON_LABEL_INSET`
   (`spacing.xxl`), a component constant rather than a token, because
   `ConfirmDialog` works out label room from it and the two must not drift.
@@ -152,10 +176,13 @@ them is a new shared component.
   read-only stars, and Rejected and Cancelled **neutral** — ordinary outcomes,
   not faults (§49.1); they differ by glyph as well as word. Two to a row by
   `flexGrow: 1` / `flexBasis: '40%'`, the rating full width; no fixed widths.
+  Since 3G-4 the card takes one `tint` and draws its glyph in that tint's ink
+  (`SUBTLE_INK`), so a mismatched pair cannot be written; the dashboard's tiles
+  do the same.
 - **Rating breakdown bars** (`RatingSummaryCard`, vendor Reviews). Five rows
   under the average: the number with a small filled star, a bar (track
-  `borderStrong`, fill `warning`, `spacing.sm` high, `radius.full`), the
-  percentage in `tabular-nums`. ⚠️ The bars are the same length in every row
+  `borderStrong`, fill `warning`, `spacing.sm` high, `radius.full`; drawn by
+  `ProgressBar` since 3G-4), the percentage in `tabular-nums`. ⚠️ The bars are the same length in every row
   because the percentage column is held open at the width of "100%" by an
   invisible, zero-height copy of it — "0%" and "100%" rows share one bar length
   and "100%" cannot clip.
@@ -165,7 +192,8 @@ them is a new shared component.
   split into "Take a photo" / "Choose a photo" halves. A tile in progress or
   failed is dimmed under the `overlay` scrim, its state word on a **`surface`
   label** rather than inverse text on the scrim, so it reads in both themes and
-  over light and dark photos; a primary progress bar runs along the bottom edge;
+  over light and dark photos; a primary progress bar runs along the bottom edge
+  (`ProgressBar` since 3G-4: `border` track, square ends);
   a failed tile gains a thick `danger` border (thickness as well as colour).
   Remove is a small `surface` circle with a thin border, 30dp drawn plus 8dp
   slop. Profile's card draws the squares three to a row as explicit `flex: 1`
@@ -181,7 +209,9 @@ them is a new shared component.
   there are any, and a `textTertiary` caption "Recorded by you. Fixora does not
   process payments." Customer: a "Payment" group before "Your review" with the
   amount and status only. Amounts come from `formatMoney` ("₹1,250.50"); the
-  form's "₹" is the amount field's `Input` `prefix`.
+  form's "₹" is the amount field's `Input` `prefix`. Since 3E-14 a "Not paid
+  yet" record carries a secondary "Record payment" button under the vendor's
+  card (section 3.5).
 
 ### 3.4 Added and changed on 21/10/2026
 
@@ -209,9 +239,10 @@ Built from existing tokens; no token was added.
 - **`OfflineBanner`** (new). A strip across the top of the app while the device
   is offline: `warningSubtle` fill running up behind the status bar (padding
   `insets.top + spacing.sm`), a hairline `border` underneath, the network
-  failure's own glyph and tone (`ERROR_PRESENTATION.network` — the offline glyph
-  in `warning`), "You're offline." in `bodyStrong` running into "Some things
-  may not load until you reconnect." in `body`. One accessible block, role alert, a **polite** live
+  failure's own glyph (`ERROR_PRESENTATION.network`), "You're offline." in
+  `bodyStrong` running into "Some things may not load until you reconnect." in
+  `body` — glyph and words in `onWarningSubtle` since 3G-4 (the glyph was
+  `warning`, 2.9:1 on the tint in light). One accessible block, role alert, a **polite** live
   region, not pressable; nothing at all when online. It sits in the layout and
   pushes the app down rather than covering a header (WORKING_NOTES 3G-1 for why
   that needs a second safe-area provider).
@@ -226,7 +257,8 @@ Built from existing tokens; no token was added.
     `borderStrong` off, `primary` on; thumb `onPrimary`). While a change is out,
     a small `primary` spinner sits beside a dimmed switch.
   - `AvailabilityNotice` (dashboard): a `warningSubtle` `Card` with no shadow,
-    the `warning` glyph, one line and a secondary "Turn on" — the look of
+    the warning glyph and one line (both `onWarningSubtle` since 3G-4, as on
+    `StaleNotice`) and a secondary "Turn on" — the look of
     `StaleNotice` on purpose, one notice style in the app, but not an alert and
     not a retry: it is a state the vendor chose, so no danger tone (§49.1).
   - `TimeChoiceDialog`: built like `ConfirmDialog` — `overlay` backdrop, a
@@ -249,7 +281,12 @@ Built from existing tokens; no token was added.
   they fit and wrapping where they do not, Remove photo when there is one, an
   "Uploading the photo…" line and, on failure, `ErrorState` with Try again and
   Discard. The team card's avatar shows the photo, falling back to initials.
-  The picture is decorative on both — the words carry it.
+  The picture is decorative on both — the words carry it. Since 3G-4 it is one
+  component, `PhotoField` (`features/vendor/components`), drawing both the
+  business picture and the team photo; the words and the actions are the
+  caller's, the picture is named (business) or hidden (team). The customer's
+  avatar card is not this component (it is the identity card); see section 3.5
+  for the upload progress all three share.
 
 **Native.**
 
@@ -259,6 +296,90 @@ Built from existing tokens; no token was added.
   draws its system splash in it, so the system splash, the window and the JS
   splash are one colour in each mode — no more AppCompat grey (#303030) between
   them in dark. Rule 13.
+
+### 3.5 Added and changed later on 21/10/2026 (Phases 3D-12, 3E-14, 3E-15, 3G-4)
+
+The tokens from `dangerPressed` down in section 2.1 were added for this; nothing
+else was.
+
+**Shared.**
+
+- **`StatusBadge` words read on their tint.** A badge's label is 12sp caption
+  and needs 4.5:1. Each coloured tone is worded in its tint's own ink
+  (`onDangerSubtle`, `onInfoSubtle`, `onSuccessSubtle`, `onWarningSubtle`,
+  looked up in `SUBTLE_INK`), neutral in `textSecondary` — the same grey, a step
+  darker in light. Every tone is 5.5–9.0:1 in both themes, measured from the
+  theme by `StatusBadge.test.tsx`; the base colours had been 2.9–4.4:1.
+- **Every tint's ink** (rule 16). The four notices — stale, offline,
+  availability, info — draw glyph and words in their tint's ink. `Avatar`'s
+  initials and fallback glyph, the glyph circles on `primarySubtle` (auth,
+  categories, onboarding, the unread notification disc), the selected service
+  chip, `SelectableCard`'s tick and the pressed add-photo tile take
+  `onPrimarySubtle`; the request-status, Request Submitted, Reports and
+  dashboard circles take their tint's ink. A chevron or icon on a `surface`
+  circle keeps its accent colour. In light little changes (#2563EB → #1D4ED8 on
+  the blue tints; green, amber and red go darker); in dark, marks on tints get
+  lighter (#3B82F6 → #93C5FD, and so on).
+- **`ProgressBar`** (new): the one drawing of a bar — a track and a fill, a
+  fraction from 0 to 1 held to its ends (a value that is not a finite number
+  draws an empty bar), the width a whole percent. Track `borderStrong` and fill
+  `primary` by default; thickness is a spacing token (`xs`, 4dp); ends are round
+  unless the bar lies along an edge. It is silent: the place that uses it says
+  the value — a rating row's one stop, a tile's "Uploading", the picture line's
+  own `progressbar` stop. It replaced three hand-drawn bars: the rating
+  breakdown (`warning` fill, `sm`), the shop tile's upload edge (`border`
+  track, square ends) and the picture upload line. Words beside a bar take
+  their figure from `progressPercent`. Rule 17.
+- **`PhotoUploadProgress`** (new): until the upload reports, the polite waiting
+  line, said once; from the first report, one `progressbar` stop (label = that
+  line, value 0–100) holding "Uploading… 42%" in tabular digits over a
+  `ProgressBar`, stretched to the card's width. Never a live region round the
+  figure (rule 15). Drawn in the vendor `PhotoField` and on the customer's
+  avatar card.
+- **`RequestPhotoStrip`** moved to shared (the vendor's request details use it
+  too), its words through a `copy` prop. It looks as it did.
+- **Phones are written for reading:** "+91 98765 43210" (`formatPhone`, display
+  only) on the customer profile and Edit Profile, the team card, the vendor
+  Profile tab, the business profile form and the vendor's view of a customer. A
+  number that does not fit the country's shape is shown as stored; inputs show
+  what is typed.
+
+**Customer.**
+
+- **`InfoNotice`** (customer components): the calm note Create Request and
+  Preferred Vendor both drew — a bordered `infoSubtle` `Card` with no shadow,
+  the `info` glyph and the words in `onInfoSubtle`, one spoken element; the
+  sentence strong only when it heads a detail; a polite live region only when
+  it arrives after the screen was read (Preferred Vendor's "not available"
+  notice). Not `StaleNotice` (a failure, with a retry) and not
+  `AvailabilityNotice` (a state the vendor chose, with an action).
+
+**Vendor.**
+
+- **Dashboard figures.** Today's requests (`primarySubtle`) and Rating
+  (`warningSubtle`, with read-only stars) as two `ReportFigureCard`s side by
+  side under the business card, above the overview. The rating card is a
+  button to Reviews: the whole card is the target, with a trailing chevron. "No
+  reviews yet", never "0.0". A failed figure takes the whole row, with its
+  message and Try again; one `StaleNotice` above the figures when a read fails
+  over data.
+- **Rating on Profile.** A centred line under the "Customer reviews" button:
+  stars, the average in `bodyStrong`, "N reviews" in `caption` — or "No reviews
+  yet". Hidden from TalkBack; the button says it.
+- **Vendor Request Details.** Preferred date and time rows in the request card;
+  a Customer card (name, formatted phone) for held work only; a Location card —
+  the area always, the full address for held work only, and while a request
+  awaits an answer, "The customer’s name, phone number and full address are
+  shared once you accept."; the photo strip inside "What the customer said".
+  Every row is a wrapping `ProfileDetailRow`. On the list and the dashboard, a
+  waiting or declined card shows the area where a held card names the
+  customer.
+- **Record payment.** A secondary "Record payment" button (`edit` glyph) under
+  a "Not paid yet" Payment card opens its own form: the reference, a subtitle
+  saying it is final and that Fixora does not process payments, the method
+  chips (`PaymentMethodField`, shared with Complete Work) and a primary "Record
+  payment", which asks first in a primary-toned `ConfirmDialog` ("Mark as paid
+  by UPI?" / "This can't be changed later.").
 
 ---
 
@@ -272,7 +393,7 @@ All new unless noted.
 | `AuthHeading` | `hero` title + optional `subtitle`, in the page body so it scrolls away. |
 | `AuthCityscape` | The decorative foot: `city-signin.png` at 430:162, with "Your information is safe with us." **rendered as text** over it beside a `primarySubtle` disc. The sentence was painted out of the supplied artwork — baked-in text is untranslatable, ignores the user's type size, and is invisible to a screen reader. |
 | `PhoneCountryPrefix` | Drawn flag + `AppConfig.phone.dialCode`. **Not a picker and not a value**: no chevron (there is nothing to open — multi-country is Phase 2), and the code is never prepended to the digits or sent to a service. |
-| `RoleCard` | The two choices on the entry screen: illustration tile, glyph, title, description, outcome badge, and a ringed chevron disc that *looks* like a button and deliberately is not one. The whole card is the single target; the vendor variant is the same card in the existing `success` tone. |
+| `RoleCard` | The two choices on the entry screen: illustration tile, glyph, title, description, outcome badge, and a ringed chevron disc that *looks* like a button and deliberately is not one. The whole card is the single target; the vendor variant is the same card in the existing `success` tone. Since 3G-4 the glyph and outcome badge on the tint use its ink (`onPrimarySubtle` / `onSuccessSubtle`); the chevron on its `surface` disc keeps the accent. |
 | `ServiceCategoryField` *(changed)* | Gained `required`; now uses `FieldLabel`, deliberately flush rather than indented because it names a chip row, not a capsule's interior. |
 | `OtpVerificationForm` *(changed)* | Three presentation changes only: a `sentTo` line naming the masked destination (re-read from the challenge after a resend), a two-ink countdown (`copy.resendIn.split('{seconds}')`, the count in `primary`), and an optional `changeIcon`. **No handler, ref, state, effect, timer, schema or navigation call was altered; `VerificationCodeInput` and `VerificationScene` were not touched.** |
 
@@ -464,6 +585,41 @@ deliberately claiming nothing about encryption, storage or compliance), and
     #F9FAFB in `res/values/colors.xml`, #030712 in `res/values-night/colors.xml`.
     Native resources cannot read the JS theme, so change all three together, or
     a frame of the wrong colour shows between the system splash and the app.
+14. **Two reds.** Filled `danger` is for the act that ends something — a
+    dialog's final yes, Log out. A control that only opens such a dialog is
+    `dangerSecondary`. Never move a dialog's confirm to the tonal variant. A
+    label on any danger fill uses that fill's own ink (`onDanger`,
+    `onDangerSubtle`), never `danger` or `textInverse`.
+15. **Progress is said once.** A changing figure is never inside a live region;
+    announce the start once with constant words, and expose the figure as a
+    `progressbar` value.
+16. **A coloured mark on a subtle tint takes that tint's ink.** A coloured mark
+    is a tone or brand colour used for text or an icon. When it is drawn on a
+    `…Subtle` tint, it uses that tint's ink from `SUBTLE_INK`:
+
+    | Tint | Ink |
+    |---|---|
+    | `primarySubtle` | `onPrimarySubtle` |
+    | `infoSubtle` | `onInfoSubtle` |
+    | `successSubtle` | `onSuccessSubtle` |
+    | `warningSubtle` | `onWarningSubtle` |
+    | `dangerSubtle` | `onDangerSubtle` |
+    | `neutralSubtle` | `textSecondary` |
+
+    It must never be the tone's own colour, which falls to 2.9–4.4:1 on its tint
+    in at least one theme. This holds for a tint shown only on press or
+    selection too. Neutral text inks (`textPrimary`, `textSecondary`) may sit on
+    a tint when they reach 4.5:1 — a selected `SelectableCard`'s contents do;
+    the notices (stale, offline, availability, info) use the tint's ink for
+    their words as well, which is allowed and consistent.
+    `__tests__/shared/theme/subtleInk.test.ts` holds every pair to 4.5:1 in both
+    themes. Components that pick their tint at run time (`StatusBadge`,
+    `RequestStatusOverview`, `ReportFigureCard`, the dashboard counts) look the
+    ink up rather than naming it. Rule 12 is the same idea for fills that do not
+    invert.
+17. **One bar.** Draw a bar with `ProgressBar`, never a hand-made track and
+    fill. Words beside it take their figure from `progressPercent`, so the two
+    always agree.
 
 ---
 
@@ -482,14 +638,6 @@ deliberately claiming nothing about encryption, storage or compliance), and
   `role-customer`, `role-vendor`) came from the same session as the defective
   flag. They look correct on device, but that is where to look first.
 - **Country picker** unbuilt, pending Phase 2 approval.
-- **A quieter danger button.** Disabling a team member and cancelling a
-  request use the filled danger variant, as Log out does; a tonal-danger
-  variant would be a new `Button` variant and needs approval.
-- **The danger button's press shows nothing.** Its pressed fill is `danger`
-  itself; a pressed red would be a new colour token.
-- **Two photo cards.** The team member form's and the vendor profile form's are
-  the same card written twice; one shared component would change a locked
-  screen.
 - **`ConfirmDialog`'s 0.6 em a character** is for the Latin script the app ships
   in; a translation into wider glyphs needs its own figure.
 

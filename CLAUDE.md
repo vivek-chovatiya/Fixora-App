@@ -47,7 +47,7 @@ multi-language translation. Payment in Phase 1 is **offline record-keeping only*
 | State / forms | Redux Toolkit 2, react-hook-form 7 + zod 4 |
 | Navigation / UI | React Navigation 7 (native-stack, bottom-tabs), Reanimated 4, @gorhom/bottom-sheet, react-native-vector-icons |
 | Data | axios (only inside `src/core/http`), AsyncStorage (only inside `src/core/storage`), NetInfo (only inside `src/shared/services/device`) |
-| Tests | Jest 29 + react-test-renderer — 123 test files in `__tests__/` |
+| Tests | Jest 29 + react-test-renderer — 146 test files in `__tests__/` |
 | Android | app id `com.fixora`, emulator AVD **`Fixora_Pixel7`** (Pixel 7, API 36, 1080×2400 @ 420 dpi) |
 | Metro port | **8085** (`metro.config.js` `server.port` + `reactNativeDevServerPort` in `android/gradle.properties`) |
 
@@ -95,7 +95,7 @@ src/
     components/ the whole UI library — search index.ts before building anything
     hooks/      useServiceQuery, useServiceMutation, usePaginatedQuery, useSingleFlightQuery,
                 useImageUpload, useResponsive, useCountdown, useNavigationEvent, useStaleState,
-                useNetworkStatus, useAnalytics
+                useNetworkStatus, useAnalytics, useServiceCategories
     presentation/ display tables for backend strings (request status/priority tokens, rating)
     services/   types/ (interfaces), mock/ (fixtures), device/, ServiceRegistry.ts
     theme/      colors, spacing, radius, shadows, typography, icons, animation, breakpoints, …
