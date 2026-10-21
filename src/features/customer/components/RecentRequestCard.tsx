@@ -5,31 +5,35 @@
  * got to, how urgent it is and when it was raised — the five things
  * PROJECT_BIBLE.md section 23 puts on a request card.
  *
- * ⚠️ Not pressable, and that is not an oversight. Request details is a screen
- * that has not been built, so a card that looked tappable would either go
- * nowhere or go somewhere unfinished. It becomes a link the day that screen
- * exists, and until then it says what it knows and stops there.
+ * ⚠️ The whole card opens the request (section 23: "Request Card → Request
+ * Details"). It used to be deliberately inert, because a card that looked
+ * tappable before the details screen existed would have gone nowhere. It hands
+ * back the request's identifier and nothing else; where that leads is the
+ * screen's decision, and what the request contains is the details screen's to
+ * fetch.
  *
  * Status never rests on colour. The badge carries a word and a glyph as well as
  * a tone, and priority is written out beside its own icon — so the card survives
  * greyscale, colour blindness and a screen reader, none of which the tone alone
  * would (PROJECT_BIBLE.md section 46).
  *
- * It reads as one thing to assistive technology rather than as six loose
+ * It reads as one button to assistive technology rather than as six loose
  * fragments, because a request is one thing. The composed label puts them in the
  * order someone scanning would take them: service, status, vendor, priority,
- * when, and finally the reference they would quote if they called.
+ * when, and finally the reference, which is what tells two otherwise alike
+ * requests apart.
  */
 
-import React, { memo, useMemo } from 'react';
+import React, { memo, useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { CUSTOMER_COPY } from '@/features/customer/constants/customerCopy';
+import { formatRequestDate, presentPriority } from '@/features/customer/constants/requestPresentation';
 import {
-  formatRequestDate,
-  presentPriority,
-  presentStatus,
-} from '@/features/customer/constants/requestPresentation';
+  presentRequestState,
+  requestStateOf,
+  type RequestDispatch,
+} from '@/features/customer/constants/requestStatus';
 import { Card, Icon, StatusBadge, Text } from '@/shared/components';
 import type { CustomerRequest } from '@/shared/services/types/RequestService';
 import { useTheme } from '@/shared/theme';
@@ -38,13 +42,22 @@ const COPY = CUSTOMER_COPY.request;
 
 export interface RecentRequestCardProps {
   request: CustomerRequest;
+  /** Receives the request's identifier. The card never navigates itself. */
+  onPress: (requestId: string) => void;
   testID?: string;
 }
 
-function RecentRequestCardComponent({ request, testID }: RecentRequestCardProps) {
+function RecentRequestCardComponent({ request, onPress, testID }: RecentRequestCardProps) {
   const theme = useTheme();
 
-  const status = presentStatus(request.status);
+  /*
+    The same stage the details screen shows. The summary carries the customer's
+    preference, so a request waiting to be taken says which wait it is —
+    searching when nobody was chosen, awaiting a response when somebody was —
+    exactly as section 20 asks, and never something the status does not say.
+  */
+  const dispatch: RequestDispatch = request.preferredVendor ? 'directed' : 'open';
+  const status = presentRequestState(requestStateOf(request.status, dispatch));
   const priority = presentPriority(request.priority);
   const raised = formatRequestDate(request.createdAt);
   const vendor = request.vendorName ?? COPY.vendorPending;
@@ -65,19 +78,30 @@ function RecentRequestCardComponent({ request, testID }: RecentRequestCardProps)
     [request.serviceName, status.label, vendor, priority.label, raised, reference],
   );
 
+  const open = useCallback(() => {
+    onPress(request.id);
+  }, [onPress, request.id]);
+
   return (
-    <Card bordered shadow="sm" testID={testID}>
+    <Card
+      bordered
+      shadow="sm"
+      onPress={open}
+      // The card is the button, so the card carries the whole sentence.
+      accessibilityLabel={spokenLabel}
+      accessibilityHint={COPY.openHint}
+      testID={testID}>
       {/*
-        The grouping node sits inside the card rather than on it, because Card is
-        a surface and takes no accessibility grouping props. One node either way:
-        announced as a request, not as a pile of words that happen to sit near
-        each other.
+        Hidden from assistive technology, not from the eye.
+
+        The button above already says everything drawn here. Left exposed, the
+        status badge — which groups itself — would be a second focus stop inside
+        the card announcing a word the card has just said.
       */}
       <View
         style={{ gap: theme.spacing.sm }}
-        accessible
-        accessibilityRole="text"
-        accessibilityLabel={spokenLabel}>
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants">
         <View style={[styles.headline, { gap: theme.spacing.sm }]}>
           <Text variant="bodyStrong" numberOfLines={1} style={styles.shrinks}>
             {request.serviceName}
@@ -124,9 +148,13 @@ function RecentRequestCardComponent({ request, testID }: RecentRequestCardProps)
           </View>
         </View>
 
-        <Text variant="caption" color="textTertiary">
-          {reference}
-        </Text>
+        <View style={[styles.footer, { gap: theme.spacing.sm }]}>
+          <Text variant="caption" color="textTertiary">
+            {reference}
+          </Text>
+          {/* Affordance only; the card is the target. */}
+          <Icon name="forward" size="sm" color="textTertiary" />
+        </View>
       </View>
     </Card>
   );

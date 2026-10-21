@@ -2,55 +2,16 @@
  * The presentation layer's only real responsibility is to survive a backend it
  * does not fully know.
  *
- * PROJECT_BIBLE.md section 21 says the frontend must never invent a status, so
- * these tests care much less about the copy chosen for the states we do know
- * than about what happens to a state we do not: it must render, it must not
- * claim a tone it has not earned, and it must never be blank.
+ * Priorities and dates live here. Statuses moved to `requestStatus.ts`, whose own
+ * tests cover them, when what a status means to a customer came to depend on more
+ * than the status alone.
  */
 
 import {
   formatRequestDate,
   humaniseToken,
   presentPriority,
-  presentStatus,
 } from '@/features/customer/constants/requestPresentation';
-
-describe('presentStatus', () => {
-  it('gives every roadmap status a word and a glyph, not only a tone', () => {
-    const statuses = [
-      'CREATED',
-      'PENDING_VENDOR',
-      'ACCEPTED',
-      'IN_PROGRESS',
-      'COMPLETED',
-      'CLOSED',
-      'REJECTED',
-      'CANCELLED',
-      'ON_HOLD',
-    ];
-
-    for (const status of statuses) {
-      const presented = presentStatus(status);
-
-      expect(presented.label.length).toBeGreaterThan(0);
-      // Never the raw constant: a customer should not be shown a database value.
-      expect(presented.label).not.toBe(status);
-      expect(presented.icon.length).toBeGreaterThan(0);
-    }
-  });
-
-  it('renders a status it has never heard of instead of failing', () => {
-    const presented = presentStatus('AWAITING_PARTS');
-
-    expect(presented.label).toBe('Awaiting parts');
-    // Neutral, because an unknown state has not earned alarm or reassurance.
-    expect(presented.tone).toBe('neutral');
-  });
-
-  it('is not thrown by the backend changing its mind about case or padding', () => {
-    expect(presentStatus(' in_progress ').label).toBe(presentStatus('IN_PROGRESS').label);
-  });
-});
 
 describe('presentPriority', () => {
   it('uses the human labels the roadmap asks for', () => {

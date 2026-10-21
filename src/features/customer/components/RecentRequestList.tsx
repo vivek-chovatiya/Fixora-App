@@ -16,9 +16,26 @@
  * history costs the user a summary; the categories above and the primary action
  * at the top are untouched, and a page that blanked itself over a missing
  * summary would be a worse screen than one that admits the gap.
+ *
+ * ⚠️ Two regions, never one updated into the other. While loading, a region
+ * named for the wait and marked busy — one "Loading recent requests, busy",
+ * not a word per placeholder. Loaded, failed or empty, a plain container with
+ * no name, role or state: the section heading above names it, and a labelled
+ * view that cannot be pressed is a TalkBack stop of its own that says the
+ * heading again.
+ *
+ * They carry different `key`s, and that is the fix. Seen on device: the loaded
+ * section announced itself as the bare word "busy" (`content-desc="busy"`). The
+ * placeholders and the cards were two `View`s at the same place in the tree, so
+ * React updated one into the other rather than replacing it — and a prop that
+ * becomes undefined is not an instruction to unset, so the loading view's
+ * `busy` outlived it. Stating the label and the state on every render cleared
+ * `busy` but kept the extra stop; a different key makes React replace the
+ * native view, so the loaded one has nothing left over to forget. (The old
+ * `progressbar` role went the same way.)
  */
 
-import React, { memo } from 'react';
+import React, { memo, type ReactNode } from 'react';
 import { View } from 'react-native';
 
 import { RecentRequestCard } from '@/features/customer/components/RecentRequestCard';
@@ -43,6 +60,8 @@ export interface RecentRequestListProps {
   onRetry: () => void;
   /** The empty state's way out, which is the screen's primary action. */
   onRequestService: () => void;
+  /** Opens one request, by identifier (section 23: request card → request details). */
+  onOpenRequest: (requestId: string) => void;
   testID?: string;
 }
 
@@ -52,28 +71,25 @@ function RecentRequestListComponent({
   error,
   onRetry,
   onRequestService,
+  onOpenRequest,
   testID,
 }: RecentRequestListProps) {
   const theme = useTheme();
 
+  let content: ReactNode;
+
   if (isLoading) {
-    return (
-      <View
-        style={{ gap: theme.spacing.md }}
-        // Announced once for the section rather than once per rectangle.
-        accessibilityRole="progressbar"
-        accessibilityLabel={COPY.recentTitle}
-        accessibilityState={{ busy: true }}
-        testID={testID ? `${testID}-loading` : undefined}>
+    content = (
+      // Silent itself: the region around it says, once, that the section is
+      // loading — not once per rectangle.
+      <View style={{ gap: theme.spacing.md }} testID={testID ? `${testID}-loading` : undefined}>
         {Array.from({ length: PLACEHOLDER_COUNT }, (_, index) => (
           <Skeleton key={index} height={CARD_HEIGHT} radiusToken="lg" />
         ))}
       </View>
     );
-  }
-
-  if (error) {
-    return (
+  } else if (error) {
+    content = (
       <ErrorState
         error={error}
         onRetry={onRetry}
@@ -81,10 +97,8 @@ function RecentRequestListComponent({
         testID={testID ? `${testID}-error` : undefined}
       />
     );
-  }
-
-  if (!requests || requests.length === 0) {
-    return (
+  } else if (!requests || requests.length === 0) {
+    content = (
       <EmptyState
         title={COPY.recentEmptyTitle}
         message={COPY.recentEmptyMessage}
@@ -95,17 +109,31 @@ function RecentRequestListComponent({
         testID={testID ? `${testID}-empty` : undefined}
       />
     );
+  } else {
+    content = requests.map(request => (
+      <RecentRequestCard
+        key={request.id}
+        request={request}
+        onPress={onOpenRequest}
+        testID={`recent-request-${request.id}`}
+      />
+    ));
   }
 
-  return (
-    <View style={{ gap: theme.spacing.md }} testID={testID}>
-      {requests.map(request => (
-        <RecentRequestCard
-          key={request.id}
-          request={request}
-          testID={`recent-request-${request.id}`}
-        />
-      ))}
+  // Two keys, so the loading region is replaced rather than updated — see the
+  // note at the top of this file.
+  return isLoading ? (
+    <View
+      key="loading"
+      style={{ gap: theme.spacing.md }}
+      accessibilityLabel={COPY.recentLoadingLabel}
+      accessibilityState={{ busy: true }}
+      testID={testID}>
+      {content}
+    </View>
+  ) : (
+    <View key="settled" style={{ gap: theme.spacing.md }} testID={testID}>
+      {content}
     </View>
   );
 }

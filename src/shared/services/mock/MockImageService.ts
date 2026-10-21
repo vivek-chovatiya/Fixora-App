@@ -26,9 +26,20 @@ const log = createLogger('MockImageService');
 
 const UPLOAD_STEPS = 5;
 
+/**
+ * Different on every launch, so no two launches hand out the same picture URL.
+ *
+ * ⚠️ `mockId` counts from 1 again each time the app starts, and an uploaded
+ * picture's URL is its preview's. Seeded by the id alone, the first photo of
+ * every launch was `…/seed/img_1/…` — the same URL as a photo stored on an
+ * earlier launch, which a shop-image list already holding it would refuse or
+ * mistake for itself, and which a resumed request draft would draw twice.
+ */
+const LAUNCH = Date.now().toString(36);
+
 /** Placeholder imagery. Requires connectivity; mock-phase only. */
 function placeholderUri(id: string): string {
-  return `https://picsum.photos/seed/${id}/800/600`;
+  return `https://picsum.photos/seed/${LAUNCH}-${id}/800/600`;
 }
 
 function createAsset(): ImageAsset {

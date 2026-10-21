@@ -18,7 +18,7 @@
  * the request-creation seam, which is registered as a route and nothing more.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import { FlatList, StyleSheet, View, type ListRenderItemInfo } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
@@ -28,6 +28,7 @@ import { CUSTOMER_COPY } from '@/features/customer/constants/customerCopy';
 import { useSubCategories } from '@/features/customer/hooks/useSubCategories';
 import type { CustomerStackParamList } from '@/navigation/types';
 import { BackButton, EmptyState, ErrorState, Screen, Text } from '@/shared/components';
+import { useAnalytics } from '@/shared/hooks/useAnalytics';
 import type { SubCategory } from '@/shared/services/types/CategoryService';
 import { useTheme } from '@/shared/theme';
 
@@ -40,16 +41,8 @@ const ROW_HEIGHT = 72;
 
 type Props = NativeStackScreenProps<CustomerStackParamList, 'SubCategories'>;
 
-/**
- * What occupies one line of the list.
- *
- * Two kinds rather than a nullable service, because a placeholder is not a
- * service with missing fields — it is a different thing that happens to take up
- * the same room.
- */
-type Line =
-  | { kind: 'service'; key: string; service: SubCategory }
-  | { kind: 'placeholder'; key: string };
+/** One identity for "nothing to list", so the list is not handed a new array every render. */
+const NO_SERVICES: readonly SubCategory[] = Object.freeze([]);
 
 export function SubCategoriesScreen({ navigation, route }: Props) {
   const theme = useTheme();
@@ -57,49 +50,36 @@ export function SubCategoriesScreen({ navigation, route }: Props) {
   const { services, categoryName } = useSubCategories(categoryId);
 
   const { data, isLoading, isRefreshing, error, retry, refresh } = services;
+  const { track } = useAnalytics();
 
   const openRequest = useCallback(
     (subCategoryId: string) => {
+      // Section 54's `subcategory_selected`: the same two identifiers the route
+      // carries, and nothing the row displayed.
+      track('subcategory_selected', { categoryId, subCategoryId });
       // Both identifiers, and only identifiers. Request creation needs to know
       // which service was chosen and which category it came from; it can ask the
       // backend what either of them means.
       navigation.navigate('CreateRequest', { categoryId, subCategoryId });
     },
-    [navigation, categoryId],
+    [navigation, categoryId, track],
   );
 
-  const lines = useMemo<Line[]>(() => {
-    if (isLoading) {
-      return Array.from({ length: PLACEHOLDER_COUNT }, (_, index) => ({
-        kind: 'placeholder' as const,
-        key: `placeholder-${index}`,
-      }));
-    }
+  // Nothing listed while the first read runs: the placeholders are the loading
+  // region's, in the empty slot below, not rows of the list.
+  const listed = isLoading ? NO_SERVICES : (data ?? NO_SERVICES);
 
-    return (data ?? []).map(service => ({
-      kind: 'service' as const,
-      key: service.id,
-      service,
-    }));
-  }, [data, isLoading]);
-
-  const renderLine = useCallback(
-    ({ item }: ListRenderItemInfo<Line>) => {
-      if (item.kind === 'placeholder') {
-        return <Skeleton height={ROW_HEIGHT} radiusToken="lg" />;
-      }
-
-      return (
-        <SubCategoryRow
-          name={item.service.name}
-          description={item.service.description}
-          iconGlyph={item.service.iconGlyph}
-          accessibilityHint={COPY.itemHint}
-          onPress={() => openRequest(item.service.id)}
-          testID={`sub-category-${item.service.id}`}
-        />
-      );
-    },
+  const renderService = useCallback(
+    ({ item }: ListRenderItemInfo<SubCategory>) => (
+      <SubCategoryRow
+        name={item.name}
+        description={item.description}
+        iconGlyph={item.iconGlyph}
+        accessibilityHint={COPY.itemHint}
+        onPress={() => openRequest(item.id)}
+        testID={`sub-category-${item.id}`}
+      />
+    ),
     [openRequest],
   );
 
@@ -117,6 +97,24 @@ export function SubCategoriesScreen({ navigation, route }: Props) {
       <Text variant="subtitle" color="textSecondary">
         {COPY.subtitle}
       </Text>
+    </View>
+  );
+
+  /*
+    The wait, as a region of its own: named for it and busy, keyed so that it is
+    replaced rather than updated into what follows — see the note on the list's
+    empty slot below.
+  */
+  const waiting = (
+    <View
+      key="loading"
+      style={{ gap: theme.spacing.md }}
+      accessibilityLabel={COPY.loadingLabel}
+      accessibilityState={{ busy: true }}
+      testID="sub-categories-loading">
+      {Array.from({ length: PLACEHOLDER_COUNT }, (_, index) => (
+        <Skeleton key={index} height={ROW_HEIGHT} radiusToken="lg" />
+      ))}
     </View>
   );
 
@@ -142,18 +140,30 @@ export function SubCategoriesScreen({ navigation, route }: Props) {
       }
       testID="customer-sub-categories">
       <FlatList
-        data={lines}
-        keyExtractor={line => line.key}
-        renderItem={renderLine}
+        data={listed}
+        keyExtractor={service => service.id}
+        renderItem={renderService}
         ListHeaderComponent={heading}
         /*
-          Failure and emptiness are both "the list has nothing in it", so both
-          live here rather than replacing the list — which would take the heading
-          with them and leave the screen without its own name at the moment the
-          user most needs to know where they are.
+          Waiting, failure and emptiness are all "the list has nothing in it", so
+          all three live here rather than replacing the list — which would take
+          the heading with them and leave the screen without its own name at the
+          moment the user most needs to know where they are.
+
+          ⚠️ The wait is a region of its own: named for it and busy, with a
+          `key`, so it is replaced — never updated into what follows. Found on
+          device, twice: a list carrying a state but no label reported the state
+          as its name ("busy"), and dropping the state once loaded did not clear
+          it, because the view was updated in place and a prop that becomes
+          undefined is not an instruction to unset. Stating a label and the
+          state on the list in every render cleared it, but the loaded list's
+          label was the category's name — the heading's own words, read again as
+          a stop of its own. Now the list itself carries neither, ever.
         */
         ListEmptyComponent={
-          error ? (
+          isLoading ? (
+            waiting
+          ) : error ? (
             <ErrorState error={error} onRetry={retry} testID="sub-categories-error" />
           ) : (
             <EmptyState
@@ -175,20 +185,6 @@ export function SubCategoriesScreen({ navigation, route }: Props) {
         showsVerticalScrollIndicator={false}
         onRefresh={refresh}
         refreshing={isRefreshing}
-        /*
-          Named in both states, and busy stated in both states.
-
-          Found on device, twice. A list carrying a state but no label reports
-          the state as its name, so the region announced itself as "busy"; and
-          dropping the state once loading finished did not clear it, because the
-          view is updated rather than remounted and a prop that becomes undefined
-          is not an instruction to unset the old value. Both halves have to be
-          present on every render for either to be true.
-        */
-        accessibilityLabel={
-          isLoading ? COPY.loadingLabel : (categoryName ?? COPY.fallbackTitle)
-        }
-        accessibilityState={{ busy: isLoading }}
         testID="sub-categories-list"
       />
     </Screen>

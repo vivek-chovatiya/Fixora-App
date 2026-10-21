@@ -21,7 +21,7 @@
  * somebody asks for the camera and not before.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AppConfig } from '@/core/config/AppConfig';
 import { CUSTOMER_COPY } from '@/features/customer/constants/customerCopy';
@@ -36,12 +36,27 @@ const COPY = CUSTOMER_COPY.createRequest;
 
 /** One attached photograph and how far its upload has got. */
 export interface RequestPhoto {
-  asset: ImageAsset;
+  /** Stable across compression, upload retries and a restored draft. */
+  id: string;
+  /**
+   * What the thumbnail draws: the local file while it is being uploaded, the
+   * remote URL once a draft has been resumed and the local file is long gone.
+   */
+  previewUri: string;
   status: UploadStatus;
   /** 0-1, as reported by the image service. */
   progress: number;
   /** Set once the upload succeeds. This, and only this, reaches the payload. */
   remoteUrl?: string;
+  /**
+   * The picked file.
+   *
+   * Absent for a photograph restored from a saved draft: the device file it came
+   * from may not exist any more, and it does not need to — the upload finished
+   * before the draft was written, so there is nothing left to do with it but
+   * draw it and possibly remove it.
+   */
+  asset?: ImageAsset;
 }
 
 export interface RequestPhotos {
@@ -60,8 +75,8 @@ export interface RequestPhotos {
    */
   notice: string | null;
   add: (source: ImageSource) => void;
-  remove: (assetId: string) => void;
-  retry: (assetId: string) => void;
+  remove: (id: string) => void;
+  retry: (id: string) => void;
 }
 
 const MAX_PHOTOS = AppConfig.image.maxUploadsPerRequest;
@@ -70,8 +85,27 @@ function fill(template: string, count: number): string {
   return template.replace('{count}', String(count));
 }
 
-export function useRequestPhotos(): RequestPhotos {
-  const [photos, setPhotos] = useState<readonly RequestPhoto[]>([]);
+/**
+ * Rebuilds the photographs a saved draft finished uploading.
+ *
+ * A URL is enough to draw one and enough to send one, which is all a restored
+ * photograph is ever asked to do. Its id is the URL for want of anything more
+ * stable, which is fine because it is unique by construction.
+ */
+function restore(urls: readonly string[]): RequestPhoto[] {
+  return urls.map(url => ({
+    id: url,
+    previewUri: url,
+    status: 'success' as UploadStatus,
+    progress: 1,
+    remoteUrl: url,
+  }));
+}
+
+export function useRequestPhotos(initialUrls: readonly string[] = []): RequestPhotos {
+  // Seeded once. Later changes to the draft come from this hook, so re-reading
+  // it would fight whatever the customer is doing right now.
+  const [photos, setPhotos] = useState<readonly RequestPhoto[]>(() => restore(initialUrls));
   const [notice, setNotice] = useState<string | null>(null);
 
   const mountedRef = useRef(true);
@@ -83,13 +117,11 @@ export function useRequestPhotos(): RequestPhotos {
   }, []);
 
   /** Applies a change to one photo, leaving the rest and the order alone. */
-  const patch = useCallback((assetId: string, change: Partial<RequestPhoto>) => {
+  const patch = useCallback((id: string, change: Partial<RequestPhoto>) => {
     if (!mountedRef.current) {
       return;
     }
-    setPhotos(current =>
-      current.map(photo => (photo.asset.id === assetId ? { ...photo, ...change } : photo)),
-    );
+    setPhotos(current => current.map(photo => (photo.id === id ? { ...photo, ...change } : photo)));
   }, []);
 
   const upload = useCallback(
@@ -202,7 +234,13 @@ export function useRequestPhotos(): RequestPhotos {
 
         setPhotos(current => [
           ...current,
-          ...accepted.map(asset => ({ asset, status: 'idle' as UploadStatus, progress: 0 })),
+          ...accepted.map(asset => ({
+            id: asset.id,
+            previewUri: asset.uri,
+            status: 'idle' as UploadStatus,
+            progress: 0,
+            asset,
+          })),
         ]);
 
         await Promise.all(accepted.map(asset => upload(asset, false)));
@@ -211,7 +249,7 @@ export function useRequestPhotos(): RequestPhotos {
     [photos.length, upload],
   );
 
-  const remove = useCallback((assetId: string) => {
+  const remove = useCallback((id: string) => {
     setNotice(null);
 
     /*
@@ -224,33 +262,62 @@ export function useRequestPhotos(): RequestPhotos {
       backend and not a reason to put a photo back on a form someone just took
       it off.
     */
-    setPhotos(current => current.filter(photo => photo.asset.id !== assetId));
+    setPhotos(current => {
+      const target = current.find(photo => photo.id === id);
 
-    void getService('image')
-      .remove(assetId)
-      .catch(() => undefined);
+      /*
+        Only a photograph this session picked can be withdrawn from the service,
+        because only that one has an asset id the service would recognise. One
+        restored from a saved draft leaves its uploaded copy behind — the same
+        housekeeping the backend already has to do for a failed removal.
+      */
+      if (target?.asset) {
+        void getService('image')
+          .remove(target.asset.id)
+          .catch(() => undefined);
+      }
+
+      return current.filter(photo => photo.id !== id);
+    });
   }, []);
 
   const retry = useCallback(
-    (assetId: string) => {
+    (id: string) => {
       setNotice(null);
 
-      const target = photos.find(photo => photo.asset.id === assetId);
-      if (target) {
+      // A restored photograph has no asset and cannot have failed — it was
+      // uploaded before the draft was written — so there is nothing to retry.
+      const target = photos.find(photo => photo.id === id);
+      if (target?.asset) {
         void upload(target.asset, true);
       }
     },
     [photos, upload],
   );
 
+  /*
+    Derived once per change, not once per render.
+
+    `uploadedUrls` is a new array every time it is built, so a caller with an
+    effect watching it would re-run on every render — and if that effect writes
+    anything back, it re-renders and runs again. That is not hypothetical: it is
+    what an autosave on this value did before this memo existed.
+  */
+  const derived = useMemo(
+    () => ({
+      uploadedUrls: photos
+        .map(photo => photo.remoteUrl)
+        .filter((url): url is string => url !== undefined),
+      isUploading: photos.some(photo => photo.status === 'uploading'),
+      hasFailures: photos.some(photo => photo.status === 'failed'),
+      canAddMore: photos.length < MAX_PHOTOS,
+    }),
+    [photos],
+  );
+
   return {
     photos,
-    uploadedUrls: photos
-      .map(photo => photo.remoteUrl)
-      .filter((url): url is string => url !== undefined),
-    isUploading: photos.some(photo => photo.status === 'uploading'),
-    hasFailures: photos.some(photo => photo.status === 'failed'),
-    canAddMore: photos.length < MAX_PHOTOS,
+    ...derived,
     notice,
     add,
     remove,

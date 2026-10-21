@@ -3,13 +3,14 @@
  * great many others, so this suite is mostly about restraint:
  *
  * - the list is rendered in the backend's order, unsorted and unfiltered
- * - a vendor identifier is submitted and never displayed or spoken
- * - "no preference" produces a payload with no `vendorId` at all — not null,
- *   not an empty string, not a sentinel
+ * - a vendor identifier is captured and never displayed or spoken
  * - an empty or failed vendor list still lets a request through (18A.4)
  *
- * This is also where the create-request payload is proved, because this is the
- * screen that builds it.
+ * And one rule of its own: nobody reaches the summary without answering the
+ * vendor question either way, which section 19 requires and which this screen is
+ * the only place to enforce.
+ *
+ * The payload itself is proved on the confirmation screen, which builds it.
  */
 
 import React from 'react';
@@ -22,9 +23,11 @@ import {
   useRequestDraft,
   type RequestDraft,
 } from '@/features/customer/state/RequestDraftContext';
+import { NO_VENDOR_CHOICE } from '@/features/customer/state/requestDraft';
+import { setRequestDraftStorage } from '@/features/customer/state/requestDraftStorage';
 import { ToastProvider } from '@/shared/components';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
-import type { CreateRequestInput, RequestService } from '@/shared/services/types/RequestService';
+import type { RequestService } from '@/shared/services/types/RequestService';
 import type { EligibleVendor, VendorService } from '@/shared/services/types/VendorService';
 import { ThemeProvider } from '@/shared/theme';
 import { AppError } from '@/shared/types/error';
@@ -68,6 +71,11 @@ const DRAFT: RequestDraft = {
     notes: 'The fan stops after ten minutes.',
   },
   imageUrls: ['https://cdn.example.test/a.jpg'],
+  // The address is already answered by the time this screen is reached; it is
+  // the step before. Without one the flow would send the customer back rather
+  // than forward, which is a different screen's test.
+  address: { formattedAddress: '412, 5th Block, Koramangala, Bengaluru 560095' },
+  vendor: NO_VENDOR_CHOICE,
 };
 
 /** A promise a test can leave hanging, so an in-flight state is observable. */
@@ -90,35 +98,39 @@ function DraftSeed({ draft }: { draft: RequestDraft | null }) {
 
 interface Stubs {
   vendors?: (categoryId: string, subCategoryId: string) => Promise<EligibleVendor[]>;
-  createRequest?: (input: CreateRequestInput) => Promise<{
-    id: string;
-    status: string;
-    createdAt: string;
-  }>;
   draft?: RequestDraft | null;
 }
 
-async function render({ vendors, createRequest, draft = DRAFT }: Stubs = {}) {
+async function render({ vendors, draft = DRAFT }: Stubs = {}) {
   const listEligibleVendors = jest.fn(
     vendors ?? (async (_categoryId: string, _subCategoryId: string) => VENDORS),
   );
 
   registerService('vendor', { listEligibleVendors } as VendorService);
 
-  const create = jest.fn(
-    createRequest ??
-      (async (_input: CreateRequestInput) => ({
-        id: 'REQ-9001',
-        status: 'CREATED',
-        createdAt: '2026-09-01T09:00:00.000Z',
-      })),
-  );
+  /*
+    Both throw, and that is the assertion.
 
+    This screen captures a choice; sending is the confirmation screen's job. A
+    stub that resolved would let a regression that submitted from here pass every
+    test in this file.
+  */
   registerService('request', {
     listRecentRequests: jest.fn(() => {
       throw new Error('listRecentRequests must not be called from vendor selection');
     }),
-    createRequest: create,
+    createRequest: jest.fn(() => {
+      throw new Error('createRequest must not be called from vendor selection');
+    }),
+    getRequest: jest.fn(() => {
+      throw new Error('getRequest must not be called from vendor selection');
+    }),
+    listRequests: jest.fn(() => {
+      throw new Error('listRequests must not be called from vendor selection');
+    }),
+    cancelRequest: jest.fn(() => {
+      throw new Error('cancelRequest must never be called from vendor selection');
+    }),
   } as RequestService);
 
   const goBack = jest.fn();
@@ -170,10 +182,8 @@ async function render({ vendors, createRequest, draft = DRAFT }: Stubs = {}) {
     goBack,
     navigate,
     popToTop,
-    create,
     listEligibleVendors,
     text: () => textOf(renderer.toJSON()),
-    payload: () => create.mock.calls[create.mock.calls.length - 1]?.[0],
     option,
     /** Selects a vendor or "no preference" by the start of its spoken name. */
     choose: async (label: string) => tap(option(label), label),
@@ -194,6 +204,24 @@ async function render({ vendors, createRequest, draft = DRAFT }: Stubs = {}) {
     },
     byTestID: (id: string) =>
       renderer.root.findAll(node => typeof node.type === 'string' && node.props?.testID === id),
+    /**
+     * The testID of every native view on screen that says it is busy.
+     *
+     * Ids, not the nodes: a failed match on a test instance makes jest print it,
+     * and printing one walks the whole fiber tree — the run never finishes.
+     */
+    busy: () =>
+      renderer.root
+        .findAll(
+          node => typeof node.type === 'string' && node.props?.accessibilityState?.busy === true,
+        )
+        .map(node => node.props.testID as string | undefined),
+    /**
+     * Whether this very node is still drawn. A view React updated in place is
+     * the same node with new props; a replaced one is gone from the tree.
+     */
+    inTree: (target: ReactTestRenderer.ReactTestInstance) =>
+      renderer.root.findAll(node => node === target).length > 0,
   };
 }
 
@@ -218,6 +246,15 @@ function textOf(node: ReactTestRendererJSON | ReactTestRendererJSON[] | null): s
  * happens when a customer navigates away.
  */
 const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
+
+beforeEach(() => {
+  // The seed comes from DraftSeed, not from the device.
+  setRequestDraftStorage({
+    read: async () => null,
+    write: async () => true,
+    clear: async () => undefined,
+  });
+});
 
 afterEach(() => {
   for (const renderer of mounted.splice(0)) {
@@ -334,116 +371,148 @@ describe('PreferredVendorScreen — choosing', () => {
     expect(isSelected(COPY.noPreferenceTitle)).toBe(false);
   });
 
-  it('will not submit until one of the two outcomes has been chosen', async () => {
-    const { press, create, text } = await render();
+  it('will not go on until one of the two outcomes has been chosen', async () => {
+    const { press, navigate, text } = await render();
 
     await press(COPY.submit);
 
-    expect(create).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
     expect(text()).toContain(COPY.chooseFirst);
   });
-});
 
-describe('PreferredVendorScreen — the payload', () => {
-  it('sends the chosen vendor identifier', async () => {
-    const { choose, press, payload } = await render();
+  it('says nothing about the missing choice until Continue is pressed', async () => {
+    const { text } = await render();
+
+    expect(text()).not.toContain(COPY.chooseFirst);
+  });
+
+  it('goes on to the summary once a vendor is chosen', async () => {
+    const { choose, press, navigate } = await render();
 
     await choose('Zenith Electricals');
     await press(COPY.submit);
 
-    expect(payload().vendorId).toBe('ven_zenith');
-  });
-
-  it('omits vendorId entirely for open dispatch — not null, not a sentinel', async () => {
-    const { choose, press, payload } = await render();
-
-    await choose(COPY.noPreferenceTitle);
-    await press(COPY.submit);
-
-    const sent = payload();
-    expect(sent.vendorId).toBeUndefined();
-    expect(sent.vendorId).not.toBeNull();
-
-    // Section 18A: absence is the message. Any of these would be the app
-    // inventing a vendor identity the backend would have to recognise.
-    const serialised = JSON.stringify(sent);
-    expect(serialised).not.toContain('"vendorId"');
-    expect(serialised).not.toContain('none');
-    expect(serialised).not.toContain('any');
-    expect(serialised).not.toContain('noPreference');
-  });
-
-  it('sends exactly the fields the contract defines and nothing else', async () => {
-    const { choose, press, payload } = await render();
-
-    await choose('Zenith Electricals');
-    await press(COPY.submit);
-
-    expect(Object.keys(payload()).sort()).toEqual([
-      'categoryId',
-      'imageUrls',
-      'notes',
-      'preferredDate',
-      'preferredTime',
-      'priority',
-      'subCategoryId',
-      'vendorId',
-    ]);
-  });
-
-  it('sends nothing the vendor card displayed except the identifier', async () => {
-    const { choose, press, payload } = await render();
-
-    await choose('Zenith Electricals');
-    await press(COPY.submit);
-
-    const serialised = JSON.stringify(payload());
-    expect(serialised).not.toContain('Zenith Electricals');
-    expect(serialised).not.toContain('4.8');
-    expect(serialised).not.toContain('126');
-    expect(serialised).not.toContain('2 km away');
-    expect(serialised).not.toContain('Available today');
-  });
-
-  it('carries the details drafted on the previous screen, translated for the wire', async () => {
-    const { choose, press, payload } = await render();
-
-    await choose(COPY.noPreferenceTitle);
-    await press(COPY.submit);
-
-    expect(payload()).toMatchObject({
+    expect(navigate).toHaveBeenCalledWith('RequestConfirmation', {
       categoryId: CATEGORY_ID,
       subCategoryId: SUB_CATEGORY_ID,
-      priority: 'HIGH',
-      preferredDate: '2026-09-09',
-      preferredTime: '09:00',
-      notes: 'The fan stops after ten minutes.',
-      imageUrls: ['https://cdn.example.test/a.jpg'],
     });
   });
 
-  it('sends no address, which has no contract yet', async () => {
-    const { choose, press, payload } = await render();
+  it('goes on to the summary once no preference is chosen', async () => {
+    const { choose, press, navigate } = await render();
 
     await choose(COPY.noPreferenceTitle);
     await press(COPY.submit);
 
-    expect(payload()).not.toHaveProperty('address');
-    expect(payload()).not.toHaveProperty('addressId');
+    expect(navigate).toHaveBeenCalledWith('RequestConfirmation', {
+      categoryId: CATEGORY_ID,
+      subCategoryId: SUB_CATEGORY_ID,
+    });
+  });
+
+  it('opens on the answer a resumed draft already carried', async () => {
+    const { isSelected } = await render({
+      draft: { ...DRAFT, vendor: { kind: 'vendor', vendorId: 'ven_apex' } },
+    });
+
+    expect(isSelected('Apex Repairs')).toBe(true);
+    expect(isSelected(COPY.noPreferenceTitle)).toBe(false);
   });
 });
 
 describe('PreferredVendorScreen — states of the list', () => {
   it('holds the page shape while vendors load, and says it is loading', async () => {
-    const { byTestID, renderer } = await render({ vendors: () => pending() });
+    const { byTestID, busy } = await render({ vendors: () => pending() });
 
     expect(byTestID('preferred-vendor-heading').length).toBeGreaterThan(0);
 
-    const [list] = renderer.root.findAll(
-      node => typeof node.type === 'string' && node.props?.testID === 'preferred-vendor-list',
-    );
-    expect(list.props.accessibilityState.busy).toBe(true);
-    expect(list.props.accessibilityLabel).toBe(COPY.loadingLabel);
+    // One region says the wait once, named and busy — not the list itself.
+    const [region] = byTestID('preferred-vendor-loading');
+    expect(region.props.accessibilityLabel).toBe(COPY.loadingLabel);
+    expect(region.props.accessibilityState).toEqual({ busy: true });
+    expect(busy()).toEqual(['preferred-vendor-loading']);
+
+    const [list] = byTestID('preferred-vendor-list');
+    expect(list.props.accessibilityLabel).toBeUndefined();
+    expect(list.props.accessibilityState).toBeUndefined();
+    expect(list.props.accessibilityRole).toBeUndefined();
+  });
+
+  it('replaces the busy region once the vendors land, and leaves the list unnamed', async () => {
+    // The list used to be named on every render — "Loading professionals",
+    // then "Available professionals" — so loaded, TalkBack stopped on it to say
+    // what the heading and subtitle had just said. Now the wait is its own
+    // region, and it is gone, not updated, when the vendors arrive.
+    let answer!: (vendors: EligibleVendor[]) => void;
+    const { byTestID, busy, text } = await render({
+      vendors: () => new Promise<EligibleVendor[]>(resolve => (answer = resolve)),
+    });
+
+    const [waiting] = byTestID('preferred-vendor-loading');
+    expect(waiting.props.accessibilityState).toEqual({ busy: true });
+
+    await act(async () => {
+      answer(VENDORS);
+    });
+
+    expect(text()).toContain('Zenith Electricals');
+    // Not hidden or emptied: no longer in the tree at all, so its busy cannot outlive it.
+    expect(byTestID('preferred-vendor-loading')).toHaveLength(0);
+    const [list] = byTestID('preferred-vendor-list');
+    expect(list === waiting).toBe(false);
+    expect(list.props.accessibilityLabel).toBeUndefined();
+    expect(list.props.accessibilityState).toBeUndefined();
+    expect(list.props.accessibilityRole).toBeUndefined();
+    // Nothing anywhere on the loaded screen still says busy.
+    expect(busy()).toEqual([]);
+  });
+
+  it('replaces the busy region with the failure, and the failure with it on Try again', async () => {
+    // The failure here is a plain view in the same slot. Were the two not
+    // keyed apart, React would update one into the other, and on Android the
+    // native view can keep `busy` after the state has gone from its props.
+    let calls = 0;
+    let fail!: (error: AppError) => void;
+    let answer!: (vendors: EligibleVendor[]) => void;
+    const { byTestID, busy, inTree, press } = await render({
+      vendors: () => {
+        calls += 1;
+        return calls === 1
+          ? new Promise<EligibleVendor[]>((_, reject) => (fail = reject))
+          : new Promise<EligibleVendor[]>(resolve => (answer = resolve));
+      },
+    });
+
+    const [waiting] = byTestID('preferred-vendor-loading');
+
+    await act(async () => {
+      fail(new AppError({ kind: 'network', message: 'socket hang up' }));
+    });
+
+    const [failure] = byTestID('preferred-vendor-error');
+    expect(failure).toBeDefined();
+    expect(inTree(waiting)).toBe(false);
+    expect(busy()).toEqual([]);
+
+    // The view around the failure, which the next wait must replace, not become.
+    let around = failure.parent;
+    while (around && typeof around.type !== 'string') {
+      around = around.parent;
+    }
+    expect(around).not.toBeNull();
+
+    await press('Try again');
+
+    const [again] = byTestID('preferred-vendor-loading');
+    expect(again.props.accessibilityLabel).toBe(COPY.loadingLabel);
+    expect(busy()).toEqual(['preferred-vendor-loading']);
+    expect(inTree(around as ReactTestRenderer.ReactTestInstance)).toBe(false);
+
+    await act(async () => {
+      answer(VENDORS);
+    });
+
+    expect(busy()).toEqual([]);
   });
 
   it('keeps no preference available while vendors are still loading', async () => {
@@ -455,23 +524,28 @@ describe('PreferredVendorScreen — states of the list', () => {
   });
 
   it('treats an empty list as normal, and still lets the request through', async () => {
-    const { text, byTestID, choose, press, create, payload } = await render({
+    const { text, byTestID, choose, press, navigate, busy } = await render({
       vendors: async () => [],
     });
 
     expect(byTestID('preferred-vendor-empty').length).toBeGreaterThan(0);
     expect(text()).toContain(COPY.emptyMessage);
+    // Its own words, under a list that is still no stop of its own.
+    expect(byTestID('preferred-vendor-loading')).toHaveLength(0);
+    const [list] = byTestID('preferred-vendor-list');
+    expect(list.props.accessibilityLabel).toBeUndefined();
+    expect(list.props.accessibilityState).toBeUndefined();
+    expect(busy()).toEqual([]);
 
     // Section 18A.4: an empty vendor list must never block submission.
     await choose(COPY.noPreferenceTitle);
     await press(COPY.submit);
 
-    expect(create).toHaveBeenCalledTimes(1);
-    expect(payload().vendorId).toBeUndefined();
+    expect(navigate).toHaveBeenCalledWith('RequestConfirmation', expect.anything());
   });
 
   it('keeps the heading and the way forward when the list fails', async () => {
-    const { byTestID, text, choose, press, create } = await render({
+    const { byTestID, text, choose, press, navigate, busy } = await render({
       vendors: async () => {
         throw new AppError({
           kind: 'network',
@@ -485,11 +559,17 @@ describe('PreferredVendorScreen — states of the list', () => {
     // "no preference" option with it.
     expect(byTestID('preferred-vendor-heading').length).toBeGreaterThan(0);
     expect(text()).toContain(COPY.errorFallback);
+    // Its own words, under a list that is still no stop of its own.
+    expect(byTestID('preferred-vendor-loading')).toHaveLength(0);
+    const [list] = byTestID('preferred-vendor-list');
+    expect(list.props.accessibilityLabel).toBeUndefined();
+    expect(list.props.accessibilityState).toBeUndefined();
+    expect(busy()).toEqual([]);
 
     // Section 18A.4: a failed vendor list must never block submission either.
     await choose(COPY.noPreferenceTitle);
     await press(COPY.submit);
-    expect(create).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith('RequestConfirmation', expect.anything());
   });
 
   it('never renders a raw failure', async () => {
@@ -526,113 +606,21 @@ describe('PreferredVendorScreen — states of the list', () => {
   });
 });
 
-describe('PreferredVendorScreen — submitting', () => {
-  it('reports itself busy while the call is in flight', async () => {
-    const { choose, press, renderer } = await render({ createRequest: () => pending() });
-
-    await choose('Zenith Electricals');
-    await press(COPY.submit);
-
-    const [button] = renderer.root.findAll(
-      node =>
-        node.props?.accessibilityRole === 'button' &&
-        node.props?.accessibilityLabel === COPY.submit,
-    );
-
-    expect(button.props.accessibilityState.busy).toBe(true);
-    expect(button.props.accessibilityState.disabled).toBe(true);
-  });
-
-  it('sends one request however many times the button is pressed', async () => {
-    const { choose, press, create } = await render({ createRequest: () => pending() });
-
-    await choose('Zenith Electricals');
-    await press(COPY.submit);
-    await press(COPY.submit);
-    await press(COPY.submit);
-
-    expect(create).toHaveBeenCalledTimes(1);
-  });
-
-  it('hands back the reference and leaves the flow, building no confirmation', async () => {
-    const { choose, press, popToTop, navigate, text } = await render();
-
-    await choose(COPY.noPreferenceTitle);
-    await press(COPY.submit);
-
-    expect(text()).toContain('REQ-9001');
-    expect(popToTop).toHaveBeenCalledTimes(1);
-    // There is no success route to navigate to, and none is invented.
-    expect(navigate).not.toHaveBeenCalled();
-  });
-
-  it('keeps the choice and shows only the safe message when creation fails', async () => {
-    const failure = new AppError({
-      kind: 'network',
-      message: 'AxiosError: connect ECONNREFUSED 10.0.0.1:443',
-      userMessage: 'We could not reach Fixora. Check your connection and try again.',
-    });
-
-    const { choose, press, text, isSelected, popToTop } = await render({
-      createRequest: async () => {
-        throw failure;
-      },
-    });
-
-    await choose('Zenith Electricals');
-    await press(COPY.submit);
-
-    expect(text()).toContain(failure.userMessage);
-    expect(text()).not.toContain('ECONNREFUSED');
-    expect(text()).not.toContain('AxiosError');
-    expect(isSelected('Zenith Electricals')).toBe(true);
-    expect(popToTop).not.toHaveBeenCalled();
-  });
-
-  it('retries through Submit, with the same choice', async () => {
-    const createRequest = jest
-      .fn()
-      .mockRejectedValueOnce(new AppError({ kind: 'network', message: 'socket hang up' }))
-      .mockResolvedValueOnce({
-        id: 'REQ-9002',
-        status: 'CREATED',
-        createdAt: '2026-09-01T09:00:00.000Z',
-      });
-
-    const { choose, press, create, payload, popToTop } = await render({ createRequest });
-
-    await choose('Apex Repairs');
-    await press(COPY.submit);
-    expect(create).toHaveBeenCalledTimes(1);
-
-    await press(COPY.submit);
-
-    expect(create).toHaveBeenCalledTimes(2);
-    expect(payload().vendorId).toBe('ven_apex');
-    expect(popToTop).toHaveBeenCalledTimes(1);
-  });
-
-  it('leaves rather than submitting when there is nothing drafted to send', async () => {
-    const { goBack, create } = await render({ draft: null });
-
-    expect(goBack).toHaveBeenCalled();
-    expect(create).not.toHaveBeenCalled();
-  });
-});
-
 describe('PreferredVendorScreen — accessibility', () => {
-  it('announces each option as one checkable choice in a named group', async () => {
+  it('announces each option as one checkable choice, under a list that is no stop of its own', async () => {
     const { option, renderer } = await render();
 
     const zenith = option('Zenith Electricals');
     expect(zenith.props.accessibilityRole).toBe('radio');
     expect(zenith.props.accessibilityState).toMatchObject({ selected: false, checked: false });
 
+    // The heading introduces the choices; a name on the list would be one more
+    // TalkBack stop saying it again.
     const [list] = renderer.root.findAll(
       node => typeof node.type === 'string' && node.props?.testID === 'preferred-vendor-list',
     );
-    expect(list.props.accessibilityLabel).toBe(COPY.optionsLabel);
-    expect(list.props.accessibilityState.busy).toBe(false);
+    expect(list.props.accessibilityLabel).toBeUndefined();
+    expect(list.props.accessibilityState).toBeUndefined();
   });
 
   it('speaks a vendor card as one sentence, not as five loose nodes', async () => {
@@ -688,5 +676,226 @@ describe('PreferredVendorScreen — accessibility', () => {
       )?.minHeight;
       expect(minHeight).toBeGreaterThanOrEqual(44);
     }
+  });
+});
+
+/**
+ * The address step sits in front of this one, which means this screen can now be
+ * reached with an earlier answer missing — and did, on device, silently do
+ * nothing when it was. Its own question gets its own message; anything earlier
+ * gets the screen that asks it.
+ */
+describe('PreferredVendorScreen — when an earlier answer is missing', () => {
+  it('goes back for the address rather than refusing in silence', async () => {
+    const { press, navigate } = await render({
+      draft: { ...DRAFT, address: null, vendor: { kind: 'open' } },
+    });
+
+    await press(COPY.submit);
+
+    // Not a dead button: the vendor question is answered, so this screen has
+    // nothing to say and the useful response is the step that does.
+    expect(navigate).toHaveBeenCalledWith('ServiceAddress', {
+      categoryId: CATEGORY_ID,
+      subCategoryId: SUB_CATEGORY_ID,
+    });
+  });
+
+  it('still answers for its own question first', async () => {
+    const { press, navigate, text } = await render({
+      draft: { ...DRAFT, address: null, vendor: NO_VENDOR_CHOICE },
+    });
+
+    await press(COPY.submit);
+
+    // Both are missing. The one this screen asks is the one it names, and it
+    // does not bounce somebody away from a question they have not answered yet.
+    expect(text()).toContain(COPY.chooseFirst);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('keeps the answer it already had when it sends them back', async () => {
+    const { press, isSelected } = await render({
+      draft: { ...DRAFT, address: null, vendor: { kind: 'open' } },
+    });
+
+    await press(COPY.submit);
+
+    // Going back for a missing answer must not un-answer the one that is here.
+    expect(isSelected(COPY.noPreferenceTitle)).toBe(true);
+  });
+});
+
+/**
+ * Section 54's dispatch decision — the pair section 58 reads to learn whether
+ * customers want to choose a vendor at all. Sent once, when the customer moves
+ * on with an answer, never as cards are tapped; a skip says why, so a list that
+ * was empty, failed or had not arrived is never counted as a customer who saw
+ * vendors and chose none. Identifiers and a reason only: no vendor's name, and
+ * nothing from the draft the customer wrote.
+ */
+describe('PreferredVendorScreen — what analytics is told (section 54)', () => {
+  let track: jest.Mock;
+
+  beforeEach(() => {
+    track = jest.fn();
+    registerService('analytics', { track, identify: jest.fn() });
+  });
+
+  const events = () => track.mock.calls.map(call => call[0] as string);
+
+  /** Nothing the customer wrote, and no name the screen displayed. */
+  function expectNothingPersonal() {
+    const serialised = JSON.stringify(track.mock.calls);
+    for (const value of [
+      'Zenith Electricals',
+      'Apex Repairs',
+      'Bright Spark',
+      DRAFT.values.notes,
+      'Koramangala',
+      'cdn.example.test',
+      '2026-09-09',
+    ]) {
+      expect(serialised).not.toContain(value);
+    }
+  }
+
+  it('counts the vendor the customer moves on with — not each one tapped on the way', async () => {
+    const { choose, press } = await render();
+
+    await choose('Zenith Electricals');
+    await choose('Apex Repairs');
+    expect(track).not.toHaveBeenCalled();
+
+    await press(COPY.submit);
+
+    expect(track).toHaveBeenCalledTimes(1);
+    const [event, properties] = track.mock.calls[0];
+    expect(event).toBe('vendor_selected');
+    expect(Object.keys(properties).sort()).toEqual(['categoryId', 'subCategoryId', 'vendorId']);
+    expect(properties).toEqual({
+      categoryId: CATEGORY_ID,
+      subCategoryId: SUB_CATEGORY_ID,
+      vendorId: 'ven_apex',
+    });
+    expectNothingPersonal();
+  });
+
+  it('counts no preference from a list of vendors as chosen_none', async () => {
+    const { choose, press } = await render();
+
+    await choose(COPY.noPreferenceTitle);
+    await press(COPY.submit);
+
+    expect(events()).toEqual(['vendor_selection_skipped']);
+    const properties = track.mock.calls[0][1];
+    expect(Object.keys(properties).sort()).toEqual(['categoryId', 'reason', 'subCategoryId']);
+    expect(properties).toEqual({
+      categoryId: CATEGORY_ID,
+      subCategoryId: SUB_CATEGORY_ID,
+      reason: 'chosen_none',
+    });
+    expectNothingPersonal();
+  });
+
+  it.each([
+    ['list_empty', 'the list was empty', async () => [] as EligibleVendor[]],
+    [
+      'list_failed',
+      'the list failed',
+      async (): Promise<EligibleVendor[]> => {
+        throw new AppError({ kind: 'network', message: 'ECONNREFUSED 10.0.0.1:443' });
+      },
+    ],
+    ['list_loading', 'the list had not arrived', () => pending<EligibleVendor[]>()],
+  ] as const)('says %s when %s', async (reason, _when, vendors) => {
+    const { choose, press } = await render({ vendors });
+
+    await choose(COPY.noPreferenceTitle);
+    await press(COPY.submit);
+
+    expect(events()).toEqual(['vendor_selection_skipped']);
+    expect(track.mock.calls[0][1]).toEqual({
+      categoryId: CATEGORY_ID,
+      subCategoryId: SUB_CATEGORY_ID,
+      reason,
+    });
+  });
+
+  it('says the list was being read again, not that it failed, while a retry is out', async () => {
+    let calls = 0;
+    const { choose, press } = await render({
+      vendors: () => {
+        calls += 1;
+        if (calls === 1) {
+          return Promise.reject(new AppError({ kind: 'network', message: 'offline' }));
+        }
+        return pending<EligibleVendor[]>();
+      },
+    });
+
+    await press('Try again');
+    await choose(COPY.noPreferenceTitle);
+    await press(COPY.submit);
+
+    expect(track.mock.calls[0][1].reason).toBe('list_loading');
+  });
+
+  it('does not count the same decision twice — a second Continue, or Continue again unchanged', async () => {
+    const { choose, press } = await render();
+
+    await choose('Zenith Electricals');
+    await press(COPY.submit);
+    await press(COPY.submit);
+    // Back from the summary, the same vendor tapped again, and on.
+    await choose('Zenith Electricals');
+    await press(COPY.submit);
+
+    expect(events()).toEqual(['vendor_selected']);
+  });
+
+  it('counts a changed mind as a new decision', async () => {
+    const { choose, press } = await render();
+
+    await choose('Zenith Electricals');
+    await press(COPY.submit);
+    await choose(COPY.noPreferenceTitle);
+    await press(COPY.submit);
+    await choose('Zenith Electricals');
+    await press(COPY.submit);
+
+    expect(events()).toEqual(['vendor_selected', 'vendor_selection_skipped', 'vendor_selected']);
+    expect(track.mock.calls[1][1].reason).toBe('chosen_none');
+  });
+
+  it('counts nothing while the question is unanswered', async () => {
+    const { press, navigate } = await render();
+
+    await press(COPY.submit);
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('counts nothing when it sends the customer back for an earlier answer', async () => {
+    const { press, navigate } = await render({
+      draft: { ...DRAFT, address: null, vendor: { kind: 'vendor', vendorId: 'ven_zenith' } },
+    });
+
+    await press(COPY.submit);
+
+    expect(navigate).toHaveBeenCalledWith('ServiceAddress', expect.anything());
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('counts a resumed answer when the customer moves on with it', async () => {
+    const { press } = await render({
+      draft: { ...DRAFT, vendor: { kind: 'vendor', vendorId: 'ven_bright' } },
+    });
+
+    await press(COPY.submit);
+
+    expect(events()).toEqual(['vendor_selected']);
+    expect(track.mock.calls[0][1].vendorId).toBe('ven_bright');
   });
 });

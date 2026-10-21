@@ -65,12 +65,12 @@ function PhotoAttachmentsComponent({ photos, testID }: PhotoAttachmentsProps) {
           testID={testID ? `${testID}-row` : undefined}>
           {photos.photos.map((photo, index) => (
             <RequestPhotoTile
-              key={photo.asset.id}
+              key={photo.id}
               photo={photo}
               index={index}
               onRemove={photos.remove}
               onRetry={photos.retry}
-              testID={`request-photo-${photo.asset.id}`}
+              testID={`request-photo-${photo.id}`}
             />
           ))}
         </ScrollView>

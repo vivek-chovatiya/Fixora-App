@@ -25,7 +25,7 @@ import { useMemo } from 'react';
 import { useCategories } from '@/features/customer/hooks/useCategories';
 import { useServiceQuery, type UseServiceQueryResult } from '@/shared/hooks/useServiceQuery';
 import { getService } from '@/shared/services/ServiceRegistry';
-import type { SubCategory } from '@/shared/services/types/CategoryService';
+import type { ServiceCategory, SubCategory } from '@/shared/services/types/CategoryService';
 
 export interface SubCategoryBrowse {
   services: UseServiceQueryResult<SubCategory[]>;
@@ -37,6 +37,13 @@ export interface SubCategoryBrowse {
    * category can be withdrawn between one screen and the next.
    */
   categoryName?: string;
+  /**
+   * The whole catalogue this read, for naming a category other than the one
+   * browsed — the details form names the unfinished request for another
+   * service from it, as Home's resume card does — without a second read.
+   * `undefined` until it answers.
+   */
+  catalogue?: ServiceCategory[];
 }
 
 export function useSubCategories(categoryId: string): SubCategoryBrowse {
@@ -52,5 +59,5 @@ export function useSubCategories(categoryId: string): SubCategoryBrowse {
     [categories.data, categoryId],
   );
 
-  return { services, categoryName };
+  return { services, categoryName, catalogue: categories.data };
 }

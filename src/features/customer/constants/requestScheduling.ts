@@ -141,6 +141,31 @@ export function buildTimeOptions(copy: ScheduleCopy): ScheduleOption[] {
 }
 
 /**
+ * Reads a stored date back out for a person.
+ *
+ * The value is the contract's `YYYY-MM-DD`; this is the sentence a customer
+ * sees. Parsed into local components rather than handed to `new Date(value)`,
+ * which reads a bare date as UTC midnight and can therefore print the day
+ * before in any timezone behind Greenwich.
+ */
+export function formatDateValue(value: string, copy: ScheduleCopy, now: Date = new Date()): string {
+  const [year, month, day] = value.split('-').map(Number);
+
+  if (!year || !month || !day) {
+    return value;
+  }
+
+  return formatDayLabel(new Date(year, month - 1, day), now, copy);
+}
+
+/**
+ * Reads a stored `HH:mm` back out in the reader's own clock format. Moved,
+ * unchanged, to `shared/presentation/clockTime.ts` when the vendor's working
+ * hours needed the same clock; re-exported so every import of it here resolves.
+ */
+export { formatTimeValue } from '@/shared/presentation/clockTime';
+
+/**
  * Drops a "no preference" answer on the way to the service.
  *
  * The control needs a value for it; `CreateRequestInput` marks the field

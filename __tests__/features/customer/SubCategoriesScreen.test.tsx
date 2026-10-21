@@ -93,6 +93,7 @@ async function render({ services, categories, categoryId = CATEGORY_ID }: Stubs 
       </ThemeProvider>,
     );
   });
+  mounted.push(renderer);
 
   return {
     renderer,
@@ -148,7 +149,22 @@ function textOf(node: ReactTestRendererJSON | ReactTestRendererJSON[] | null): s
     .join(' ');
 }
 
+/**
+ * Every screen a test rendered, unmounted after it.
+ *
+ * Found tracing jest's "A worker process has failed to exit gracefully": the
+ * tests that leave this screen loading left its `Skeleton`s pulsing forever —
+ * the pulse is only cancelled on unmount — and with nothing unmounted, this
+ * file's tests all passed and jest then never exited on its own.
+ */
+const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
+
 afterEach(() => {
+  for (const renderer of mounted.splice(0)) {
+    act(() => {
+      renderer.unmount();
+    });
+  }
   resetServices();
 });
 
@@ -260,9 +276,14 @@ describe('SubCategoriesScreen — while the services are still coming', () => {
     expect(rows()).toHaveLength(0);
     expect(text()).toContain(COPY.subtitle);
 
+    // One region says the wait once, named and busy — not the list itself.
+    const [region] = byTestID('sub-categories-loading');
+    expect(region.props.accessibilityState).toEqual({ busy: true });
+    expect(region.props.accessibilityLabel).toBe(COPY.loadingLabel);
+
     const [list] = byTestID('sub-categories-list');
-    expect(list.props.accessibilityState.busy).toBe(true);
-    expect(list.props.accessibilityLabel).toBe(COPY.loadingLabel);
+    expect(list.props.accessibilityLabel).toBeUndefined();
+    expect(list.props.accessibilityState).toBeUndefined();
   });
 
   it('does not offer an empty state to someone who is still waiting', async () => {
@@ -271,17 +292,69 @@ describe('SubCategoriesScreen — while the services are still coming', () => {
     expect(byTestID('sub-categories-empty')).toHaveLength(0);
   });
 
-  it('stops calling itself busy once it is not, and keeps a name either way', async () => {
+  it('replaces the busy region once loaded, and never names the list after its heading', async () => {
     // Found on device, twice: a list with a busy state and no label reported the
     // state as its name; and clearing the state once loaded did not unset it,
-    // because the view is updated rather than remounted. Both have to be stated
-    // on every render.
-    const { byTestID } = await render();
+    // because the view was updated rather than replaced. Then the fix — a label
+    // and a state on every render — named the loaded list "Roof Repair", the
+    // heading's own words, as a TalkBack stop of its own. Now the wait is its
+    // own region, and it is gone, not updated, when the services arrive.
+    let answer!: (services: SubCategory[]) => void;
+    const { renderer, byTestID, rows } = await render({
+      services: () => new Promise<SubCategory[]>(resolve => (answer = resolve)),
+    });
+
+    const [waiting] = byTestID('sub-categories-loading');
+    expect(waiting.props.accessibilityState).toEqual({ busy: true });
+
+    await act(async () => {
+      answer(SERVICES);
+    });
+
+    expect(rows()).toHaveLength(SERVICES.length);
+    // Not hidden or emptied: no longer in the tree at all, so its busy cannot outlive it.
+    expect(byTestID('sub-categories-loading')).toHaveLength(0);
 
     const [list] = byTestID('sub-categories-list');
+    expect(list.props.accessibilityLabel).toBeUndefined();
+    expect(list.props.accessibilityState).toBeUndefined();
+    expect(list.props.accessibilityRole).toBeUndefined();
+    // Nothing anywhere on the loaded screen still says busy.
+    expect(
+      renderer.root.findAll(
+        node => typeof node.type === 'string' && node.props?.accessibilityState?.busy === true,
+      ),
+    ).toHaveLength(0);
+  });
 
-    expect(list.props.accessibilityState).toEqual({ busy: false });
-    expect(list.props.accessibilityLabel).toBe('Roof Repair');
+  it('says the wait again on a retry, and replaces it when the answer comes', async () => {
+    const failure = new AppError({ kind: 'network', message: 'offline' });
+    let calls = 0;
+    let answer!: (services: SubCategory[]) => void;
+    const { byTestID, press, rows } = await render({
+      services: () => {
+        calls += 1;
+        return calls === 1
+          ? Promise.reject(failure)
+          : new Promise<SubCategory[]>(resolve => (answer = resolve));
+      },
+    });
+
+    expect(byTestID('sub-categories-error')).toHaveLength(1);
+    expect(byTestID('sub-categories-loading')).toHaveLength(0);
+
+    await press('Try again');
+
+    const [waiting] = byTestID('sub-categories-loading');
+    expect(waiting.props.accessibilityState).toEqual({ busy: true });
+    expect(waiting.props.accessibilityLabel).toBe(COPY.loadingLabel);
+
+    await act(async () => {
+      answer(SERVICES);
+    });
+
+    expect(rows()).toHaveLength(SERVICES.length);
+    expect(byTestID('sub-categories-loading')).toHaveLength(0);
   });
 });
 
@@ -393,5 +466,48 @@ describe('SubCategoriesScreen — how it is announced', () => {
     expect(back.props.accessibilityRole).toBe('button');
     expect(back.props.accessibilityLabel).toBe(COPY.back);
     expect(back.props.accessibilityHint).toBe(COPY.backHint);
+  });
+});
+
+/**
+ * Section 54's `subcategory_selected`: sent when a service is chosen, with the
+ * two identifiers the route carries and nothing the row displayed — and never
+ * for the list loading, failing or being retried.
+ */
+describe('SubCategoriesScreen — what analytics is told (section 54)', () => {
+  let track: jest.Mock;
+
+  beforeEach(() => {
+    track = jest.fn();
+    registerService('analytics', { track, identify: jest.fn() });
+  });
+
+  it('counts the service chosen, once, by both identifiers alone', async () => {
+    const { press } = await render();
+
+    await press('Flashing Repair');
+
+    expect(track).toHaveBeenCalledTimes(1);
+    const [event, properties] = track.mock.calls[0];
+    expect(event).toBe('subcategory_selected');
+    expect(Object.keys(properties).sort()).toEqual(['categoryId', 'subCategoryId']);
+    expect(properties).toEqual({ categoryId: CATEGORY_ID, subCategoryId: 'sub_flashing' });
+
+    const serialised = JSON.stringify(track.mock.calls);
+    expect(serialised).not.toContain('Flashing Repair');
+    expect(serialised).not.toContain('Roof Repair');
+    expect(serialised).not.toContain('hammer');
+  });
+
+  it('counts nothing for opening, failing or trying again', async () => {
+    const { press } = await render({
+      services: async () => {
+        throw new AppError({ kind: 'network', message: 'ECONNREFUSED 10.0.2.2:8080' });
+      },
+    });
+
+    await press('Try again');
+
+    expect(track).not.toHaveBeenCalled();
   });
 });

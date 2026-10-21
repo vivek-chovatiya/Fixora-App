@@ -19,9 +19,25 @@
  * missing costs the user discovery, not the screen — the primary action above
  * still works — so this reports in place and offers a retry rather than
  * replacing the page.
+ *
+ * ⚠️ Two regions, never one updated into the other. While loading, a region
+ * named for the wait and marked busy, so a screen reader hears one "Loading
+ * service categories, busy" rather than nothing, or a word per rectangle. Loaded,
+ * failed or empty, a plain container with no name and no state of its own: the
+ * section heading above already names it, and a labelled view that cannot be
+ * pressed is a TalkBack stop of its own that says the heading again.
+ *
+ * They carry different `key`s, and that is the fix, not a detail. When the
+ * placeholder view used to be updated in place into the grid, the native view
+ * kept `busy` — Android does not unset a prop that merely disappears — and the
+ * loaded grid announced itself as the bare word "busy" (the recent requests
+ * below, on device; this grid had the same shape). The interim fix stated the
+ * label and the state on every render, which cleared `busy` but left the extra
+ * stop. A different key makes React replace the native view, so the loaded one
+ * starts with nothing to forget.
  */
 
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { CategoryTile } from '@/features/customer/components/CategoryTile';
@@ -53,7 +69,13 @@ export interface CategoryGridProps {
   isLoading: boolean;
   error: AppError | null;
   onRetry: () => void;
-  onSelect: () => void;
+  /**
+   * Opens one category, by identifier.
+   *
+   * The id, never the name: what a category is called is the backend's to
+   * change, and the catalogue screen hands its own tiles on the same way.
+   */
+  onSelect: (categoryId: string) => void;
   testID?: string;
 }
 
@@ -83,16 +105,15 @@ function CategoryGridComponent({
     [categories, columns],
   );
 
+  let content: ReactNode;
+
   if (isLoading) {
-    return (
+    content = (
+      // Silent itself. The region around it says once, for the whole section,
+      // that it is loading: a screen reader announcing every placeholder would
+      // report the same fact as many times as there are rectangles.
       <View
         style={[styles.grid, { gap: theme.spacing.md }]}
-        // Said once, for the whole section. A screen reader announcing every
-        // placeholder would report the same fact as many times as there are
-        // rectangles.
-        accessibilityRole="progressbar"
-        accessibilityLabel={COPY.categoriesTitle}
-        accessibilityState={{ busy: true }}
         testID={testID ? `${testID}-loading` : undefined}>
         {chunk(Array.from({ length: columns * 2 }, (_, index) => index), columns).map(row => (
           <View key={row[0]} style={[styles.row, { gap: theme.spacing.md }]}>
@@ -103,10 +124,8 @@ function CategoryGridComponent({
         ))}
       </View>
     );
-  }
-
-  if (error) {
-    return (
+  } else if (error) {
+    content = (
       <ErrorState
         error={error}
         onRetry={onRetry}
@@ -114,10 +133,8 @@ function CategoryGridComponent({
         testID={testID ? `${testID}-error` : undefined}
       />
     );
-  }
-
-  if (rows.length === 0) {
-    return (
+  } else if (rows.length === 0) {
+    content = (
       <EmptyState
         title={COPY.categoriesEmptyTitle}
         message={COPY.categoriesEmptyMessage}
@@ -126,32 +143,45 @@ function CategoryGridComponent({
         testID={testID ? `${testID}-empty` : undefined}
       />
     );
+  } else {
+    content = rows.map(row => (
+      <View key={row[0]?.id} style={[styles.row, { gap: theme.spacing.md }]}>
+        {row.map(category => (
+          <View key={category.id} style={styles.cell}>
+            <CategoryTile
+              name={category.name}
+              iconGlyph={category.iconGlyph}
+              onPress={() => onSelect(category.id)}
+              testID={`category-tile-${category.id}`}
+            />
+          </View>
+        ))}
+
+        {/*
+          Keeps the last row's tiles the same width as every other row's.
+          Without them a row of one would stretch that tile across the page.
+        */}
+        {Array.from({ length: columns - row.length }, (_, index) => (
+          <View key={`spacer-${index}`} style={styles.cell} />
+        ))}
+      </View>
+    ));
   }
 
-  return (
-    <View style={[styles.grid, { gap: theme.spacing.md }]} testID={testID}>
-      {rows.map(row => (
-        <View key={row[0]?.id} style={[styles.row, { gap: theme.spacing.md }]}>
-          {row.map(category => (
-            <View key={category.id} style={styles.cell}>
-              <CategoryTile
-                name={category.name}
-                iconGlyph={category.iconGlyph}
-                onPress={onSelect}
-                testID={`category-tile-${category.id}`}
-              />
-            </View>
-          ))}
-
-          {/*
-            Keeps the last row's tiles the same width as every other row's.
-            Without them a row of one would stretch that tile across the page.
-          */}
-          {Array.from({ length: columns - row.length }, (_, index) => (
-            <View key={`spacer-${index}`} style={styles.cell} />
-          ))}
-        </View>
-      ))}
+  // Two keys, so the loading region is replaced rather than updated — see the
+  // note at the top of this file.
+  return isLoading ? (
+    <View
+      key="loading"
+      style={[styles.grid, { gap: theme.spacing.md }]}
+      accessibilityLabel={COPY.categoriesLoadingLabel}
+      accessibilityState={{ busy: true }}
+      testID={testID}>
+      {content}
+    </View>
+  ) : (
+    <View key="settled" style={[styles.grid, { gap: theme.spacing.md }]} testID={testID}>
+      {content}
     </View>
   );
 }

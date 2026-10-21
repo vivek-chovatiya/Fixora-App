@@ -77,7 +77,7 @@ function RequestPhotoTileComponent({
       ]}
       testID={testID}>
       <Image
-        source={{ uri: photo.asset.uri }}
+        source={{ uri: photo.previewUri }}
         style={styles.image}
         resizeMode="cover"
         // The tile below announces itself. An image with its own label would be
@@ -98,9 +98,9 @@ function RequestPhotoTileComponent({
           <Icon
             name={hasFailed ? 'warning' : 'upload'}
             size="md"
-            color={hasFailed ? 'danger' : 'textInverse'}
+            color={hasFailed ? 'danger' : 'onOverlay'}
           />
-          <Text variant="caption" color="textInverse" align="center">
+          <Text variant="caption" color="onOverlay" align="center">
             {label}
           </Text>
         </View>
@@ -108,7 +108,7 @@ function RequestPhotoTileComponent({
 
       {hasFailed ? (
         <Pressable
-          onPress={() => onRetry(photo.asset.id)}
+          onPress={() => onRetry(photo.id)}
           // Covers the tile: after a failure the whole thumbnail is the retry,
           // which is a larger target than any corner button and is where
           // someone looking at the failure is already pointing.
@@ -120,7 +120,7 @@ function RequestPhotoTileComponent({
       ) : null}
 
       <Pressable
-        onPress={() => onRemove(photo.asset.id)}
+        onPress={() => onRemove(photo.id)}
         // Padding rather than a larger circle: the drawn mark stays small on a
         // 96dp tile while the target reaches the accessibility floor.
         hitSlop={theme.spacing.sm}
@@ -137,7 +137,7 @@ function RequestPhotoTileComponent({
         accessibilityRole="button"
         accessibilityLabel={`${COPY.photoRemove}, ${name}`}
         testID={testID ? `${testID}-remove` : undefined}>
-        <Icon name="close" size="sm" color="textInverse" />
+        <Icon name="close" size="sm" color="onOverlay" />
       </Pressable>
     </View>
   );

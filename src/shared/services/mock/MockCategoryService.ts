@@ -96,6 +96,28 @@ const SUB_CATEGORY_SEED: Readonly<Record<string, readonly SubCategory[]>> = Obje
   ]),
 });
 
+/**
+ * What a request for this service is called, for the mock request table.
+ *
+ * ⚠️ For the other mocks and nothing else. A backend names a stored request by
+ * joining its request table against its catalogue; `MockRequestService` stands
+ * in for that table, so it joins against this one instead of keeping a second
+ * copy of every name that could drift from the first. The application never
+ * imports this — it asks `CategoryService`, and never a fixture.
+ *
+ * Null when either identifier is not in the catalogue, which is the backend
+ * declining to raise a request for a service it does not offer.
+ */
+export function findMockServiceNames(
+  categoryId: string,
+  subCategoryId: string,
+): { categoryName: string; serviceName: string } | null {
+  const category = SEED.find(entry => entry.id === categoryId);
+  const service = SUB_CATEGORY_SEED[categoryId]?.find(entry => entry.id === subCategoryId);
+
+  return category && service ? { categoryName: category.name, serviceName: service.name } : null;
+}
+
 export class MockCategoryService implements CategoryService {
   async listServiceCategories(): Promise<ServiceCategory[]> {
     return simulateNetwork(() => {

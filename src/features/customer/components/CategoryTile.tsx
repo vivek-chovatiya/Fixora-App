@@ -26,8 +26,9 @@ export interface CategoryTileProps {
   iconGlyph?: string;
   onPress: () => void;
   /**
-   * What tapping this tile does, which is not the same in both places it is
-   * used: on Home it opens the catalogue, on the catalogue it opens a category.
+   * What tapping this tile does. The same in both places it is used since Home's
+   * tiles stopped opening the whole catalogue: on Home and on the catalogue alike
+   * it opens that category's services, so both say so with one sentence.
    */
   accessibilityHint?: string;
   testID?: string;
@@ -37,7 +38,7 @@ function CategoryTileComponent({
   name,
   iconGlyph,
   onPress,
-  accessibilityHint = CUSTOMER_COPY.home.categoryHint,
+  accessibilityHint = CUSTOMER_COPY.categories.itemHint,
   testID,
 }: CategoryTileProps) {
   const theme = useTheme();

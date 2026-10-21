@@ -3,11 +3,19 @@
  *
  * The only route to a customer's service requests.
  *
- * ⚠️ Reading and raising, and nothing else. Updating, cancelling and reviewing a
- * request all belong to the lifecycle work that has not started; adding those
- * methods now would mean inventing their contracts before the screens that need
- * them exist. What is here is exactly what Customer Home (PROJECT_BIBLE.md
- * section 10) and request creation (section 13) require, shaped so the remaining
+ * ⚠️ Reading and raising, and one change: cancelling. PROJECT_BIBLE.md moves a
+ * request through section 21 from the vendor's side (sections 33 to 36) and
+ * section 34 forbids frontend-only status changes. Section 21 names `CANCELLED`
+ * and section 23 a Cancelled filter without saying who cancels; the owner decided
+ * on 21/10/2026 that a customer may — but only while no professional has accepted
+ * the request, because before that nobody has committed any time and after it
+ * cancelling means talking to the professional, which Phase 1 has no channel for.
+ * The backend decides and the app shows its answer (`cancelRequest`). Nothing
+ * else changes a sent request: no rescheduling, no editing. A review (section
+ * 24) is its own record on `ReviewService`, never an operation here.
+ * What is here is exactly what Customer Home (PROJECT_BIBLE.md
+ * section 10), request creation (section 13), a request's own details screen
+ * (section 20) and the history (section 23) require, shaped so the remaining
  * operations can be added beside them rather than instead of them.
  *
  * The fields are the ones the roadmap already fixes — section 23 defines what a
@@ -19,6 +27,39 @@
  * asking, so passing a customer id would be the app asserting an identity it
  * does not own (PROJECT_BIBLE.md section 52).
  */
+
+import type { Page, PageRequest } from '@/shared/types/pagination';
+
+/**
+ * The Phase 1 request statuses PROJECT_BIBLE.md section 21 names — its primary
+ * list first, then its alternatives.
+ *
+ * ⚠️ The roadmap's list, not the backend's promise. No backend exists yet, so
+ * this is what section 21 says the backend will send; when a real contract
+ * arrives, this union is reconciled against it and nothing downstream moves.
+ */
+export type KnownRequestStatus =
+  | 'CREATED'
+  | 'PENDING_VENDOR'
+  | 'ACCEPTED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'CLOSED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'ON_HOLD';
+
+/**
+ * A backend status: one section 21 names, or one it does not yet.
+ *
+ * ⚠️ Open on purpose. Section 21 says the frontend must never invent a status,
+ * and a closed union would do the opposite — it would make the app the authority
+ * on which statuses exist, so a state the backend added tomorrow would fail to
+ * type instead of rendering safely. `string & Record<never, never>` keeps the
+ * known values as the ones the editor offers without refusing a new one; the
+ * feature module presents an unrecognised value as "status unavailable".
+ */
+export type RequestStatus = KnownRequestStatus | (string & Record<never, never>);
 
 /**
  * One service request, as a customer sees it.
@@ -43,15 +84,17 @@ export interface CustomerRequest {
   vendorName?: string;
 
   /**
-   * Backend status. A plain string on purpose.
+   * Backend status (PROJECT_BIBLE.md section 21), exactly as it was sent.
    *
-   * Section 21 lists the Phase 1 states and says the frontend must never invent
-   * one. A union here would do the opposite of what that asks: it would make the
-   * app the authority on which statuses exist, and a status added by the backend
-   * would fail to type rather than simply render. The feature module keeps copy
-   * for the states it knows and falls back safely for the rest.
+   * ⚠️ Never a customer-facing stage. "Searching for a professional" and
+   * "Awaiting professional response" are one backend status seen through two
+   * dispatch modes, and section 21 is explicit that dispatch is routing, not
+   * status — so nothing on this contract stores the stage. The feature module
+   * derives it (`requestStateOf`) from this value and the customer's choice of
+   * professional, which is what lets a real backend replace the mock without the
+   * screens noticing.
    */
-  status: string;
+  status: RequestStatus;
 
   /**
    * Backend priority constant (PROJECT_BIBLE.md section 15). A string for the
@@ -62,6 +105,91 @@ export interface CustomerRequest {
 
   /** ISO 8601. Formatting is the presentation layer's business, never the API's. */
   createdAt: string;
+
+  /**
+   * Who the customer asked for, when they asked for anyone (section 18A).
+   *
+   * ⚠️ A preference, not an assignment. Absent means open dispatch, exactly as
+   * an absent `vendorId` did on the way in. Whether anybody has *taken* the job
+   * is `vendorName`'s answer — a directed request that nobody has accepted has
+   * this and not that.
+   *
+   * On the summary as well as the full record, because a card cannot word a
+   * request that is waiting without it: "searching for a professional" and
+   * "awaiting the professional you chose" are one backend status seen through
+   * the two dispatch modes (section 20), and a card that guessed would be wrong
+   * for half of them.
+   */
+  preferredVendor?: RequestedVendor;
+}
+
+/**
+ * The views of a customer's requests that section 23 names: All, Active,
+ * Completed, Cancelled.
+ *
+ * ⚠️ Sent to the service by name, never applied by the app. Which statuses
+ * count as "active" is the backend's to decide — it owns section 21 — and a list
+ * filtered here after paging would drop records a page never contained. The mock
+ * answers the way the owner confirmed on 2026-09-21; see `MockRequestService`.
+ */
+export type RequestHistoryFilter = 'all' | 'active' | 'completed' | 'cancelled';
+
+/**
+ * Where the work is to be done (PROJECT_BIBLE.md section 18).
+ *
+ * ⚠️ A frontend contract, and openly one. No backend address schema exists yet —
+ * there is no endpoint, no field list and no geocoding provider in this
+ * repository — so this is the smallest shape the request flow actually needs,
+ * named so that nobody mistakes it for something the server has agreed to. When
+ * the backend defines its own, the mapping happens where the payload is built
+ * and nothing above it moves.
+ *
+ * ⚠️ Only `formattedAddress` is required, and that is the honest model rather
+ * than a lax one. A customer typing their address on a device with no geocoder
+ * has no coordinates to give, and the product rule is that a request must always
+ * be completable by hand — so requiring a latitude would make the required field
+ * the one the app cannot always obtain. Coordinates arrive when a provider or
+ * the device supplies them, and are worth having when they do: section 18A's
+ * eligibility and the nearby-professional work both start from a point.
+ *
+ * The structured fields are optional for the same reason. A search provider
+ * returns them; a person typing a line of text does not, and inventing a city by
+ * splitting their sentence on commas would be the app asserting something it was
+ * never told.
+ */
+export interface RequestAddress {
+  /**
+   * The address as a person would write it, and the only part always present.
+   *
+   * This is what is shown, what is stored, and what a dispatcher reads. It is
+   * the customer's own words when they typed it and the provider's line when
+   * they chose a suggestion; either way the app never rewrites it.
+   */
+  formattedAddress: string;
+
+  /**
+   * WGS 84, as a device or a geocoder reports it. Both or neither.
+   *
+   * Never shown to the customer — a confirmation screen printing 12.9716 is a
+   * screen showing its working. They exist for the backend's benefit.
+   */
+  latitude?: number;
+  longitude?: number;
+
+  /** Street and building, when a provider separated them out. */
+  addressLine?: string;
+  /** Town or city, when a provider named it. */
+  locality?: string;
+  postalCode?: string;
+
+  /**
+   * The provider's own handle for this place, when there was a provider.
+   *
+   * Carried so a later lookup can ask about the same place rather than
+   * re-matching on a string. Meaningless without the provider that issued it,
+   * which is why nothing in the app compares or parses it.
+   */
+  placeId?: string;
 }
 
 /**
@@ -72,11 +200,12 @@ export interface CustomerRequest {
  * owns, so a renamed category changes nothing about a request already raised,
  * and the app never asserts what a category is called.
  *
- * One field section 14 lists is deliberately absent, and its absence is a known
- * gap rather than an oversight: section 18's **address** is a capability of its
- * own — select, add, edit, delete, default — with no service, no type and no
- * screen yet. It arrives as `addressId` beside these fields, which is why they
- * are a named input type rather than positional arguments.
+ * Section 18's **address** is here now, and it is the one field on this input
+ * that no backend has agreed to. It is carried as a `RequestAddress` value
+ * rather than as an `addressId`, because an id would mean a saved-address book —
+ * select, add, edit, delete, default — which is a capability of its own with no
+ * service and no screen. A request states where the work is; the address book
+ * that remembers it for next time can arrive later and change only this field.
  *
  * Description is folded into `notes`. Section 14 lists both, but section 17's
  * own example of a note — "the fan is making noise and stops after 10 minutes" —
@@ -137,6 +266,18 @@ export interface CreateRequestInput {
   notes?: string;
 
   /**
+   * Where the work is to be done (PROJECT_BIBLE.md section 18).
+   *
+   * ⚠️ Required, unlike every other field added since. A request nobody can be
+   * sent to is not a request, so the product rule is that every one carries a
+   * location — and the way to hold the app to that is to make a payload without
+   * one fail to type rather than fail in front of a customer.
+   *
+   * Its shape is this application's, not the backend's; see `RequestAddress`.
+   */
+  address: RequestAddress;
+
+  /**
    * The vendor the customer asked for, when they asked for one at all
    * (PROJECT_BIBLE.md section 18A).
    *
@@ -178,10 +319,133 @@ export interface CreatedRequest {
    * `CREATED` first, but which state a new request lands in is the backend's
    * answer and the app's job is only to reflect it.
    */
-  status: string;
+  status: RequestStatus;
   /** ISO 8601, as set by the backend rather than by the device's clock. */
   createdAt: string;
 }
+
+/**
+ * The professional a customer asked for, as a request record names them.
+ *
+ * Both fields or none: the identifier is what was sent, and the name is how the
+ * backend reads it back. A preference with no name would be a request the app
+ * could only describe by an identifier it must never show.
+ */
+export interface RequestedVendor {
+  id: string;
+  /** Rendered, never compared against or used as an identity. */
+  name: string;
+}
+
+/**
+ * One request in full, as its details screen shows it (PROJECT_BIBLE.md
+ * section 20).
+ *
+ * ⚠️ An extension of `CustomerRequest`, not a second request model. Every field
+ * a card shows means exactly what it means on the card, and what is added is
+ * what the customer sent — `CreateRequestInput`, read back — plus the names the
+ * backend resolved for it. A screen holding one of these can draw a card; a
+ * screen holding a card cannot draw this.
+ *
+ * ⚠️ A frontend contract, like `RequestAddress`. No backend detail endpoint
+ * exists yet, so nothing here is something a server has agreed to. What keeps it
+ * honest is that nothing is new in kind: the identifiers and answers are the
+ * ones this app already sends, and the two names below follow the precedent
+ * `serviceName` and `vendorName` already set — a request read back from the
+ * backend arrives named, rather than leaving the app to join it against a
+ * catalogue that may have changed since it was raised.
+ *
+ * `serviceName` is the service itself (section 12), and `categoryName` is where
+ * it was found. Status is the backend's word and nothing more; dispatch mode is
+ * not a status (section 21), which is why the customer's preference is its own
+ * field rather than something to be read out of `status`.
+ */
+export interface CustomerRequestDetails extends CustomerRequest {
+  /** The category the service was chosen from. Never shown. */
+  categoryId: string;
+  /** The service itself. Never shown. */
+  subCategoryId: string;
+
+  /** The category, named by the backend. */
+  categoryName: string;
+
+  /** `YYYY-MM-DD`, exactly as sent. Formatting is the screen's business. */
+  preferredDate?: string;
+  /** `HH:mm`, 24-hour, exactly as sent. */
+  preferredTime?: string;
+
+  /** The customer's own words, exactly as sent. */
+  notes?: string;
+
+  /** Remote URLs, as they were attached (section 16). */
+  imageUrls?: string[];
+
+  /**
+   * Where the work is (section 18). Required here because it was required to
+   * send: a request record without one would describe a request that could
+   * never have been raised.
+   */
+  address: RequestAddress;
+
+  /**
+   * What the professional recorded about payment when they completed the job
+   * (sections 36 and 37). Absent until then, and absent on work completed
+   * without one — the screen says nothing about payment rather than guessing.
+   */
+  payment?: CustomerPaymentRecord;
+}
+
+/**
+ * The payment on a completed request, as the professional recorded it.
+ *
+ * ⚠️ Recorded, never processed (section 37). Fixora took no money and
+ * confirmed none: this is what the professional said happened, and the
+ * customer is shown it as theirs. A frontend contract, like the rest of the
+ * details record — no backend has agreed to it.
+ *
+ * Less than the professional's own record: no method id, and none of their
+ * completion notes, which are the professional's working notes rather than a
+ * message to the customer.
+ */
+export interface CustomerPaymentRecord {
+  /** The total the job came to, in whole minor units (paise). */
+  finalAmountMinor: number;
+  /** ISO 4217 code. How it is written is `shared/presentation/money`'s. */
+  currency: string;
+  /** The backend's word — `PAID` or `UNPAID` today — shown through `describePayment`. */
+  paymentStatus: string;
+  /** How it was paid, in words, when it was. */
+  paymentMethodLabel?: string;
+}
+
+/**
+ * Why a cancellation was not made: the request is no longer in a status the
+ * customer may cancel from — most often because a professional accepted it
+ * between the customer seeing it and pressing Cancel.
+ *
+ * A business answer, not a fault (PROJECT_BIBLE.md section 49.1): the right
+ * response is to say so calmly and read the request again.
+ */
+export type CancelRequestRefusal = 'notCancellable';
+
+/**
+ * What a cancellation came to.
+ *
+ * ⚠️ A result, not a guess. On success the record comes back as the service now
+ * holds it — `CANCELLED` and all — and that is what the app shows; the app never
+ * marks a request cancelled on its own (section 34). A refusal carries no
+ * record: the app reads the request again to learn where it went.
+ *
+ * Faults are not results. A missing session rejects with `unauthorized`, a
+ * reference that is not this customer's with `notFound` (exactly as
+ * `getRequest` answers `null` for one — somebody else's request cannot be
+ * cancelled, and its existence is not confirmed either), and anything that
+ * stopped the cancellation being recorded with the failure's own kind. None of
+ * them changed anything.
+ */
+export type CancelRequestResult =
+  | { outcome: 'cancelled'; request: CustomerRequestDetails }
+  | { outcome: 'refused'; reason: CancelRequestRefusal };
 
 export interface RequestService {
   /**
@@ -195,6 +459,36 @@ export interface RequestService {
   listRecentRequests(limit: number): Promise<CustomerRequest[]>;
 
   /**
+   * The customer's requests, a page at a time, newest first (PROJECT_BIBLE.md
+   * section 23: "Pagination must be supported").
+   *
+   * The shared `Page` contract rather than one of its own, so the history
+   * screen pages exactly the way every other list will. `filter` is one of the
+   * section 23 views, by name; the implementation decides what it matches.
+   *
+   * A page past the last one resolves empty rather than rejecting — asking one
+   * page too far is what a list does when the last request was just the
+   * boundary. Summaries only: the full record is `getRequest`'s.
+   */
+  listRequests(filter: RequestHistoryFilter, request: PageRequest): Promise<Page<CustomerRequest>>;
+
+  /**
+   * One of the customer's requests, in full (PROJECT_BIBLE.md section 20).
+   *
+   * ⚠️ Resolves `null` when there is no such request for this customer, and
+   * rejects only when the question could not be answered. They are different
+   * outcomes with different screens: an unknown reference is an answer — the
+   * customer followed a stale link — and offering to retry it would be offering
+   * to fail again, while a dropped connection is not an answer at all. A 404
+   * becomes `null` in the implementation that sees one, so no caller has to pick
+   * it back out of an error.
+   *
+   * By identifier only. Scope is the session's, as it is for every call here,
+   * so a reference belonging to somebody else is simply not found.
+   */
+  getRequest(requestId: string): Promise<CustomerRequestDetails | null>;
+
+  /**
    * Raises a request (PROJECT_BIBLE.md section 13).
    *
    * Not idempotent, and deliberately not made to look as though it were. A
@@ -204,4 +498,23 @@ export interface RequestService {
    * is prevented.
    */
   createRequest(input: CreateRequestInput): Promise<CreatedRequest>;
+
+  /**
+   * Cancels one of the customer's requests, while nobody has accepted it (owner
+   * decision, 21/10/2026; section 21's `CANCELLED`).
+   *
+   * Only a request still waiting for a professional — `CREATED` or
+   * `PENDING_VENDOR` — can be cancelled; anything later is refused with
+   * `notCancellable`, which is how the race with a professional accepting it is
+   * answered. No reason is asked for or sent (Phase 1 keeps it simple).
+   *
+   * ⚠️ One already cancelled answers `cancelled`, unchanged, rather than being
+   * refused. The case is a cancellation whose answer was lost and is sent again:
+   * the customer got what they asked for, and refusing would tell them a
+   * professional had accepted a request that is in fact cancelled. A frontend
+   * assumption, like the rest of this contract, for the backend to confirm.
+   *
+   * By identifier only, scoped by the session like every call here.
+   */
+  cancelRequest(requestId: string): Promise<CancelRequestResult>;
 }

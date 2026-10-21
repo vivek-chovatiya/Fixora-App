@@ -19,6 +19,7 @@ import React from 'react';
 import ReactTestRenderer, { act, type ReactTestRendererJSON } from 'react-test-renderer';
 
 import { CUSTOMER_COPY } from '@/features/customer/constants/customerCopy';
+import { buildCreateRequestInput } from '@/features/customer/hooks/useCreateRequest';
 import { CreateRequestScreen } from '@/features/customer/screens/CreateRequestScreen';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { CategoryService, SubCategory } from '@/shared/services/types/CategoryService';
@@ -30,6 +31,8 @@ import {
   useRequestDraft,
   type RequestDraft,
 } from '@/features/customer/state/RequestDraftContext';
+import { NO_VENDOR_CHOICE } from '@/features/customer/state/requestDraft';
+import { setRequestDraftStorage } from '@/features/customer/state/requestDraftStorage';
 import { ThemeProvider } from '@/shared/theme';
 import { ToastProvider } from '@/shared/components';
 import { AppError } from '@/shared/types/error';
@@ -61,6 +64,9 @@ const ASSET: ImageAsset = {
 
 const REMOTE_URL = 'https://cdn.example.test/img_1.jpg';
 
+/** Answered on the screen after this one, and this screen must not lose it. */
+const RESUMED_ADDRESS = { formattedAddress: '412, 5th Block, Koramangala, Bengaluru 560095' };
+
 /** A promise a test can leave hanging, so an in-flight state is observable. */
 function pending<T>(): Promise<T> {
   return new Promise<T>(() => {});
@@ -73,11 +79,19 @@ interface Stubs {
 }
 
 /**
+ * How the screens after this one write their answers — Service Address its
+ * address, Preferred Vendor its choice — while this screen stays mounted under
+ * them. Captured from the provider so a test can play their part.
+ */
+let answerOnLaterScreens: ((changes: Partial<RequestDraft>) => void) | null = null;
+
+/**
  * Reports the draft out of the provider, so a test can see what the screen
  * handed on without reaching into component internals.
  */
 function DraftProbe({ onDraft }: { onDraft: (draft: RequestDraft | null) => void }) {
-  const { draft } = useRequestDraft();
+  const { draft, updateDraft } = useRequestDraft();
+  answerOnLaterScreens = updateDraft;
   onDraft(draft);
   return null;
 }
@@ -103,6 +117,15 @@ async function render({ services, image, cameraStatus = 'granted' }: Stubs = {})
     }),
     createRequest: jest.fn(() => {
       throw new Error('createRequest must not be called from request details');
+    }),
+    getRequest: jest.fn(() => {
+      throw new Error('getRequest must not be called while a request is being written');
+    }),
+    listRequests: jest.fn(() => {
+      throw new Error('listRequests must not be called while a request is being written');
+    }),
+    cancelRequest: jest.fn(() => {
+      throw new Error('cancelRequest must not be called while a request is being written');
     }),
   } as RequestService);
 
@@ -141,23 +164,35 @@ async function render({ services, image, cameraStatus = 'granted' }: Stubs = {})
 
   let handedOver: RequestDraft | null = null;
 
+  /*
+    The provider outlives the screen on purpose.
+
+    Leaving the flow unmounts the screen, not the application, and what the
+    screen writes down on its way out is only observable if the thing holding it
+    is still there to observe.
+  */
+  const tree = (screenMounted: boolean) => (
+    <ThemeProvider>
+      <ToastProvider>
+        <RequestDraftProvider>
+          {screenMounted ? (
+            <CreateRequestScreen navigation={navigation} route={route} />
+          ) : null}
+          <DraftProbe
+            onDraft={draft => {
+              handedOver = draft;
+            }}
+          />
+        </RequestDraftProvider>
+      </ToastProvider>
+    </ThemeProvider>
+  );
+
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   await act(async () => {
-    renderer = ReactTestRenderer.create(
-      <ThemeProvider>
-        <ToastProvider>
-          <RequestDraftProvider>
-            <CreateRequestScreen navigation={navigation} route={route} />
-            <DraftProbe
-              onDraft={draft => {
-                handedOver = draft;
-              }}
-            />
-          </RequestDraftProvider>
-        </ToastProvider>
-      </ThemeProvider>,
-    );
+    renderer = ReactTestRenderer.create(tree(true));
   });
+  mounted.push(renderer);
 
   /** Finds a node by role and accessible name, whatever host renders it. */
   const find = (role: string, label: string) =>
@@ -195,6 +230,18 @@ async function render({ services, image, cameraStatus = 'granted' }: Stubs = {})
     },
     /** True when nothing has been handed on yet. */
     hasDraft: () => handedOver !== null,
+    /** The later steps answering, with this screen still mounted underneath. */
+    answerLater: async (changes: Partial<RequestDraft>) => {
+      await act(async () => {
+        answerOnLaterScreens?.(changes);
+      });
+    },
+    /** Takes the screen out of the tree, the way going back does. */
+    leave: async () => {
+      await act(async () => {
+        renderer.update(tree(false));
+      });
+    },
     press: (label: string) => tap('button', label),
     choose: (label: string) => tap('radio', label),
     chip: (label: string) => find('radio', label),
@@ -227,7 +274,38 @@ function textOf(node: ReactTestRendererJSON | ReactTestRendererJSON[] | null): s
     .join(' ');
 }
 
+/**
+ * The draft is seeded through the provider, not read off the device, so each
+ * test decides for itself whether there is one to resume.
+ */
+let savedDraft: RequestDraft | null = null;
+
+beforeEach(() => {
+  savedDraft = null;
+  setRequestDraftStorage({
+    read: async () => (savedDraft ? { draft: savedDraft, savedAt: '2026-09-10T09:00:00.000Z' } : null),
+    write: async () => true,
+    clear: async () => undefined,
+  });
+});
+
+/**
+ * Every tree a test rendered, unmounted after it.
+ *
+ * Found tracing jest's "A worker process has failed to exit gracefully": with
+ * nothing unmounted, updates these trees still had pending went on rendering
+ * the screen after jest had torn the environment down ("You are trying to
+ * `import` a file after the Jest environment has been torn down"). Unmounting
+ * runs the cleanup the components already have.
+ */
+const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
+
 afterEach(() => {
+  for (const renderer of mounted.splice(0)) {
+    act(() => {
+      renderer.unmount();
+    });
+  }
   resetServices();
 });
 
@@ -254,7 +332,7 @@ describe('CreateRequestScreen — the service it is for', () => {
     await press(COPY.submit);
 
     // The name was a caption. The request is identified by ids, which arrived.
-    expect(navigate).toHaveBeenCalledWith('PreferredVendor', {
+    expect(navigate).toHaveBeenCalledWith('ServiceAddress', {
       categoryId: CATEGORY_ID,
       subCategoryId: SUB_CATEGORY_ID,
     });
@@ -471,7 +549,7 @@ describe('CreateRequestScreen — photographs (section 16)', () => {
   });
 
   it('will not continue while an upload is still going', async () => {
-    const { press, hasDraft, text, fillRequired } = await render({
+    const { press, navigate, text, fillRequired } = await render({
       image: { upload: jest.fn(() => pending()) },
     });
 
@@ -479,7 +557,9 @@ describe('CreateRequestScreen — photographs (section 16)', () => {
     await press(COPY.photosGallery);
     await press(COPY.submit);
 
-    expect(hasDraft()).toBe(false);
+    // The draft is written down regardless — that is what makes the request
+    // resumable. What must not happen is moving on with an unfinished upload.
+    expect(navigate).not.toHaveBeenCalled();
     expect(text()).toContain(COPY.photosBusy);
   });
 
@@ -489,7 +569,7 @@ describe('CreateRequestScreen — photographs (section 16)', () => {
       .mockRejectedValueOnce(new AppError({ kind: 'network', message: 'socket hang up' }))
       .mockResolvedValueOnce({ assetId: ASSET.id, remoteUrl: REMOTE_URL });
 
-    const { press, hasDraft, text, fillRequired, draft } = await render({
+    const { press, navigate, text, fillRequired, draft } = await render({
       image: { upload, retryUpload: upload },
     });
 
@@ -500,7 +580,7 @@ describe('CreateRequestScreen — photographs (section 16)', () => {
     expect(text()).not.toContain('socket hang up');
 
     await press(COPY.submit);
-    expect(hasDraft()).toBe(false);
+    expect(navigate).not.toHaveBeenCalled();
     expect(text()).toContain(COPY.photosUnresolved);
 
     await press(`${COPY.photoRetry}, ${COPY.photosTitle} 1, ${COPY.photoFailed}`);
@@ -524,8 +604,8 @@ describe('CreateRequestScreen — photographs (section 16)', () => {
   });
 });
 
-describe('CreateRequestScreen — handing on to vendor selection', () => {
-  it('goes to the vendor step instead of creating anything', async () => {
+describe('CreateRequestScreen — handing on to the address step', () => {
+  it('goes to the address step instead of creating anything', async () => {
     // The request service registered by `render` throws from both methods, so a
     // screen that submitted here would fail this test rather than pass it.
     const { fillRequired, press, navigate } = await render();
@@ -534,7 +614,7 @@ describe('CreateRequestScreen — handing on to vendor selection', () => {
     await press(COPY.submit);
 
     expect(navigate).toHaveBeenCalledTimes(1);
-    expect(navigate).toHaveBeenCalledWith('PreferredVendor', {
+    expect(navigate).toHaveBeenCalledWith('ServiceAddress', {
       categoryId: CATEGORY_ID,
       subCategoryId: SUB_CATEGORY_ID,
     });
@@ -617,5 +697,651 @@ describe('CreateRequestScreen — accessibility', () => {
     // Icon glyphs are private ligature names; none may reach an announcement.
     expect(labels.some(label => label.includes('camera-outline'))).toBe(false);
     expect(labels.some(label => label.includes('image-multiple-outline'))).toBe(false);
+  });
+});
+
+describe('CreateRequestScreen — leaving and coming back', () => {
+  it('keeps what was entered when the customer walks away mid-form', async () => {
+    const { leave, choose, type, draft } = await render();
+
+    await choose('High');
+    await type('The fan rattles.');
+
+    // Unmounting is what leaving the flow looks like: going forward keeps this
+    // screen in the stack, so only going back takes it out.
+    await leave();
+
+    expect(draft().values.priority).toBe('HIGH');
+    expect(draft().values.notes).toBe('The fan rattles.');
+    expect(draft().vendor).toEqual(NO_VENDOR_CHOICE);
+  });
+
+  it('keeps a choice made with the chips alone, with nothing typed', async () => {
+    // A Controller re-renders its own field and not the screen, so a priority
+    // chosen and walked away from is exactly what a render-time copy would miss.
+    const { leave, choose, draft } = await render();
+
+    await choose('Emergency');
+    await choose(COPY.tomorrow);
+    await leave();
+
+    expect(draft().values.priority).toBe('EMERGENCY');
+    expect(draft().values.preferredDate).not.toBe('');
+  });
+
+  it('remembers nothing from a form that was opened and abandoned', async () => {
+    const { leave, hasDraft } = await render();
+
+    await leave();
+
+    expect(hasDraft()).toBe(false);
+  });
+
+  it('opens on the answers a resumed draft carried, without re-asking', async () => {
+    savedDraft = {
+      categoryId: CATEGORY_ID,
+      subCategoryId: SUB_CATEGORY_ID,
+      values: {
+        priority: 'EMERGENCY',
+        preferredDate: '',
+        preferredTime: '',
+        notes: 'It stops after ten minutes.',
+      },
+      imageUrls: [REMOTE_URL],
+      address: RESUMED_ADDRESS,
+      vendor: { kind: 'vendor', vendorId: 'ven_1' },
+    };
+
+    const { chip, renderer, byTestID } = await render();
+
+    expect(chip('Emergency')?.props.accessibilityState.selected).toBe(true);
+
+    const [field] = renderer.root.findAll(
+      node => node.props?.accessibilityLabel === COPY.notesLabel && node.props?.onChangeText,
+    );
+    expect(field.props.value).toBe('It stops after ten minutes.');
+
+    // The photograph comes back as an upload that already finished.
+    expect(byTestID(`request-photo-${REMOTE_URL}`).length).toBeGreaterThan(0);
+  });
+
+  it('does not throw away the address when the details are edited again', async () => {
+    savedDraft = {
+      categoryId: CATEGORY_ID,
+      subCategoryId: SUB_CATEGORY_ID,
+      values: { priority: 'LOW', preferredDate: '', preferredTime: '', notes: '' },
+      imageUrls: [],
+      address: RESUMED_ADDRESS,
+      vendor: { kind: 'vendor', vendorId: 'ven_1' },
+    };
+
+    const { choose, press, draft } = await render();
+
+    await choose('High');
+    await press(COPY.submit);
+
+    // Coming back to change a date must not silently un-answer the step after
+    // it. The address is read from the live draft, not from what this screen
+    // was opened with.
+    expect(draft().address).toEqual(RESUMED_ADDRESS);
+  });
+
+  it('does not un-choose the professional when the details are edited again', async () => {
+    savedDraft = {
+      categoryId: CATEGORY_ID,
+      subCategoryId: SUB_CATEGORY_ID,
+      values: { priority: 'LOW', preferredDate: '', preferredTime: '', notes: '' },
+      imageUrls: [],
+      address: RESUMED_ADDRESS,
+      vendor: { kind: 'vendor', vendorId: 'ven_1' },
+    };
+
+    const { choose, press, draft } = await render();
+
+    await choose('High');
+    await press(COPY.submit);
+
+    expect(draft().values.priority).toBe('HIGH');
+    expect(draft().vendor).toEqual({ kind: 'vendor', vendorId: 'ven_1' });
+  });
+
+  it('keeps the professional chosen later in the same visit when the details change', async () => {
+    // The path the open item described: details → address → professional, then
+    // Back twice to this screen — which never unmounted — to change the urgency,
+    // and Continue again. Continue used to start the draft afresh from this
+    // screen's answers alone, which reset the professional to "not chosen".
+    const { fillRequired, press, choose, draft, answerLater } = await render();
+
+    await fillRequired();
+    await press(COPY.submit);
+    expect(draft().vendor).toEqual(NO_VENDOR_CHOICE);
+
+    await answerLater({
+      address: RESUMED_ADDRESS,
+      vendor: { kind: 'vendor', vendorId: 'ven_1' },
+    });
+
+    await choose('High');
+    await press(COPY.submit);
+
+    expect(draft().values.priority).toBe('HIGH');
+    expect(draft().vendor).toEqual({ kind: 'vendor', vendorId: 'ven_1' });
+    expect(draft().address).toEqual(RESUMED_ADDRESS);
+  });
+
+  it('keeps "no preference" as an answer too, rather than un-asking it', async () => {
+    const { fillRequired, press, choose, draft, answerLater } = await render();
+
+    await fillRequired();
+    await press(COPY.submit);
+    await answerLater({ address: RESUMED_ADDRESS, vendor: { kind: 'open' } });
+
+    await choose('Low');
+    await press(COPY.submit);
+
+    expect(draft().vendor).toEqual({ kind: 'open' });
+  });
+});
+
+/**
+ * There is one draft, and it can belong to another service: a customer who left
+ * a leak repair half-done opens a fan repair from Home. Found by the analytics
+ * work with a jest probe: this form's autosave merged into whatever draft
+ * existed — on mount, on a pause in typing, on leaving — so the leak repair kept
+ * its ids, address and plumber while its urgency, dates, notes and photos became
+ * the fan repair's, and its notes were lost. And Continue carried the leak
+ * repair's address and plumber into the fan repair's request.
+ *
+ * The rule now: only this service's draft is merged into or borrowed from.
+ * Another service's draft is left exactly as it was until Continue — the one
+ * deliberate act that starts this request — replaces it, carrying its address
+ * and nothing else (owner decision, 21/10/2026: it is almost always the same
+ * home). Never its professional, who was chosen from another service's list.
+ */
+describe('CreateRequestScreen — when the draft on hand is another service’s', () => {
+  const LEAK_REPAIR: RequestDraft = {
+    categoryId: 'cat_plumbing',
+    subCategoryId: 'sub_leak',
+    values: {
+      priority: 'LOW',
+      preferredDate: '',
+      preferredTime: '',
+      notes: 'Drips under the kitchen sink.',
+    },
+    imageUrls: ['https://cdn.example.test/leak.jpg'],
+    address: RESUMED_ADDRESS,
+    vendor: { kind: 'vendor', vendorId: 'ven_plumber' },
+  };
+
+  /** Long enough for the form's autosave (800 ms after the last change) to have fired. */
+  const pauseForAutosave = () =>
+    act(async () => {
+      await new Promise<void>(resolve => setTimeout(resolve, 1000));
+    });
+
+  it('leaves it exactly as it was when this form is opened and left untouched', async () => {
+    savedDraft = LEAK_REPAIR;
+    const { leave, draft } = await render();
+
+    await leave();
+
+    expect(draft()).toEqual(LEAK_REPAIR);
+  });
+
+  it('never autosaves this form into it, and leaving does not either', async () => {
+    savedDraft = LEAK_REPAIR;
+    const { choose, type, leave, draft } = await render();
+
+    await choose('High');
+    await type('Sparks from the switch.');
+    await pauseForAutosave();
+
+    expect(draft()).toEqual(LEAK_REPAIR);
+
+    await leave();
+
+    expect(draft()).toEqual(LEAK_REPAIR);
+  });
+
+  it('is replaced on Continue by this request, carrying its address and nothing else', async () => {
+    savedDraft = LEAK_REPAIR;
+    const { fillRequired, press, draft, navigate } = await render();
+
+    await fillRequired();
+    await press(COPY.submit);
+
+    expect(Object.keys(draft()).sort()).toEqual([
+      'address',
+      'categoryId',
+      'imageUrls',
+      'subCategoryId',
+      'values',
+      'vendor',
+    ]);
+    expect(draft().categoryId).toBe(CATEGORY_ID);
+    expect(draft().subCategoryId).toBe(SUB_CATEGORY_ID);
+    expect(draft().values.priority).toBe('MEDIUM');
+    expect(draft().values.notes).toBe('');
+    expect(draft().imageUrls).toEqual([]);
+    // The same home, almost always: Service Address opens on it, still editable.
+    expect(draft().address).toEqual(RESUMED_ADDRESS);
+    // ⚠️ Never the plumber: chosen from another service's list, perhaps not
+    // offered for this one, and Preferred Vendor does not check.
+    expect(draft().vendor).toEqual(NO_VENDOR_CHOICE);
+    expect(JSON.stringify(draft())).not.toContain('ven_plumber');
+    // Nor its answers, which describe the other job.
+    expect(JSON.stringify(draft())).not.toContain(LEAK_REPAIR.values.notes);
+    expect(JSON.stringify(draft())).not.toContain('leak.jpg');
+    expect(navigate).toHaveBeenCalledWith('ServiceAddress', {
+      categoryId: CATEGORY_ID,
+      subCategoryId: SUB_CATEGORY_ID,
+    });
+  });
+
+  it('carries a matched address whole — its point and details — never a copy of the line alone', async () => {
+    const MATCHED = {
+      formattedAddress: '412, 5th Block, Koramangala, Bengaluru 560095',
+      latitude: 12.9352,
+      longitude: 77.6245,
+      addressLine: '412, 5th Block',
+      locality: 'Koramangala, Bengaluru',
+      postalCode: '560095',
+      placeId: 'place_koramangala_5th',
+    };
+    savedDraft = { ...LEAK_REPAIR, address: MATCHED };
+    const { fillRequired, press, draft } = await render();
+
+    await fillRequired();
+    await press(COPY.submit);
+
+    expect(draft().address).toEqual(MATCHED);
+  });
+
+  it('starts with no address when the other request had none yet', async () => {
+    savedDraft = { ...LEAK_REPAIR, address: null };
+    const { fillRequired, press, draft } = await render();
+
+    await fillRequired();
+    await press(COPY.submit);
+
+    expect(draft().address).toBeNull();
+    expect(draft().vendor).toEqual(NO_VENDOR_CHOICE);
+  });
+
+  it('sends the payload the contract defines from it: the address carried, no vendorId at all', async () => {
+    savedDraft = LEAK_REPAIR;
+    const { fillRequired, press, draft } = await render();
+
+    await fillRequired();
+    await press(COPY.submit);
+
+    // Built the way Request Confirmation builds it (docs/WORKING_NOTES.md §9,
+    // "The create-request payload") — open dispatch, since nobody was chosen.
+    const handed = draft();
+    const payload = buildCreateRequestInput(
+      handed.categoryId,
+      handed.subCategoryId,
+      handed.values,
+      handed.imageUrls,
+      handed.address!,
+      handed.vendor.kind === 'vendor' ? handed.vendor.vendorId : undefined,
+    );
+    const sent = JSON.parse(JSON.stringify(payload));
+
+    expect(Object.keys(sent).sort()).toEqual(['address', 'categoryId', 'priority', 'subCategoryId']);
+    expect(sent).toEqual({
+      categoryId: CATEGORY_ID,
+      subCategoryId: SUB_CATEGORY_ID,
+      priority: 'MEDIUM',
+      address: RESUMED_ADDRESS,
+    });
+    expect(JSON.stringify(payload)).not.toContain('vendorId');
+  });
+
+  it('does not let an emptied draft for another service block this one', async () => {
+    // Every answer cleared: nothing to lose, so it counts as no draft at all.
+    savedDraft = {
+      ...LEAK_REPAIR,
+      values: { priority: '', preferredDate: '', preferredTime: '', notes: '' },
+      imageUrls: [],
+      address: null,
+      vendor: NO_VENDOR_CHOICE,
+    };
+    const { choose, leave, draft } = await render();
+
+    await choose('High');
+    await pauseForAutosave();
+
+    expect(draft().subCategoryId).toBe(SUB_CATEGORY_ID);
+    expect(draft().values.priority).toBe('HIGH');
+
+    await leave();
+
+    expect(draft().subCategoryId).toBe(SUB_CATEGORY_ID);
+  });
+
+  it('still autosaves into this service’s own draft, keeping its later answers', async () => {
+    savedDraft = { ...LEAK_REPAIR, categoryId: CATEGORY_ID, subCategoryId: SUB_CATEGORY_ID };
+    const { choose, draft } = await render();
+
+    await choose('High');
+    await pauseForAutosave();
+
+    // The same service: merged as before, nothing borrowed or dropped.
+    expect(draft().values.priority).toBe('HIGH');
+    expect(draft().values.notes).toBe(LEAK_REPAIR.values.notes);
+    expect(draft().address).toEqual(RESUMED_ADDRESS);
+    expect(draft().vendor).toEqual(LEAK_REPAIR.vendor);
+  });
+});
+
+/**
+ * Continue here replaces another service's unfinished request, so the form says
+ * so before it is pressed — at the top, in one spoken element, naming that
+ * service the way Home's resume card does. Lead decision after review.
+ */
+describe('CreateRequestScreen — telling the customer about the other request', () => {
+  const PLUMBING: RequestDraft = {
+    categoryId: 'cat_other',
+    subCategoryId: 'sub_leak',
+    values: { priority: 'LOW', preferredDate: '', preferredTime: '', notes: 'Drips.' },
+    imageUrls: [],
+    address: null,
+    vendor: NO_VENDOR_CHOICE,
+  };
+
+  const notice = (byTestID: (id: string) => ReactTestRenderer.ReactTestInstance[]) =>
+    byTestID('create-request-other-draft-text')[0];
+
+  it('says at the top that Continue will replace it, naming that service', async () => {
+    savedDraft = PLUMBING;
+    const { byTestID, text } = await render();
+
+    const spoken = notice(byTestID);
+    expect(spoken).toBeDefined();
+    expect(spoken.props.accessible).toBe(true);
+    // "Only", and "then": leaving without Continue keeps nothing while that
+    // request exists, and the sentence must not imply otherwise.
+    expect(spoken.props.accessibilityLabel).toBe(
+      'You have an unfinished request for Plumber. ' +
+        'This request is kept only when you press Continue, and it will then replace that one.',
+    );
+    expect(text()).toContain(COPY.otherDraftConsequence);
+  });
+
+  it('names a request in this same category by its service, not the shared category', async () => {
+    // Found in review: "an unfinished request for Electrician" on an Electrician
+    // form read as if it were this request.
+    savedDraft = { ...PLUMBING, categoryId: CATEGORY_ID, subCategoryId: 'sub_wiring' };
+    const { byTestID } = await render();
+
+    const label = notice(byTestID).props.accessibilityLabel as string;
+    expect(label.startsWith('You have an unfinished request for Wiring.')).toBe(true);
+    expect(label).not.toContain('Electrician');
+  });
+
+  it('calls it "another Electrician service" when that service is no longer listed', async () => {
+    savedDraft = { ...PLUMBING, categoryId: CATEGORY_ID, subCategoryId: 'sub_withdrawn' };
+    const { byTestID } = await render();
+
+    // Never the bare category in its own category: that reads as this request.
+    expect(
+      (notice(byTestID).props.accessibilityLabel as string).startsWith(
+        'You have an unfinished request for another Electrician service.',
+      ),
+    ).toBe(true);
+  });
+
+  it('says "another Electrician service" when this category’s services cannot be read', async () => {
+    savedDraft = { ...PLUMBING, categoryId: CATEGORY_ID, subCategoryId: 'sub_wiring' };
+    const { byTestID } = await render({
+      services: async () => {
+        throw new AppError({ kind: 'network', message: 'ECONNREFUSED 10.0.0.1:443' });
+      },
+    });
+
+    const label = notice(byTestID).props.accessibilityLabel as string;
+    expect(
+      label.startsWith('You have an unfinished request for another Electrician service.'),
+    ).toBe(true);
+    expect(label).not.toContain('for Electrician.');
+  });
+
+  it('says nothing about a same-category request until its service can be named', async () => {
+    // Found in review: while the services were loading the notice fell back to
+    // the category, so an Electrician form said "for Electrician" first.
+    let answer!: (services: SubCategory[]) => void;
+    const services = new Promise<SubCategory[]>(resolve => {
+      answer = resolve;
+    });
+    savedDraft = { ...PLUMBING, categoryId: CATEGORY_ID, subCategoryId: 'sub_wiring' };
+    const { byTestID } = await render({ services: () => services });
+
+    expect(notice(byTestID)).toBeUndefined();
+
+    await act(async () => {
+      answer(SERVICES);
+    });
+
+    expect(
+      (notice(byTestID).props.accessibilityLabel as string).startsWith(
+        'You have an unfinished request for Wiring.',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not hold back a request in another category while the services load', async () => {
+    savedDraft = PLUMBING;
+    const { byTestID } = await render({ services: () => pending() });
+
+    // Its name comes from the catalogue, not from this category's services.
+    expect(
+      (notice(byTestID).props.accessibilityLabel as string).startsWith(
+        'You have an unfinished request for Plumber.',
+      ),
+    ).toBe(true);
+  });
+
+  it('names a request in another category by that category, whatever its service id', async () => {
+    // The services the form holds are this category's; a match there for a
+    // request in another category would be a coincidence, not its name.
+    savedDraft = { ...PLUMBING, subCategoryId: 'sub_wiring' };
+    const { byTestID } = await render();
+
+    expect(
+      (notice(byTestID).props.accessibilityLabel as string).startsWith(
+        'You have an unfinished request for Plumber.',
+      ),
+    ).toBe(true);
+  });
+
+  it('calls it "a service" when the catalogue cannot name it', async () => {
+    savedDraft = { ...PLUMBING, categoryId: 'cat_withdrawn' };
+    const { byTestID } = await render();
+
+    expect(notice(byTestID).props.accessibilityLabel).toContain(
+      `for ${CUSTOMER_COPY.home.resumeFallbackService}.`,
+    );
+  });
+
+  it('says nothing when there is no other request', async () => {
+    const { byTestID } = await render();
+
+    expect(notice(byTestID)).toBeUndefined();
+  });
+
+  it('says nothing when the draft is this service’s own', async () => {
+    savedDraft = { ...PLUMBING, categoryId: CATEGORY_ID, subCategoryId: SUB_CATEGORY_ID };
+    const { byTestID } = await render();
+
+    expect(notice(byTestID)).toBeUndefined();
+  });
+
+  it('says nothing about another service’s draft that has been emptied', async () => {
+    savedDraft = {
+      ...PLUMBING,
+      values: { priority: '', preferredDate: '', preferredTime: '', notes: '' },
+    };
+    const { byTestID } = await render();
+
+    expect(notice(byTestID)).toBeUndefined();
+  });
+
+  it('keeps the name on screen only, and goes once this request replaces it', async () => {
+    savedDraft = PLUMBING;
+    const { byTestID, fillRequired, press, navigate, draft } = await render();
+    expect(notice(byTestID)).toBeDefined();
+
+    await fillRequired();
+    await press(COPY.submit);
+
+    // Display data, so it reaches neither the route nor the draft written on
+    // Continue (CLAUDE.md section 7: serialise and search).
+    expect(JSON.stringify(navigate.mock.calls)).not.toContain('Plumber');
+    expect(draft().subCategoryId).toBe(SUB_CATEGORY_ID);
+    expect(JSON.stringify(draft())).not.toContain('Plumber');
+    expect(notice(byTestID)).toBeUndefined();
+  });
+});
+
+/**
+ * Section 54's `request_started`: sent when a draft for this service first
+ * exists — whichever of Continue, an autosave or leaving gets there first —
+ * exactly once, by the two identifiers alone. Resuming a draft is not starting
+ * one, and a form opened and left untouched starts nothing.
+ */
+describe('CreateRequestScreen — what analytics is told (section 54)', () => {
+  let track: jest.Mock;
+
+  beforeEach(() => {
+    track = jest.fn();
+    registerService('analytics', { track, identify: jest.fn() });
+  });
+
+  const started = () => track.mock.calls.filter(call => call[0] === 'request_started');
+
+  it('starts the request on Continue, once, by its identifiers alone', async () => {
+    const { fillRequired, choose, type, press } = await render();
+
+    await fillRequired();
+    await choose(COPY.today);
+    await type('Sparks from the switch.');
+    await press(COPY.photosGallery);
+    await press(COPY.submit);
+
+    expect(track).toHaveBeenCalledTimes(1);
+    const [[event, properties]] = track.mock.calls;
+    expect(event).toBe('request_started');
+    expect(Object.keys(properties).sort()).toEqual(['categoryId', 'subCategoryId']);
+    expect(properties).toEqual({ categoryId: CATEGORY_ID, subCategoryId: SUB_CATEGORY_ID });
+
+    const serialised = JSON.stringify(track.mock.calls);
+    expect(serialised).not.toContain('Sparks');
+    expect(serialised).not.toContain(REMOTE_URL);
+    expect(serialised).not.toContain('Fan Repair');
+    expect(serialised).not.toContain('Electrician');
+  });
+
+  it('does not start it again when the customer comes back and continues again', async () => {
+    const { fillRequired, press, choose, answerLater } = await render();
+
+    await fillRequired();
+    await press(COPY.submit);
+    await answerLater({ address: RESUMED_ADDRESS, vendor: { kind: 'open' } });
+    await choose('High');
+    await press(COPY.submit);
+
+    expect(started()).toHaveLength(1);
+  });
+
+  it('starts it once when a photograph saved the draft before Continue', async () => {
+    const { press, fillRequired, hasDraft } = await render();
+
+    // An upload that lands writes the draft down at once.
+    await press(COPY.photosGallery);
+    expect(hasDraft()).toBe(true);
+    expect(started()).toHaveLength(1);
+
+    await fillRequired();
+    await press(COPY.submit);
+
+    expect(started()).toHaveLength(1);
+  });
+
+  it('starts it when the customer walks away having said something', async () => {
+    const { choose, leave } = await render();
+
+    await choose('High');
+    await leave();
+
+    expect(started()).toHaveLength(1);
+    expect(started()[0][1]).toEqual({ categoryId: CATEGORY_ID, subCategoryId: SUB_CATEGORY_ID });
+  });
+
+  it('starts nothing for a form that was opened and abandoned', async () => {
+    const { leave, hasDraft } = await render();
+
+    await leave();
+
+    expect(hasDraft()).toBe(false);
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('starts nothing when a saved draft is resumed and continued', async () => {
+    savedDraft = {
+      categoryId: CATEGORY_ID,
+      subCategoryId: SUB_CATEGORY_ID,
+      values: { priority: 'LOW', preferredDate: '', preferredTime: '', notes: 'It rattles.' },
+      imageUrls: [],
+      address: null,
+      vendor: NO_VENDOR_CHOICE,
+    };
+
+    const { choose, press, leave } = await render();
+
+    await choose('High');
+    await press(COPY.submit);
+    await leave();
+
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('starts a new request when the draft on hand is for another service', async () => {
+    savedDraft = {
+      categoryId: 'cat_other',
+      subCategoryId: 'sub_wiring',
+      values: { priority: 'LOW', preferredDate: '', preferredTime: '', notes: '' },
+      imageUrls: [],
+      address: null,
+      vendor: NO_VENDOR_CHOICE,
+    };
+
+    const { fillRequired, press, draft } = await render();
+
+    await fillRequired();
+    await press(COPY.submit);
+
+    expect(draft().subCategoryId).toBe(SUB_CATEGORY_ID);
+    expect(started()).toHaveLength(1);
+    expect(started()[0][1]).toEqual({ categoryId: CATEGORY_ID, subCategoryId: SUB_CATEGORY_ID });
+  });
+
+  it('starts nothing when another service’s draft is on hand and this form is left', async () => {
+    savedDraft = {
+      categoryId: 'cat_other',
+      subCategoryId: 'sub_wiring',
+      values: { priority: 'LOW', preferredDate: '', preferredTime: '', notes: '' },
+      imageUrls: [],
+      address: null,
+      vendor: NO_VENDOR_CHOICE,
+    };
+
+    const { choose, leave } = await render();
+
+    await choose('High');
+    await leave();
+
+    // Nothing of this request was written down, so nothing was started.
+    expect(track).not.toHaveBeenCalled();
   });
 });

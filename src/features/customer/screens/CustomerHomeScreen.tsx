@@ -21,22 +21,37 @@
  * the profile and the recent section has no "see all", because the bottom bar
  * already owns both destinations — a second path to the same place is one more
  * thing to explain and one more target competing with the screen's purpose.
+ *
+ * The bell at the top is the one way to the notifications inbox (section 57);
+ * the bar has no tab for it. A failed unread count is a bell with no badge,
+ * never an error on this screen.
  */
 
 import React, { useCallback } from 'react';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type {
+  NativeStackNavigationProp,
+  NativeStackScreenProps,
+} from '@react-navigation/native-stack';
 
 import { CategoryGrid } from '@/features/customer/components/CategoryGrid';
 import { HomeGreeting } from '@/features/customer/components/HomeGreeting';
 import { HomeSection } from '@/features/customer/components/HomeSection';
 import { RecentRequestList } from '@/features/customer/components/RecentRequestList';
+import { ResumeRequestCard } from '@/features/customer/components/ResumeRequestCard';
 import { ServicePrompt } from '@/features/customer/components/ServicePrompt';
 import { CUSTOMER_COPY } from '@/features/customer/constants/customerCopy';
 import { useCustomerHome } from '@/features/customer/hooks/useCustomerHome';
+import {
+  isDraftWorthKeeping,
+  type RequestDraftStep,
+} from '@/features/customer/state/requestDraft';
+import { NotificationBell } from '@/features/notifications/components/NotificationBell';
+import { useUnreadNotificationCount } from '@/features/notifications/hooks/useUnreadNotificationCount';
 import type { CustomerStackParamList, CustomerTabParamList } from '@/navigation/types';
-import { Screen } from '@/shared/components';
+import { Screen, StaleNotice } from '@/shared/components';
+import { useAnalytics } from '@/shared/hooks/useAnalytics';
 import { useTheme } from '@/shared/theme';
 
 const COPY = CUSTOMER_COPY.home;
@@ -61,11 +76,131 @@ const TOP_EDGE_ONLY = ['top'] as const;
 
 export function CustomerHomeScreen({ navigation }: Props) {
   const theme = useTheme();
-  const { greeting, name, categories, requests, refresh, isRefreshing } = useCustomerHome();
+  const {
+    greeting,
+    name,
+    categories,
+    requests,
+    resume: restoredRequest,
+    refresh,
+    isRefreshing,
+    isStale,
+    staleError,
+  } = useCustomerHome();
+
+  /*
+    A draft is offered only while it is worth keeping.
+
+    The draft context keeps a draft that was emptied back out in memory — the
+    form that emptied it may still be open, and is still writing to it — and
+    removes only the copy on the device. Offering "Continue your request" for
+    that would be offering to resume nothing, so the same rule that decides
+    whether a draft is saved (`isDraftWorthKeeping`) decides whether it is
+    offered.
+  */
+  const resume =
+    restoredRequest && isDraftWorthKeeping(restoredRequest.draft) ? restoredRequest : null;
 
   const openCategories = useCallback(() => {
     navigation.navigate('Categories');
   }, [navigation]);
+
+  /*
+    The bell (section 57): the unread count, read on arrival and on every
+    return, and the inbox as a pushed screen. Whose notifications they are is
+    the session's, so nothing travels.
+  */
+  const unreadNotifications = useUnreadNotificationCount();
+  const openNotifications = useCallback(() => {
+    navigation.navigate('Notifications');
+  }, [navigation]);
+
+  /*
+    A tile opens its own category, with exactly what the catalogue sends.
+
+    It used to open the whole catalogue, so the customer tapped the category
+    they wanted and then had to find it and tap it again. The id and nothing
+    else, as `CategoriesScreen` sends — Sub Categories reads the name for
+    itself — and pushed onto the stack, so its Back comes straight home. "See
+    all" and the primary action still open the catalogue: those are the ways in
+    for someone who has not chosen yet.
+
+    The tile is also the choice section 54 counts as `category_selected`, sent
+    exactly as the catalogue sends it. "See all" and the primary action send
+    nothing: opening the catalogue is not choosing from it.
+  */
+  const { track } = useAnalytics();
+  const openCategory = useCallback(
+    (categoryId: string) => {
+      track('category_selected', { categoryId });
+      navigation.navigate('SubCategories', { categoryId });
+    },
+    [navigation, track],
+  );
+
+  /*
+    A request, by its reference and nothing more.
+
+    The card has the summary; the details screen fetches the record for itself.
+    Handing it the summary would make the details screen depend on which list it
+    was opened from, and the address and notes it shows are not on a card anyway.
+  */
+  const openRequest = useCallback(
+    (requestId: string) => {
+      navigation.navigate('RequestDetails', { requestId });
+    },
+    [navigation],
+  );
+
+  /*
+    Resuming rebuilds the flow, rather than jumping to the middle of it.
+
+    Where to land is the draft's answer, not navigation history's — that is the
+    whole point of the draft carrying its own progress. But landing there with an
+    empty stack behind it would make Back go Home from the middle of a request,
+    so the screens that come before are pushed underneath: someone resumed at the
+    vendor step can still go back and change a date.
+  */
+  const resumeRequest = useCallback(() => {
+    if (!resume) {
+      return;
+    }
+
+    const { categoryId, subCategoryId } = resume.draft;
+    const params = { categoryId, subCategoryId };
+
+    /*
+      Every step up to the one that still needs them, and no further.
+
+      Built from the draft's own answer rather than from a remembered history,
+      so a request left at the address step comes back to the address step even
+      after the app has been closed — and so the screens before it are underneath
+      rather than absent, which is what lets Back go back rather than home.
+    */
+    const before: RequestDraftStep[] = ['details', 'address', 'vendor', 'review'];
+    const reached = before.indexOf(resume.step);
+
+    const routes = [
+      { name: 'CustomerTabs' as const },
+      { name: 'CreateRequest' as const, params },
+      ...(reached >= before.indexOf('address') ? [{ name: 'ServiceAddress' as const, params }] : []),
+      ...(reached >= before.indexOf('vendor') ? [{ name: 'PreferredVendor' as const, params }] : []),
+      ...(reached >= before.indexOf('review')
+        ? [{ name: 'RequestConfirmation' as const, params }]
+        : []),
+    ];
+
+    /*
+      The stack, explicitly.
+
+      This screen is a tab inside the stack, so its own `reset` would rearrange
+      the three tabs — `navigate` reads through to the parent but `reset` does
+      not, which is the kind of difference that only shows up at runtime.
+    */
+    navigation
+      .getParent<NativeStackNavigationProp<CustomerStackParamList>>()
+      ?.reset({ index: routes.length - 1, routes });
+  }, [resume, navigation]);
 
   return (
     <Screen
@@ -81,9 +216,55 @@ export function CustomerHomeScreen({ navigation }: Props) {
         paddingBottom: theme.spacing.xxl,
       }}
       testID="customer-home">
-      <HomeGreeting greeting={greeting} name={name} testID="home-greeting" />
+      <HomeGreeting
+        greeting={greeting}
+        name={name}
+        trailing={
+          <NotificationBell
+            unreadCount={unreadNotifications}
+            onPress={openNotifications}
+            testID="home-notifications"
+          />
+        }
+        testID="home-greeting"
+      />
 
       <ServicePrompt onRequestService={openCategories} testID="home-prompt" />
+
+      {/*
+        Above the catalogue, below the prompt. A request already begun is more
+        immediately useful than starting another, and putting it under the two
+        existing sections would bury it — but it is not the reason the screen
+        exists, so it does not displace the question the screen is here to ask.
+      */}
+      {resume ? (
+        <ResumeRequestCard
+          serviceName={resume.categoryName}
+          startedLabel={resume.startedLabel}
+          onPress={resumeRequest}
+          testID="home-resume"
+        />
+      ) : null}
+
+      {/*
+        A pull that failed, said once for the page, directly above the two
+        sections it failed to refresh. They keep what they had — a working grid
+        and the customer's own requests are still worth showing — and this stops
+        them passing for current. Try again pulls again, so nothing on screen is
+        cleared while it reloads.
+      */}
+      {isStale ? (
+        <StaleNotice
+          title={COPY.staleTitle}
+          message={COPY.staleMessage}
+          error={staleError}
+          retryLabel={COPY.staleRetry}
+          retryHint={COPY.staleRetryHint}
+          onRetry={refresh}
+          isRetrying={isRefreshing}
+          testID="home-stale"
+        />
+      ) : null}
 
       <HomeSection
         title={COPY.categoriesTitle}
@@ -98,7 +279,7 @@ export function CustomerHomeScreen({ navigation }: Props) {
           isLoading={categories.isLoading}
           error={categories.error}
           onRetry={categories.retry}
-          onSelect={openCategories}
+          onSelect={openCategory}
           testID="home-category-grid"
         />
       </HomeSection>
@@ -110,6 +291,7 @@ export function CustomerHomeScreen({ navigation }: Props) {
           error={requests.error}
           onRetry={requests.retry}
           onRequestService={openCategories}
+          onOpenRequest={openRequest}
           testID="home-recent-list"
         />
       </HomeSection>

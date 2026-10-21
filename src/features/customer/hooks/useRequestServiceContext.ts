@@ -22,6 +22,7 @@
 import { useMemo } from 'react';
 
 import { useSubCategories } from '@/features/customer/hooks/useSubCategories';
+import type { ServiceCategory, SubCategory } from '@/shared/services/types/CategoryService';
 import type { AppError } from '@/shared/types/error';
 
 export interface RequestServiceContext {
@@ -41,13 +42,20 @@ export interface RequestServiceContext {
   error: AppError | null;
   /** Re-runs the catalogue read behind the names. */
   retry: () => void;
+  /** The catalogue behind `categoryName`, for naming another category without reading it again. */
+  catalogue?: ServiceCategory[];
+  /**
+   * This category's services, behind `subCategoryName`, for naming another
+   * service in the same category without reading them again.
+   */
+  services?: SubCategory[];
 }
 
 export function useRequestServiceContext(
   categoryId: string,
   subCategoryId: string,
 ): RequestServiceContext {
-  const { services, categoryName } = useSubCategories(categoryId);
+  const { services, categoryName, catalogue } = useSubCategories(categoryId);
 
   const subCategoryName = useMemo(
     () => services.data?.find(service => service.id === subCategoryId)?.name,
@@ -60,5 +68,7 @@ export function useRequestServiceContext(
     isLoading: services.isLoading,
     error: services.error,
     retry: services.retry,
+    catalogue,
+    services: services.data,
   };
 }

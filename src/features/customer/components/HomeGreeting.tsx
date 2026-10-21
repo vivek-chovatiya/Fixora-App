@@ -15,7 +15,7 @@
  * the name a line to its left already.
  */
 
-import React, { memo } from 'react';
+import React, { memo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Avatar, Text } from '@/shared/components';
@@ -24,10 +24,17 @@ import { useTheme } from '@/shared/theme';
 export interface HomeGreetingProps {
   greeting: string;
   name: string;
+  /**
+   * A control at the trailing edge, after the avatar — the notification bell
+   * (PROJECT_BIBLE.md section 57). A slot rather than a bell prop, so the
+   * greeting knows nothing about notifications; unlike the avatar it is a real
+   * control, so it is never hidden from assistive technology.
+   */
+  trailing?: ReactNode;
   testID?: string;
 }
 
-function HomeGreetingComponent({ greeting, name, testID }: HomeGreetingProps) {
+function HomeGreetingComponent({ greeting, name, trailing, testID }: HomeGreetingProps) {
   const theme = useTheme();
 
   return (
@@ -49,6 +56,8 @@ function HomeGreetingComponent({ greeting, name, testID }: HomeGreetingProps) {
       <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         <Avatar name={name} size="sm" testID={testID ? `${testID}-avatar` : undefined} />
       </View>
+
+      {trailing}
     </View>
   );
 }
