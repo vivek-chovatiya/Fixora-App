@@ -62,6 +62,71 @@ export const AppConfig = Object.freeze({
      * clearing one must not clear the other.
      */
     onboardingKey: '@fixora/onboarding',
+    /**
+     * The phone number of the last vendor to sign in on this device, so the
+     * next vendor sign in asks for the auth code alone.
+     *
+     * ⚠️ The phone and nothing else — never the auth code, which is a standing
+     * credential that must not be persisted (PROJECT_BIBLE.md section 7A.2).
+     * Separate from the session because it outlives it: signing out keeps it,
+     * which is the point of it.
+     */
+    rememberedVendorKey: '@fixora/remembered-vendor',
+    /**
+     * The request a customer started and has not sent yet.
+     *
+     * Separate from the session for the same reason onboarding is: they answer
+     * different questions and have different lifetimes. It holds no credential
+     * and no personal record — only what was typed into one unfinished form.
+     */
+    requestDraftKey: '@fixora/request-draft',
+    /**
+     * Requests the mock backend accepted, one key per customer beneath this
+     * prefix, so they survive a restart until a real backend holds them.
+     *
+     * ⚠️ Mock-only, and separate from the draft for good reason: a draft is a
+     * form still being filled in and is cleared when it is sent; this is what it
+     * became. The key and everything under it go when the mock does.
+     */
+    mockRequestHistoryKey: '@fixora/mock-request-history',
+    /**
+     * Reviews the mock backend accepted (PROJECT_BIBLE.md section 24), one key
+     * per customer beneath this prefix.
+     *
+     * ⚠️ Mock-only, and its own key rather than a field on the request history:
+     * a review belongs to the review domain and never changes the request. It
+     * survives a restart because the requests it is about do — a review that
+     * vanished while its request stayed would offer a second one, which section
+     * 24 forbids. The key goes when the mock does.
+     */
+    mockRequestReviewKey: '@fixora/mock-request-reviews',
+    /**
+     * A customer's saved addresses, one key per customer beneath this prefix
+     * (PROJECT_BIBLE.md section 18, Phase 3D-9).
+     *
+     * ⚠️ Mock-only, and its own key for the same reason the reviews have one: an
+     * address book outlives every request. The draft is one unfinished form and
+     * is cleared when it is sent; this is a customer's own record and, unlike
+     * the draft, survives logging out.
+     */
+    mockSavedAddressKey: '@fixora/mock-saved-addresses',
+    /**
+     * A vendor's business profile, one key per vendor beneath this prefix
+     * (PROJECT_BIBLE.md section 38, Phase 3E-1).
+     *
+     * ⚠️ Mock-only. Business fields only — the owner's name and contact details
+     * stay in the session. Survives logging out, as a vendor's own record.
+     */
+    mockVendorProfileKey: '@fixora/mock-vendor-profiles',
+    /**
+     * A vendor's team, one key per vendor beneath this prefix
+     * (PROJECT_BIBLE.md section 39, Phase 3E-7).
+     *
+     * ⚠️ Mock-only, and its own key: the team is not part of the business
+     * profile and is read and written apart from it. Survives logging out, as a
+     * vendor's own record.
+     */
+    mockVendorTeamKey: '@fixora/mock-vendor-team',
   }),
 
   pagination: Object.freeze({
@@ -99,6 +164,20 @@ export const AppConfig = Object.freeze({
   }),
 
   /**
+   * Money (PROJECT_BIBLE.md sections 36 and 37: the offline payment record).
+   *
+   * The one currency the app records amounts in, as an ISO 4217 code — never a
+   * symbol; how it is written is `shared/presentation/money`'s. Every amount
+   * leaving the app carries this code beside it, so a backend never has to
+   * assume one. A single value for the reason `dialCode` is one: choosing
+   * another currency is multi-country, a future phase, and when it comes this
+   * becomes a default rather than a constant.
+   */
+  money: Object.freeze({
+    currency: 'INR',
+  }),
+
+  /**
    * One-time code shape, for input length and local validation only.
    *
    * This is not a claim about how codes are generated. Whether a code is correct
@@ -109,9 +188,32 @@ export const AppConfig = Object.freeze({
     length: 6,
   }),
 
+  /**
+   * The vendor's permanent auth code (PROJECT_BIBLE.md section 7A.2): exactly
+   * this many digits, always handled as a string so a leading zero survives.
+   *
+   * The one place the length is written. Validation, the input's ceiling, the
+   * copy that names the length and the mock's generator all read it from here,
+   * so the day the backend issues a different length this is the only edit.
+   *
+   * ⚠️ Shape only, like `otp`. The backend generates the code and is the only
+   * judge of whether one is right (section 7A.4); this stops an entry that
+   * cannot be a code from costing a round trip.
+   */
+  vendorAuthCode: Object.freeze({
+    length: 6,
+  }),
+
   image: Object.freeze({
     maxSizeBytes: 5 * 1024 * 1024,
     maxUploadsPerRequest: 5,
+    /**
+     * Most shop images a vendor keeps on their profile (PROJECT_BIBLE.md
+     * section 38). The app's ceiling, not the backend's — section 38 sets none
+     * — enforced by the Shop images screen and re-checked by the mock service.
+     * Size, type and compression are the rules above, unchanged.
+     */
+    maxShopImagesPerVendor: 6,
     allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'] as const,
     /** Longest edge, in pixels, after compression. */
     maxDimension: 1600,

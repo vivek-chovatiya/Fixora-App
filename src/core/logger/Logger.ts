@@ -9,7 +9,10 @@
  *   masked automatically, at any depth.
  * - Log level is owned by AppConfig, never decided at the call site.
  *
- * When a crash reporting service is introduced, only this file changes.
+ * Crash reporting is not this file's job. A failure worth reporting goes to the
+ * CrashReporter service, through `recordError` in
+ * `shared/services/telemetry.ts`; this only prints, and an error logged here is
+ * not thereby reported.
  */
 
 import { AppConfig, type LogLevel } from '@/core/config/AppConfig';

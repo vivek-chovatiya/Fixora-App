@@ -8,7 +8,7 @@ import ReactNativeClipboardModule from '@react-native-clipboard/clipboard';
 
 import { getClipboard, setClipboard, type Clipboard } from '@/core/clipboard/Clipboard';
 
-const SENSITIVE = 'FX-ABCD-2345';
+const SENSITIVE = '482913';
 
 describe('Clipboard', () => {
   const original: Clipboard = getClipboard();

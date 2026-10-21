@@ -33,6 +33,17 @@ jest.mock('react-native-permissions', () =>
 );
 
 /**
+ * NetInfo resolves a native module too, and the registry imports it for the
+ * device's network status, so every suite that touches the registry would fail
+ * to load without this. The library ships its own mock (online by default);
+ * tests that care about being offline register a `MockNetworkStatusService`
+ * instead of driving this.
+ */
+jest.mock('@react-native-community/netinfo', () =>
+  require('@react-native-community/netinfo/jest/netinfo-mock.js'),
+);
+
+/**
  * `useSafeAreaInsets` throws rather than guessing when no provider sits above
  * it, which would make every tree containing a toast wrap itself for a reason
  * no test is about.
