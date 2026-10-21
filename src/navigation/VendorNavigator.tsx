@@ -43,6 +43,7 @@ import { useAuthSession } from '@/features/auth/hooks/useAuth';
 import { NotificationsScreen } from '@/features/notifications/screens/NotificationsScreen';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import { CompleteWorkScreen } from '@/features/vendor/screens/CompleteWorkScreen';
+import { RecordPaymentScreen } from '@/features/vendor/screens/RecordPaymentScreen';
 import { ShopImagesScreen } from '@/features/vendor/screens/ShopImagesScreen';
 import { WorkingHoursScreen } from '@/features/vendor/screens/WorkingHoursScreen';
 import { VendorDashboardScreen } from '@/features/vendor/screens/VendorDashboardScreen';
@@ -136,6 +137,8 @@ function VendorStack() {
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
           {/* Pushed from "Mark completed"; a reference only — the service checks the rest. */}
           <Stack.Screen name="CompleteWork" component={CompleteWorkScreen} />
+          {/* Pushed from "Record payment" on finished work; a reference only, as above. */}
+          <Stack.Screen name="RecordPayment" component={RecordPaymentScreen} />
           {/* Pushed from Profile; whose reviews they are is the session's, not the route's. */}
           <Stack.Screen name="VendorReviews" component={VendorReviewsScreen} />
           {/* Pushed from Profile; the period is chosen on the screen, the vendor by the session. */}

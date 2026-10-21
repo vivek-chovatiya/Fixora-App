@@ -5,7 +5,7 @@
  * what they do, how to reach them — and Edit and Remove.
  *
  * ⚠️ The details are one block for a screen reader ("Suresh Naik, Senior
- * technician. Phone 9000000101"), and the two actions sit under it as siblings,
+ * technician. Phone +91 90000 00101"), and the two actions sit under it as siblings,
  * never inside it — the request card's rule (3E-4): a button inside a button
  * cannot be focused on Android, and a tap on Remove must never be a tap on
  * anything else.
@@ -17,7 +17,12 @@
  *
  * ⚠️ Long names and roles wrap to two lines and are then cut short on screen,
  * never in what is spoken. A member with no phone has no phone line — not an
- * empty one, and not "Not added". Section 39's Profile Image is the avatar
+ * empty one, and not "Not added". A phone is written as the owner chose on
+ * 21/10/2026, "+91 90000 00101" (`formatPhone`), on the card and in the
+ * spoken block alike, so what is heard is what is seen; display only — the
+ * member's stored number is never changed by it.
+ *
+ * Section 39's Profile Image is the avatar
  * (2026-10-21): the member's photo when they have one, their initials when
  * they do not or it will not load. It sits inside the hidden block, so a
  * screen reader hears the same sentence with or without it — never a separate
@@ -46,6 +51,7 @@ import {
   StatusBadge,
   Text,
 } from '@/shared/components';
+import { formatPhone } from '@/shared/presentation/phone';
 import type { TeamMember } from '@/shared/services/types/VendorTeamService';
 import { useTheme } from '@/shared/theme';
 
@@ -76,7 +82,9 @@ function TeamMemberCardComponent({
   const remove = useCallback(() => onRemove(member.id), [member.id, onRemove]);
 
   const status = presentTeamMemberStatus(member.status);
-  const details = COPY.memberSpoken(member.name, member.role, member.phone);
+  // Empty for no phone, which `memberSpoken` and the line below both read as none.
+  const phone = formatPhone(member.phone);
+  const details = COPY.memberSpoken(member.name, member.role, phone);
 
   return (
     <Card bordered shadow="sm" style={{ gap: theme.spacing.md }} testID={testID}>
@@ -116,7 +124,7 @@ function TeamMemberCardComponent({
               testID={testID ? `${testID}-role` : undefined}>
               {member.role}
             </Text>
-            {member.phone ? (
+            {phone ? (
               <View style={[styles.phone, { gap: theme.spacing.xs }]}>
                 <Icon name="call" size="sm" color="textTertiary" />
                 <Text
@@ -125,7 +133,7 @@ function TeamMemberCardComponent({
                   numberOfLines={1}
                   style={styles.shrinks}
                   testID={testID ? `${testID}-phone` : undefined}>
-                  {member.phone}
+                  {phone}
                 </Text>
               </View>
             ) : null}

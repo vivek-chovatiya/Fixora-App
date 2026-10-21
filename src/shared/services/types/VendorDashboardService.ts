@@ -55,7 +55,20 @@ export interface VendorJobSummary {
   id: string;
   /** Rendered, never matched against a known list (section 11). */
   serviceName: string;
-  customerName: string;
+  /**
+   * Who raised it. Rendered, never matched.
+   *
+   * ⚠️ Only on work this vendor holds — accepted, in progress, finished
+   * (owner decision, 21/10/2026: no customer name, phone or full address
+   * before the vendor has accepted; see `VendorRequestDetails`). A request
+   * waiting for them, or one they declined, comes without it — on the list,
+   * on the dashboard and in its details alike — and its card shows the area
+   * (`locality`) in its place. Section 31's card "Customer" is read that way:
+   * the customer's name once the work is theirs, where it is until then. A
+   * screen draws nothing for it when it is absent — never a placeholder name —
+   * and draws it only for work the vendor holds, even if a record carries it.
+   */
+  customerName?: string;
   /** The neighbourhood only. Absent when the backend does not say. */
   locality?: string;
   /** Backend constant (section 15), shown through `presentPriority`. */

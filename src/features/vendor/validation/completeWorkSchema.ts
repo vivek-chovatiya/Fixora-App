@@ -18,6 +18,9 @@
  *
  * ⚠️ Notes are bounded, never altered (the customer notes rule): sent exactly
  * as typed, and left out when there is nothing but space in them.
+ *
+ * Recording a payment later (21/10/2026) is held to the paid half of the same
+ * rules, here, so the two forms cannot ask for a method differently.
  */
 
 import { z } from 'zod';
@@ -31,6 +34,7 @@ import {
   FINAL_AMOUNT_MAX_MINOR,
   PAYMENT_STATUS_PAID,
   type VendorCompletionInput,
+  type VendorPaymentInput,
 } from '@/shared/services/types/VendorRequestService';
 
 const COPY = VENDOR_COPY.validation;
@@ -171,4 +175,32 @@ export function buildCompletionInput(
     ...(paid && values.paymentMethodId ? { paymentMethodId: values.paymentMethodId } : {}),
     ...(values.notes.trim().length > 0 ? { notes: values.notes } : {}),
   };
+}
+
+/*
+ * Recording a payment after the job (owner decision, 21/10/2026): the paid
+ * half of the rules above, and nothing else. The amount was fixed when the job
+ * was completed and is not asked again; the status is not a choice, because
+ * "Paid" is the only thing a "Not paid yet" record can become. What is left is
+ * the method — required, with the completion form's own message.
+ */
+export const recordPaymentSchema = z.object({
+  paymentMethodId: z.string().refine(value => value.length > 0, COPY.paymentMethodRequired),
+});
+
+export type RecordPaymentForm = z.infer<typeof recordPaymentSchema>;
+
+/** What the record-payment form opens with: no method chosen. A fresh object each time. */
+export function recordPaymentFormValues(): RecordPaymentForm {
+  return { paymentMethodId: '' };
+}
+
+/**
+ * The form's values as the service's input.
+ *
+ * ⚠️ Exact keys: the status the record becomes and the method — never an
+ * amount, a currency or notes, which this recording does not change.
+ */
+export function buildPaymentInput(values: RecordPaymentForm): VendorPaymentInput {
+  return { paymentStatus: PAYMENT_STATUS_PAID, paymentMethodId: values.paymentMethodId };
 }

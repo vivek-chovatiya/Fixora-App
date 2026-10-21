@@ -59,7 +59,7 @@ import {
   StaleNotice,
   Text,
 } from '@/shared/components';
-import { useTheme, type ColorTokens, type IconName } from '@/shared/theme';
+import { useTheme, type IconName, type SubtleTint } from '@/shared/theme';
 
 const COPY = VENDOR_COPY.reports;
 
@@ -70,18 +70,18 @@ const COUNT_PLACEHOLDERS = 4;
 
 interface FigureLook {
   icon: IconName;
-  tint: keyof ColorTokens;
-  tintBackground: keyof ColorTokens;
+  /** The disc's tint; `ReportFigureCard` inks the glyph from it. */
+  tint: SubtleTint;
 }
 
 /** Each count is told apart by its glyph and its word as well as its tint (section 46). */
 const COUNT_LOOKS: Readonly<Record<ReportCountKey, FigureLook>> = {
-  total: { icon: 'requests', tint: 'info', tintBackground: 'infoSubtle' },
-  completed: { icon: 'success', tint: 'success', tintBackground: 'successSubtle' },
+  total: { icon: 'requests', tint: 'infoSubtle' },
+  completed: { icon: 'success', tint: 'successSubtle' },
   // Neutral, not red: turning work down and a customer calling it off are
   // ordinary outcomes, and error styling is for faults (section 49.1).
-  rejected: { icon: 'reject', tint: 'neutral', tintBackground: 'neutralSubtle' },
-  cancelled: { icon: 'cancelled', tint: 'neutral', tintBackground: 'neutralSubtle' },
+  rejected: { icon: 'reject', tint: 'neutralSubtle' },
+  cancelled: { icon: 'cancelled', tint: 'neutralSubtle' },
 };
 
 type Props = NativeStackScreenProps<VendorStackParamList, 'VendorReports'>;
@@ -159,8 +159,7 @@ export function VendorReportsScreen({ navigation }: Props) {
             note={shown.rating.note}
             spoken={shown.rating.spoken}
             icon="starOutline"
-            tint="warning"
-            tintBackground="warningSubtle"
+            tint="warningSubtle"
             style={styles.whole}
             testID="vendor-reports-rating"
           />

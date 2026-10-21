@@ -4,10 +4,12 @@
  * One request, opened (PROJECT_BIBLE.md section 32; Phase 3E-3), answered
  * (section 33; Phase 3E-4), and worked (sections 35 and 36; Phase 3E-5).
  *
- * It shows what the request is, who raised it, roughly where, how urgent it is,
- * how it reached this vendor and what the customer said. Straight under the
- * heading — on the first screen, so nobody scrolls to act — sits the one thing
- * the request is ready for:
+ * It shows what the request is (section 32): the reference, the category and
+ * service, how urgent it is, when the customer would like it done, how it
+ * reached this vendor, what the customer said and the photographs they
+ * attached — and where it is and who raised it, as far as the vendor may know
+ * yet. Straight under the heading — on the first screen, so nobody scrolls to
+ * act — sits the one thing the request is ready for:
  *
  * - waiting → "Your answer": Accept, or Reject after a confirmation;
  * - accepted → "Your work": Start work;
@@ -23,8 +25,22 @@
  * how, their notes — under "Payment", with a line saying it is their record and
  * that Fixora does not process payments (section 37: recorded, never
  * processed). Work completed without a record shows no payment at all, never a
- * guess. There is still no way to call or message the customer and no
- * tracking.
+ * guess. A record still "Not paid yet" offers "Record payment" (owner decision,
+ * 21/10/2026), which opens its own form (`RecordPayment`) and comes back here
+ * the way a completion does; a paid record, or one whose status the app cannot
+ * read, offers nothing. There is still no way to call or message the customer
+ * (section 32 lists the information, not a call button) and no tracking.
+ *
+ * ⚠️ Who and exactly where only once the vendor holds the work (owner decision,
+ * 21/10/2026). While a request waits for their answer, or after they declined
+ * it, the screen shows the area and no more — no name, no phone, no address —
+ * and, while it waits, says the rest arrives on accepting. Accepted, in
+ * progress or finished (`holdsWork`), a "Customer" card gives the name and the
+ * phone (written by `formatPhone`, never dialled) and "Location" the full
+ * address. The service leaves those fields off a record the vendor does not
+ * hold; this screen keeps the rule as well, and draws none of them for such a
+ * request even if a record carries them. A status the app does not recognise
+ * shows the less.
  *
  * ⚠️ Completing happens on the form pushed over this screen, so this screen
  * cannot adopt the answer as it does for its own actions. Instead, when the
@@ -44,11 +60,11 @@
  * to somebody else, its real state otherwise. A failure leaves everything as it
  * was, ready to try again. Back is always there; nothing navigates on its own.
  *
- * ⚠️ Not the whole of section 32 either. The address, the photographs and the
- * preferred date and time are not on the contract yet — see
- * `VendorRequestDetails` for why the address in particular waits for a product
- * decision — and nothing is drawn in their place. An empty "Address" row would
- * read as a request with no address.
+ * ⚠️ Every part is drawn only when the record has it: no photographs, no
+ * photo strip; no preferred date, no row for one; no area and no address, no
+ * location (unless the request is waiting, when the line about what accepting
+ * shares still stands). An empty "Address" row would read as a request with no
+ * address.
  *
  * The reference is all the route carries. Whose request it is comes from the
  * session, so a reference that is not this vendor's opens a screen that says it
@@ -66,12 +82,13 @@ import { RejectRequestDialog } from '@/features/vendor/components/RejectRequestD
 import { RequestAnswerActions } from '@/features/vendor/components/RequestAnswerActions';
 import { RequestWorkAction } from '@/features/vendor/components/RequestWorkAction';
 import {
+  holdsWork,
   isAwaitingAnswer,
   isFinishedWork,
   nextWorkStep,
   presentJobStatus,
 } from '@/features/vendor/constants/jobPresentation';
-import { describePayment } from '@/features/vendor/constants/paymentPresentation';
+import { describePayment, isUnpaidStatus } from '@/features/vendor/constants/paymentPresentation';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import {
   useVendorRequestDecision,
@@ -86,12 +103,17 @@ import {
   EmptyState,
   ErrorState,
   Icon,
+  RequestPhotoStrip,
   Screen,
+  SecondaryButton,
   Skeleton,
   StatusBadge,
   Text,
 } from '@/shared/components';
+import { formatDateValue } from '@/shared/presentation/calendarDate';
+import { formatTimeValue } from '@/shared/presentation/clockTime';
 import { formatMoney } from '@/shared/presentation/money';
+import { formatPhone } from '@/shared/presentation/phone';
 import { formatRequestDate, presentPriority } from '@/shared/presentation/requestTokens';
 import type {
   VendorCompletionRecord,
@@ -203,6 +225,13 @@ export function VendorRequestDetailsScreen({ navigation, route }: Props) {
     [answer, navigation, settleOutcome],
   );
 
+  // A payment recorded after the job is its own form, over this screen, like completing.
+  const recordPayment = useCallback(() => {
+    if (request) {
+      navigation.navigate('RecordPayment', { requestId: request.id });
+    }
+  }, [navigation, request]);
+
   const workStep = request ? nextWorkStep(request) : null;
 
   return (
@@ -237,6 +266,7 @@ export function VendorRequestDetailsScreen({ navigation, route }: Props) {
       ) : request ? (
         <RequestBody
           request={request}
+          onRecordPayment={recordPayment}
           action={
             isAwaitingAnswer(request) ? (
               <AnswerSection
@@ -356,6 +386,11 @@ function WorkSection({ request, step, answering, disabled, onStep }: WorkSection
   );
 }
 
+interface PaymentSectionProps {
+  completion: VendorCompletionRecord;
+  onRecordPayment: () => void;
+}
+
 /**
  * "Payment": what the vendor recorded when they completed the job (sections 36
  * and 37) — the amount, paid or not and how, their notes — and a line saying
@@ -364,12 +399,17 @@ function WorkSection({ request, step, answering, disabled, onStep }: WorkSection
  * ⚠️ Every line only when the record has it. An amount that cannot be written
  * (not a whole number of minor units) is left out rather than shown wrong;
  * notes that are only space are no notes.
+ *
+ * ⚠️ "Record payment" only on a record that says "Not paid yet"
+ * (`isUnpaidStatus`) — never on a paid one, which is final, and never on a
+ * status the app cannot read (21/10/2026).
  */
-function PaymentSection({ completion }: { completion: VendorCompletionRecord }) {
+function PaymentSection({ completion, onRecordPayment }: PaymentSectionProps) {
   const theme = useTheme();
 
   const amount = formatMoney(completion.finalAmountMinor, completion.currency);
   const notes = completion.notes?.trim() ? completion.notes : undefined;
+  const canRecordPayment = isUnpaidStatus(completion.paymentStatus);
 
   return (
     <Card bordered shadow="sm" style={{ gap: theme.spacing.md }} testID="vendor-request-payment">
@@ -398,15 +438,44 @@ function PaymentSection({ completion }: { completion: VendorCompletionRecord }) 
       <Text variant="caption" color="textTertiary" testID="vendor-request-payment-recorded">
         {PAYMENT.recorded}
       </Text>
+      {canRecordPayment ? (
+        <View style={styles.start} testID="vendor-request-record-payment">
+          <SecondaryButton
+            label={PAYMENT.recordPayment}
+            icon="edit"
+            onPress={onRecordPayment}
+            accessibilityHint={PAYMENT.recordPaymentHint}
+          />
+        </View>
+      ) : null}
     </Card>
   );
 }
 
-function RequestBody({ request, action }: { request: VendorRequestDetails; action: ReactNode }) {
+interface RequestBodyProps {
+  request: VendorRequestDetails;
+  action: ReactNode;
+  onRecordPayment: () => void;
+}
+
+function RequestBody({ request, action, onRecordPayment }: RequestBodyProps) {
   const theme = useTheme();
 
   const status = presentJobStatus(request);
   const priority = presentPriority(request.priority);
+
+  /*
+    Who and exactly where, only for work this vendor holds (21/10/2026) —
+    decided from the status here, whatever the record carries, so a field the
+    service should have withheld is still never drawn.
+  */
+  const holds = holdsWork(request);
+  const awaiting = isAwaitingAnswer(request);
+  const customerName = holds ? request.customerName?.trim() : undefined;
+  const phone = holds ? formatPhone(request.customerPhone) : '';
+  const address = holds ? request.address?.formattedAddress?.trim() : undefined;
+  const area = request.locality?.trim();
+  const photos = request.imageUrls ?? [];
 
   const origin =
     request.dispatch === 'directed'
@@ -454,7 +523,7 @@ function RequestBody({ request, action }: { request: VendorRequestDetails; actio
 
       {/* Where the action would be: on finished work, what it came to is the first thing to see. */}
       {request.completion && isFinishedWork(request) ? (
-        <PaymentSection completion={request.completion} />
+        <PaymentSection completion={request.completion} onRecordPayment={onRecordPayment} />
       ) : null}
 
       <Card bordered shadow="sm" style={{ gap: theme.spacing.md }} testID="vendor-request-summary">
@@ -475,6 +544,21 @@ function RequestBody({ request, action }: { request: VendorRequestDetails; actio
           value={formatRequestDate(request.createdAt)}
           testID="vendor-request-raised"
         />
+        {/* Read back as the customer chose it ("Tomorrow", "6:00 PM"), never as stored. */}
+        {request.preferredDate ? (
+          <ProfileDetailRow
+            label={COPY.preferredDateLabel}
+            value={formatDateValue(request.preferredDate, COPY)}
+            testID="vendor-request-preferred-date"
+          />
+        ) : null}
+        {request.preferredTime ? (
+          <ProfileDetailRow
+            label={COPY.preferredTimeLabel}
+            value={formatTimeValue(request.preferredTime)}
+            testID="vendor-request-preferred-time"
+          />
+        ) : null}
         {request.completedAt ? (
           <ProfileDetailRow
             label={COPY.completedLabel}
@@ -495,15 +579,58 @@ function RequestBody({ request, action }: { request: VendorRequestDetails; actio
         ) : null}
       </Card>
 
-      <Card bordered shadow="sm" style={{ gap: theme.spacing.md }} testID="vendor-request-customer">
-        <Text variant="overline" color="textTertiary" accessibilityRole="header">
-          {COPY.customerSection}
-        </Text>
-        <ProfileDetailRow label={COPY.customerLabel} value={request.customerName} />
-        {request.locality ? (
-          <ProfileDetailRow label={COPY.localityLabel} value={request.locality} />
-        ) : null}
-      </Card>
+      {customerName || phone ? (
+        <Card
+          bordered
+          shadow="sm"
+          style={{ gap: theme.spacing.md }}
+          testID="vendor-request-customer">
+          <Text variant="overline" color="textTertiary" accessibilityRole="header">
+            {COPY.customerSection}
+          </Text>
+          {customerName ? (
+            <ProfileDetailRow
+              label={COPY.customerLabel}
+              value={customerName}
+              testID="vendor-request-customer-name"
+            />
+          ) : null}
+          {phone ? (
+            <ProfileDetailRow
+              label={COPY.phoneLabel}
+              value={phone}
+              testID="vendor-request-customer-phone"
+            />
+          ) : null}
+        </Card>
+      ) : null}
+
+      {address || area || awaiting ? (
+        <Card
+          bordered
+          shadow="sm"
+          style={{ gap: theme.spacing.md }}
+          testID="vendor-request-location">
+          <Text variant="overline" color="textTertiary" accessibilityRole="header">
+            {COPY.locationSection}
+          </Text>
+          {address ? (
+            <ProfileDetailRow
+              label={COPY.addressLabel}
+              value={address}
+              testID="vendor-request-address"
+            />
+          ) : null}
+          {area ? (
+            <ProfileDetailRow label={COPY.localityLabel} value={area} testID="vendor-request-area" />
+          ) : null}
+          {awaiting ? (
+            <Text variant="caption" color="textTertiary" testID="vendor-request-withheld">
+              {COPY.withheldNote}
+            </Text>
+          ) : null}
+        </Card>
+      ) : null}
 
       <Card
         bordered
@@ -516,6 +643,10 @@ function RequestBody({ request, action }: { request: VendorRequestDetails; actio
         <Text variant="body" color={request.description ? 'textPrimary' : 'textTertiary'}>
           {request.description ?? COPY.descriptionMissing}
         </Text>
+        {/* The customer's photographs, as their own screens show them (section 32, "Images"). */}
+        {photos.length > 0 ? (
+          <RequestPhotoStrip urls={photos} copy={COPY} testID="vendor-request-photos" />
+        ) : null}
       </Card>
     </>
   );
@@ -533,5 +664,8 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  start: {
+    alignItems: 'flex-start',
   },
 });

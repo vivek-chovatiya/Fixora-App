@@ -60,21 +60,29 @@ function Half({ label, spoken, icon, onPress, theme, testID }: HalfProps) {
       accessibilityRole="button"
       accessibilityLabel={spoken}
       testID={testID}>
-      <Icon name={icon} size="lg" color="primary" />
       {/*
-        A definite width (`alignSelf: 'stretch'`), centred inside it — not a
-        width measured by the words. Centred in the half and sized by its own
-        content, "Take a photo" lost its last word at 360dp on the emulator
-        (box 69dp wide, one line: "Take a"): the 3E-3 defect again.
+        Under a finger the half is tinted, and what is on the tint takes the
+        tint's own ink (3G-4): `primary` is 4.2:1 / 4.0:1 on `primarySubtle`.
       */}
-      <Text
-        variant="label"
-        color="primary"
-        align="center"
-        numberOfLines={2}
-        style={styles.label}>
-        {label}
-      </Text>
+      {({ pressed }) => (
+        <>
+          <Icon name={icon} size="lg" color={pressed ? 'onPrimarySubtle' : 'primary'} />
+          {/*
+            A definite width (`alignSelf: 'stretch'`), centred inside it — not a
+            width measured by the words. Centred in the half and sized by its own
+            content, "Take a photo" lost its last word at 360dp on the emulator
+            (box 69dp wide, one line: "Take a"): the 3E-3 defect again.
+          */}
+          <Text
+            variant="label"
+            color={pressed ? 'onPrimarySubtle' : 'primary'}
+            align="center"
+            numberOfLines={2}
+            style={styles.label}>
+            {label}
+          </Text>
+        </>
+      )}
     </Pressable>
   );
 }

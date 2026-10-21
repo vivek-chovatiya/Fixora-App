@@ -22,7 +22,12 @@
  * ⚠️ The photo uploads when it is chosen, through `useImageUpload` — the same
  * pipeline as the customer's avatar — but it is saved with the form. Until Save,
  * the uploaded URL is only a value in this form, so leaving without saving
- * leaves the profile's picture exactly as it was.
+ * leaves the profile's picture exactly as it was. Its card is `PhotoField`,
+ * which the team member form shares (Phase 3G-4).
+ *
+ * The contact details show the phone formatted ("+91 90000 00001",
+ * `formatPhone`, owner decision 21/10/2026) — display only; nothing here sends
+ * it anywhere.
  *
  * A failed save keeps every value; Save is the retry. Leaving the edit form with
  * unsaved changes asks first, through `beforeRemove` so the Android back button
@@ -37,6 +42,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 
 import { useSignOut } from '@/features/auth/hooks/useAuth';
+import { PhotoField } from '@/features/vendor/components/PhotoField';
 import { ProfileDetailRow } from '@/features/vendor/components/ProfileDetailRow';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import { useSaveVendorProfile } from '@/features/vendor/hooks/useSaveVendorProfile';
@@ -48,9 +54,7 @@ import {
 } from '@/features/vendor/validation/vendorProfileSchema';
 import type { VendorStackParamList } from '@/navigation/types';
 import {
-  Avatar,
   BackButton,
-  Button,
   Card,
   ConfirmDialog,
   ControlledInput,
@@ -62,6 +66,7 @@ import {
   Text,
 } from '@/shared/components';
 import { useImageUpload } from '@/shared/hooks/useImageUpload';
+import { formatPhone } from '@/shared/presentation/phone';
 import {
   VENDOR_BUSINESS_NAME_MAX_LENGTH,
   VENDOR_DESCRIPTION_MAX_LENGTH,
@@ -199,8 +204,6 @@ function VendorProfileForm({ navigation, route, profile }: Props & { profile: Ve
   const takePhoto = useCallback(() => photo.choose('camera'), [photo]);
   const choosePhoto = useCallback(() => photo.choose('gallery'), [photo]);
 
-  const hasPhoto = imageUrl !== undefined;
-
   return (
     <Screen
       scrollable
@@ -231,99 +234,22 @@ function VendorProfileForm({ navigation, route, profile }: Props & { profile: Ve
         </Text>
       </View>
 
-      {/* The picture ---------------------------------------------------- */}
-      <Card
-        bordered
-        shadow="sm"
-        style={[styles.photoCard, { padding: theme.spacing.xl, gap: theme.spacing.md }]}
-        testID="vendor-profile-photo">
-        <View accessible accessibilityRole="image" accessibilityLabel={COPY.photoSpoken}>
-          <Avatar
-            uri={imageUrl}
-            name={businessName}
-            size="xl"
-            fallbackIcon="business"
-            testID="vendor-profile-avatar"
-          />
-        </View>
-        <View style={[styles.center, { gap: theme.spacing.xxs }]}>
-          <Text variant="h3" accessibilityRole="header">
-            {COPY.photoSection}
-          </Text>
-          <Text variant="caption" color="textSecondary" align="center">
-            {COPY.photoSupport}
-          </Text>
-        </View>
-
-        <View style={[styles.row, { gap: theme.spacing.sm }]}>
-          <SecondaryButton
-            label={COPY.photoCamera}
-            icon="camera"
-            onPress={takePhoto}
-            disabled={busy}
-            accessibilityLabel={hasPhoto ? COPY.photoReplaceCameraSpoken : COPY.photoAddCameraSpoken}
-            style={styles.rowItem}
-          />
-          <SecondaryButton
-            label={COPY.photoGallery}
-            icon="gallery"
-            onPress={choosePhoto}
-            disabled={busy}
-            accessibilityLabel={
-              hasPhoto ? COPY.photoReplaceGallerySpoken : COPY.photoAddGallerySpoken
-            }
-            style={styles.rowItem}
-          />
-        </View>
-
-        {hasPhoto && !photo.pending ? (
-          <SecondaryButton
-            label={COPY.photoRemove}
-            icon="remove"
-            onPress={photo.remove}
-            disabled={busy}
-            accessibilityLabel={COPY.photoRemoveSpoken}
-          />
-        ) : null}
-
-        {photo.isBusy ? (
-          <Text
-            variant="caption"
-            color="textSecondary"
-            accessibilityLiveRegion="polite"
-            testID="vendor-profile-photo-busy">
-            {COPY.photoUploading}
-          </Text>
-        ) : null}
-
-        {photo.error ? (
-          <View style={[styles.stretch, { gap: theme.spacing.sm }]}>
-            <ErrorState
-              error={photo.error}
-              title={COPY.photoFailedTitle}
-              fullScreen={false}
-              testID="vendor-profile-photo-error"
-            />
-            {photo.pending ? (
-              <View style={[styles.row, { gap: theme.spacing.sm }]}>
-                <Button
-                  label={COPY.photoRetry}
-                  onPress={photo.retry}
-                  disabled={photo.isBusy}
-                  style={styles.rowItem}
-                />
-                <SecondaryButton
-                  label={COPY.photoDiscard}
-                  onPress={photo.discard}
-                  disabled={photo.isBusy}
-                  accessibilityHint={COPY.photoDiscardHint}
-                  style={styles.rowItem}
-                />
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-      </Card>
+      {/* The picture: it names itself, unlike a team member's. */}
+      <PhotoField
+        photo={photo}
+        photoUrl={imageUrl}
+        name={businessName}
+        fallbackIcon="business"
+        pictureSpoken={COPY.photoSpoken}
+        copy={COPY}
+        // Never while saving or signing out; Try again and Discard included.
+        locked={isSaving || isSigningOut}
+        onTakePhoto={takePhoto}
+        onChoosePhoto={choosePhoto}
+        onRemovePhoto={photo.remove}
+        onRetryPhoto={photo.retry}
+        testID="vendor-profile-photo"
+      />
 
       {/* The business --------------------------------------------------- */}
       <View style={{ gap: theme.spacing.lg }}>
@@ -417,7 +343,7 @@ function VendorProfileForm({ navigation, route, profile }: Props & { profile: Ve
           ) : null}
           <ProfileDetailRow
             label={COPY.phoneLabel}
-            value={profile.phone}
+            value={formatPhone(profile.phone)}
             testID="vendor-profile-phone"
           />
           {profile.email ? (
@@ -492,29 +418,5 @@ function VendorProfileForm({ navigation, route, profile }: Props & { profile: Ve
 const styles = StyleSheet.create({
   bar: {
     justifyContent: 'center',
-  },
-  photoCard: {
-    alignItems: 'center',
-  },
-  center: {
-    alignItems: 'center',
-  },
-  stretch: {
-    alignSelf: 'stretch',
-  },
-  /* Side by side where they fit, stacked where they do not. */
-  row: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignSelf: 'stretch',
-  },
-  /*
-    Sized by its label, then grown to fill. An equal-share basis squeezed
-    "Choose a photo" to the edge of its pill at 360dp instead of wrapping;
-    an `auto` basis wraps it onto its own row the moment the labels do not fit.
-  */
-  rowItem: {
-    flexGrow: 1,
-    flexBasis: 'auto',
   },
 });

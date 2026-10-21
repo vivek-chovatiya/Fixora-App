@@ -48,7 +48,8 @@
  * leaves the member's photo as it was. Save waits while an upload is running
  * (its URL would miss the save) and the photo waits while Save runs; a failed
  * upload touches nothing typed. A photo chosen and not yet saved is an unsaved
- * change, so leaving asks first.
+ * change, so leaving asks first. The card is `PhotoField`, shared with the
+ * business picture since Phase 3G-4; it was a copy of that card until then.
  *
  * Nothing here invites, assigns, schedules or pays anybody: a team member is a
  * name, a role, a number, a photo and a status.
@@ -61,6 +62,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 
+import { PhotoField } from '@/features/vendor/components/PhotoField';
 import { presentTeamMemberStatus } from '@/features/vendor/constants/teamMemberStatus';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import {
@@ -75,10 +77,8 @@ import {
 } from '@/features/vendor/validation/teamMemberSchema';
 import type { VendorStackParamList } from '@/navigation/types';
 import {
-  Avatar,
   BackButton,
   Button,
-  Card,
   ConfirmDialog,
   ControlledInput,
   EmptyState,
@@ -91,7 +91,7 @@ import {
   StatusBadge,
   Text,
 } from '@/shared/components';
-import { useImageUpload, type ImageUpload } from '@/shared/hooks/useImageUpload';
+import { useImageUpload } from '@/shared/hooks/useImageUpload';
 import {
   TEAM_MEMBER_NAME_MAX_LENGTH,
   TEAM_MEMBER_ROLE_MAX_LENGTH,
@@ -413,16 +413,22 @@ function TeamMemberFields({ navigation, form, member }: TeamMemberFieldsProps) {
 
   return (
     <View style={{ gap: theme.spacing.xl }}>
-      <TeamMemberPhotoField
+      {/*
+        Section 39's Profile Image. The picture is not a stop of its own (no
+        `pictureSpoken`): the actions already say whether there is a photo.
+      */}
+      <PhotoField
         photo={photo}
         photoUrl={photoUrl}
         name={watch('name')}
+        copy={COPY}
         // One thing at a time: never while the member is being saved or their status changed.
         locked={isSaving || isChangingStatus}
         onTakePhoto={takePhoto}
         onChoosePhoto={choosePhoto}
         onRemovePhoto={removePhoto}
         onRetryPhoto={retryPhoto}
+        testID="team-member-photo"
       />
 
       <View style={{ gap: theme.spacing.lg }}>
@@ -521,143 +527,6 @@ function TeamMemberFields({ navigation, form, member }: TeamMemberFieldsProps) {
   );
 }
 
-interface TeamMemberPhotoFieldProps {
-  photo: ImageUpload;
-  /** The uploaded photo the form holds; undefined for none. */
-  photoUrl: string | undefined;
-  /** What is typed as the name, for the initials shown when there is no photo. */
-  name: string;
-  /** A save or a status change is running: nothing here can be pressed. */
-  locked: boolean;
-  onTakePhoto: () => void;
-  onChoosePhoto: () => void;
-  onRemovePhoto: () => void;
-  /** Uploads the photo that failed again. */
-  onRetryPhoto: () => void;
-}
-
-/**
- * Section 39's Profile Image, at the top of the form.
- *
- * ⚠️ The business picture's card from `VendorProfileFormScreen`, drawn the same
- * way — avatar, heading, the two sources side by side where they fit, Remove,
- * the upload's progress line, the failure with Try again and Discard — rather
- * than extracted from it: that screen is locked and device-verified (3E-1,
- * 3E-10), and lifting its card out is a change to it this slice does not need.
- * WORKING_NOTES records the pair, so a later change can merge them.
- *
- * ⚠️ The picture is hidden from a screen reader, unlike the business picture:
- * the actions already say whether there is a photo ("Add their photo…" or
- * "Replace their photo…", and Remove only when there is one), so a stop that
- * says only "photo" would add nothing.
- */
-function TeamMemberPhotoField({
-  photo,
-  photoUrl,
-  name,
-  locked,
-  onTakePhoto,
-  onChoosePhoto,
-  onRemovePhoto,
-  onRetryPhoto,
-}: TeamMemberPhotoFieldProps) {
-  const theme = useTheme();
-  const hasPhoto = photoUrl !== undefined;
-  const busy = locked || photo.isBusy;
-
-  return (
-    <Card
-      bordered
-      shadow="sm"
-      style={[styles.photoCard, { padding: theme.spacing.xl, gap: theme.spacing.md }]}
-      testID="team-member-photo">
-      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-        <Avatar uri={photoUrl} name={name} size="xl" testID="team-member-photo-avatar" />
-      </View>
-      <View style={[styles.center, styles.stretch, { gap: theme.spacing.xxs }]}>
-        <Text variant="h3" accessibilityRole="header">
-          {COPY.photoSection}
-        </Text>
-        {/*
-          The card's full width, centred inside it — not a centred box sized by
-          its own words, which at 360dp can break a line a fraction narrower
-          than it was measured and cut the second one (3E-3, 3E-10).
-        */}
-        <Text variant="caption" color="textSecondary" align="center" style={styles.stretch}>
-          {COPY.photoSupport}
-        </Text>
-      </View>
-
-      <View style={[styles.photoRow, { gap: theme.spacing.sm }]}>
-        <SecondaryButton
-          label={COPY.photoCamera}
-          icon="camera"
-          onPress={onTakePhoto}
-          disabled={busy}
-          accessibilityLabel={hasPhoto ? COPY.photoReplaceCameraSpoken : COPY.photoAddCameraSpoken}
-          style={styles.photoRowItem}
-        />
-        <SecondaryButton
-          label={COPY.photoGallery}
-          icon="gallery"
-          onPress={onChoosePhoto}
-          disabled={busy}
-          accessibilityLabel={hasPhoto ? COPY.photoReplaceGallerySpoken : COPY.photoAddGallerySpoken}
-          style={styles.photoRowItem}
-        />
-      </View>
-
-      {hasPhoto && !photo.pending ? (
-        <SecondaryButton
-          label={COPY.photoRemove}
-          icon="remove"
-          onPress={onRemovePhoto}
-          disabled={busy}
-          accessibilityLabel={COPY.photoRemoveSpoken}
-        />
-      ) : null}
-
-      {photo.isBusy ? (
-        <Text
-          variant="caption"
-          color="textSecondary"
-          accessibilityLiveRegion="polite"
-          testID="team-member-photo-busy">
-          {COPY.photoUploading}
-        </Text>
-      ) : null}
-
-      {photo.error ? (
-        <View style={[styles.stretch, { gap: theme.spacing.sm }]}>
-          <ErrorState
-            error={photo.error}
-            title={COPY.photoFailedTitle}
-            fullScreen={false}
-            testID="team-member-photo-error"
-          />
-          {photo.pending ? (
-            <View style={[styles.photoRow, { gap: theme.spacing.sm }]}>
-              <Button
-                label={COPY.photoRetry}
-                onPress={onRetryPhoto}
-                disabled={busy}
-                style={styles.photoRowItem}
-              />
-              <SecondaryButton
-                label={COPY.photoDiscard}
-                onPress={photo.discard}
-                disabled={busy}
-                accessibilityHint={COPY.photoDiscardHint}
-                style={styles.photoRowItem}
-              />
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-    </Card>
-  );
-}
-
 interface TeamMemberStatusSectionProps {
   /** The member as the service last answered — their stored name and status. */
   member: TeamMember;
@@ -730,9 +599,13 @@ function TeamMemberStatusSection({
           accessibilityHint={COPY.enableHint}
         />
       ) : (
+        /*
+          The quiet red, not the filled one (3G-4): Disable only opens the
+          dialog, and the dialog's Disable is the loud, final step.
+        */
         <Button
           fullWidth
-          variant="danger"
+          variant="dangerSecondary"
           label={COPY.disable}
           onPress={askToDisable}
           isLoading={isChangingStatus}
@@ -761,28 +634,5 @@ function TeamMemberStatusSection({
 const styles = StyleSheet.create({
   bar: {
     justifyContent: 'center',
-  },
-  photoCard: {
-    alignItems: 'center',
-  },
-  center: {
-    alignItems: 'center',
-  },
-  stretch: {
-    alignSelf: 'stretch',
-  },
-  /* Side by side where they fit, stacked where they do not (the business picture's row). */
-  photoRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignSelf: 'stretch',
-  },
-  /*
-    Sized by its label, then grown to fill: an equal-share basis squeezed
-    "Choose a photo" to the edge of its pill at 360dp (VendorProfileFormScreen).
-  */
-  photoRowItem: {
-    flexGrow: 1,
-    flexBasis: 'auto',
   },
 });

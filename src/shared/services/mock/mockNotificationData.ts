@@ -34,6 +34,14 @@
  * the icon and never branches on the type. Every glyph named here exists in
  * the app's icon family; an unknown one would fall back.
  *
+ * ⚠️ A vendor is told no more by a notification than by the request itself
+ * (owner decision, 21/10/2026). About work they do not hold — a request
+ * waiting for them, one they declined, one somebody else took — a notification
+ * names the area, never the customer: no name, no phone, no address. About
+ * a review, the reviewer is a first name and an initial ("Karthik I."), as the
+ * Reviews screen shows them. The text is the backend's to compose; these are
+ * written as it must write them, and the app shows whatever it is sent.
+ *
  * ⚠️ Deterministic. Every notification is written out; nothing is random and no
  * timer adds one. The only input is the clock, which turns "four minutes ago"
  * into a timestamp, always after the request it is about was raised.
@@ -298,7 +306,8 @@ const RAVI_INBOX: readonly NotificationSeed[] = [
     type: 'request.directed',
     iconName: 'account-arrow-right-outline',
     title: 'New request for you',
-    body: 'Rahul Menon chose you for a Ceiling fan installation in HSR Layout.',
+    // Waiting for Ravi's answer: the area, never the customer (21/10/2026).
+    body: 'A customer in HSR Layout chose you for a Ceiling fan installation.',
     deepLink: requestLink('REQ-31038'),
   },
   {
@@ -329,7 +338,8 @@ const RAVI_INBOX: readonly NotificationSeed[] = [
     type: 'request.new',
     iconName: 'clipboard-text-outline',
     title: 'New request',
-    body: 'Neha Sharma needs a Light fitting replacement.',
+    // Waiting, and the backend gave no area for it: so none is named, and no customer either.
+    body: 'A customer needs a Light fitting replacement.',
     deepLink: requestLink('REQ-30987'),
   },
   {
@@ -339,7 +349,8 @@ const RAVI_INBOX: readonly NotificationSeed[] = [
     type: 'review.received',
     iconName: 'star-outline',
     title: 'New review',
-    body: 'Karthik Iyer rated your Geyser wiring job 5 out of 5.',
+    // The reviewer as the Reviews screen names them: first name and initial.
+    body: 'Karthik I. rated your Geyser wiring job 5 out of 5.',
     deepLink: 'fixora://reviews',
   },
   {
@@ -348,7 +359,7 @@ const RAVI_INBOX: readonly NotificationSeed[] = [
     type: 'review.received',
     iconName: 'star-outline',
     title: 'New review',
-    body: 'Sana Khan rated your Doorbell installation job 4 out of 5.',
+    body: 'Sana K. rated your Doorbell installation job 4 out of 5.',
     deepLink: 'fixora://reviews',
   },
   {

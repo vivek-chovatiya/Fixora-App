@@ -34,7 +34,13 @@ export const VENDOR_COPY = Object.freeze({
     photoReplaceGallerySpoken: 'Replace profile image from your photos',
     photoRemove: 'Remove photo',
     photoRemoveSpoken: 'Remove profile image',
+    /**
+     * Said once as an upload starts, and shown until the upload reports how
+     * far it has got; from then the line is `photoProgress` (Phase 3G-4).
+     */
     photoUploading: 'Uploading your photo…',
+    /** The upload's own figure, beside its bar. Not announced as it changes. */
+    photoProgress: (percent: number) => `Uploading… ${percent}%`,
     photoFailedTitle: 'Your photo was not uploaded',
     photoRetry: 'Try again',
     photoDiscard: 'Discard',
@@ -154,6 +160,39 @@ export const VENDOR_COPY = Object.freeze({
     seeAllActiveSpoken: 'See all active work',
     seeAllCompletedSpoken: 'See all completed work',
     seeAllHint: 'Opens your requests',
+
+    /**
+     * Section 30's Today's Requests and Rating (Phase 3E-15). Each is read on
+     * its own and fails on its own, so each has its own words for waiting and
+     * for failing; the figures themselves are the report's and the reviews'.
+     */
+    todayLabel: "Today's requests",
+    /** "Today's requests, 3" — or "…, not available" for a figure that is not a count. */
+    todaySpoken: (value: string) => `Today's requests, ${value}`,
+    todayLoading: "Loading today's requests",
+    todayFailedTitle: "We could not load today's requests",
+    /** Holds the visible "Try again", so voice control still finds it by its word. */
+    todayRetrySpoken: "Try again to load today's requests",
+    todayRetryHint: "Loads today's requests again",
+
+    /** The rating's own words are the reviews' (`reviews.figure…`), shared with Profile. */
+    ratingHint: 'Opens your reviews',
+    ratingLoading: 'Loading your rating',
+    ratingFailedTitle: 'We could not load your rating',
+    ratingRetrySpoken: 'Try again to load your rating',
+    ratingRetryHint: 'Loads your rating again',
+    /** On a figure's own retry; the spoken name says which figure. */
+    figureRetry: 'Try again',
+
+    /**
+     * A read that failed while its figures were on screen — the work, today's
+     * requests or the rating, whether pulled or read again on returning to the
+     * tab. One notice for the page, as on the request list (3E-3).
+     */
+    staleTitle: 'Could not refresh',
+    staleMessage: 'Your dashboard may be out of date.',
+    staleRetry: 'Try again',
+    staleRetryHint: 'Loads your dashboard again',
   }),
 
   /** One request on a vendor's card (section 31's fields). */
@@ -161,6 +200,11 @@ export const VENDOR_COPY = Object.freeze({
     referencePrefix: 'Ref',
     statusLabel: 'Status',
     customerLabel: 'Customer',
+    /**
+     * Said in the customer's place on a card the vendor does not hold yet —
+     * waiting or declined (owner decision, 21/10/2026): "Area: Koramangala".
+     */
+    areaLabel: 'Area',
     priorityLabel: 'Priority',
     raisedLabel: 'Raised',
     completedLabel: 'Completed',
@@ -318,6 +362,14 @@ export const VENDOR_COPY = Object.freeze({
     /** Said before the failure's own message; nothing was changed. */
     startFailed: 'Work was not started.',
     completeFailed: 'The job was not marked completed.',
+
+    /**
+     * A payment recorded after the job (owner decision, 21/10/2026). Said by
+     * the same hook as the steps above, so it sits with them.
+     */
+    paymentRecorded: 'Payment recorded. This job is now marked paid.',
+    /** Said before the failure's own message; the record was not changed. */
+    recordPaymentFailed: 'The payment was not recorded.',
   }),
 
   /**
@@ -378,6 +430,55 @@ export const VENDOR_COPY = Object.freeze({
     notesLabel: 'Completion notes',
     /** Recorded, never processed (section 37) — and the vendor's own record. */
     recorded: 'Recorded by you. Fixora does not process payments.',
+
+    /**
+     * On a record still "Not paid yet": the way to say the customer has paid
+     * since (owner decision, 21/10/2026). It opens a form; nothing is changed by
+     * this press.
+     */
+    recordPayment: 'Record payment',
+    recordPaymentHint: 'Opens the form to record how the customer paid',
+  }),
+
+  /**
+   * Recording a payment after the job (owner decision, 21/10/2026): "Not paid
+   * yet" becomes "Paid", with how. The method field's own words are the
+   * completion form's (`completeForm.method…`), because it is the same field.
+   *
+   * ⚠️ Recorded, never processed (section 37), and final: the subtitle says
+   * both before anything is sent.
+   */
+  recordPaymentForm: Object.freeze({
+    title: 'Record payment',
+    subtitle:
+      'Record how the customer paid you for this job. Once it is marked paid, it cannot be changed. Fixora does not process payments.',
+    back: 'Back',
+
+    submit: 'Record payment',
+    submitHint: 'Asks before marking this job paid',
+    /** Said when the button is pressed with no method chosen, so nothing happens silently. */
+    fixErrors: 'Check the highlighted fields.',
+
+    /**
+     * Asked once more before anything is sent (lead decision, 21/10/2026): a
+     * paid record is final, as a completion is. The title names the method
+     * chosen, so the question is about this payment and no other.
+     */
+    confirmTitle: (method: string) => `Mark as paid by ${method}?`,
+    /** When the method's name is not to hand — never the method's id. */
+    confirmTitlePlain: 'Mark this job as paid?',
+    confirmMessage: "This can't be changed later.",
+    confirmCancel: 'Cancel',
+    confirmCancelHint: 'Keeps the payment as not paid yet',
+    confirmConfirm: 'Mark as paid',
+    confirmConfirmHint: 'Records this job as paid',
+
+    discardTitle: 'Discard this payment?',
+    discardMessage: 'The payment method you chose has not been saved.',
+    discardKeep: 'Keep editing',
+    discardKeepHint: 'Returns to the form',
+    discardConfirm: 'Discard',
+    discardConfirmHint: 'Leaves without recording the payment',
   }),
 
   /** One request, opened (section 32, Phase 3E-3), and answered (3E-4). */
@@ -409,9 +510,35 @@ export const VENDOR_COPY = Object.freeze({
     originDirected: 'The customer chose you for this request.',
     originBroadcast: 'Sent to every professional who offers this service.',
 
+    /** When the customer would like the work done (section 32), as they chose it. */
+    preferredDateLabel: 'Preferred date',
+    preferredTimeLabel: 'Preferred time',
+    /** The two days a preferred date is called by name (`formatDateValue`). */
+    today: 'Today',
+    tomorrow: 'Tomorrow',
+
+    /**
+     * Who the customer is — drawn only once the vendor holds the work (owner
+     * decision, 21/10/2026). No call button: section 32 lists the information,
+     * not a way to ring it.
+     */
     customerSection: 'Customer',
     customerLabel: 'Name',
+    phoneLabel: 'Phone',
+
+    /** Where the work is: the area before the vendor accepts; the full address after. */
+    locationSection: 'Location',
     localityLabel: 'Area',
+    addressLabel: 'Address',
+    /** On a request still waiting for their answer, so a missing address is not a mystery. */
+    withheldNote: 'The customer’s name, phone number and full address are shared once you accept.',
+
+    /** The customer's photographs (section 32, "Images"), counted as the customer's own screens count them. */
+    photosLabel: 'Photos',
+    photoCountOne: '1 photo attached',
+    photoCountMany: 'photos attached',
+    /** Follows a count: "2 photos attached, 1 could not be shown". */
+    photoUnavailable: 'could not be shown',
 
     descriptionSection: 'What the customer said',
     descriptionMissing: 'The customer did not add a description.',
@@ -424,7 +551,11 @@ export const VENDOR_COPY = Object.freeze({
   reviews: Object.freeze({
     title: 'Reviews',
     subtitle: 'What customers said about your work.',
-    back: 'Back to profile',
+    /**
+     * Not "Back to profile": since Phase 3E-15 the dashboard's rating opens
+     * this screen too, and Back goes wherever the vendor came from.
+     */
+    back: 'Back',
 
     summaryTitle: 'Overall rating',
     /** Under the average: how many reviews it comes from. */
@@ -461,8 +592,25 @@ export const VENDOR_COPY = Object.freeze({
     fromSpoken: (name: string) => `Review from ${name}`,
     /** A review the backend gives no name for. Says it is a review and no more. */
     anonymousSpoken: 'Customer review',
+    /**
+     * After the last name's initial: "Priya S." (owner decision, 21/10/2026 —
+     * a vendor sees a reviewer's first name and last initial, never the surname).
+     */
+    reviewerInitialMark: '.',
     /** Before the customer's own words, so they are heard as theirs. */
     commentSpoken: 'Comment',
+
+    /**
+     * The rating as a figure elsewhere — the dashboard's card and the Profile
+     * tab's reviews row (Phase 3E-15) — worded by `presentRatingFigure`. This
+     * one stands above "No reviews yet", where there is no average to draw.
+     */
+    figureLabel: 'Rating',
+    /** Never "0.0": no reviews is not a rating of nothing. */
+    figureNone: 'No reviews yet',
+    figureNoneSpoken: 'Rating, no reviews yet',
+    /** Reviews counted but no average the app can trust: the count alone, said as such. */
+    figureCountOnlySpoken: (count: string) => `Rating, ${count}`,
 
     loading: 'Loading your reviews',
     failedTitle: 'We could not load your reviews',
@@ -639,6 +787,8 @@ export const VENDOR_COPY = Object.freeze({
     photoRemove: 'Remove photo',
     photoRemoveSpoken: 'Remove their photo',
     photoUploading: 'Uploading the photo…',
+    /** As the business picture's (`profileForm.photoProgress`). */
+    photoProgress: (percent: number) => `Uploading… ${percent}%`,
     photoFailedTitle: 'The photo was not uploaded',
     photoRetry: 'Try again',
     photoDiscard: 'Discard',
@@ -982,6 +1132,12 @@ export const VENDOR_COPY = Object.freeze({
     /** The way to section 41's reviews (Phase 3E-6). */
     reviews: 'Customer reviews',
     reviewsHint: 'Opens the reviews customers wrote about your work',
+    /**
+     * The same way in once the rating has been read (Phase 3E-15): the button's
+     * words first, so voice control still finds it by them, then the figure —
+     * "Customer reviews. Rating 4.3 out of 5, based on 4 reviews."
+     */
+    reviewsWithRating: (rating: string) => `Customer reviews. ${rating}`,
     /** The way to section 42's basic report. */
     reports: 'Reports',
     reportsHint: 'Opens your request and rating figures for today, this week or this month',

@@ -34,7 +34,7 @@ import { Image, Pressable, StyleSheet, View } from 'react-native';
 
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import type { ShopImage, ShopImageState } from '@/features/vendor/hooks/useShopImages';
-import { Icon, Text } from '@/shared/components';
+import { Icon, ProgressBar, Text } from '@/shared/components';
 import { useTheme, type IconName } from '@/shared/theme';
 
 const COPY = VENDOR_COPY.shopImages;
@@ -162,21 +162,16 @@ function ShopImageTileComponent({
       )}
 
       {image.state === 'uploading' ? (
-        <View
-          style={[styles.track, { height: theme.spacing.xs, backgroundColor: theme.colors.border }]}
+        // Along the bottom edge, square-ended; silent, as the tile says "Uploading".
+        <ProgressBar
+          value={image.progress}
+          trackColor="border"
+          rounded={false}
+          style={styles.track}
           accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants">
-          <View
-            style={[
-              styles.fill,
-              {
-                width: `${Math.round(Math.min(1, Math.max(0, image.progress)) * 100)}%`,
-                backgroundColor: theme.colors.primary,
-              },
-            ]}
-            testID={testID ? `${testID}-progress` : undefined}
-          />
-        </View>
+          importantForAccessibility="no-hide-descendants"
+          fillTestID={testID ? `${testID}-progress` : undefined}
+        />
       ) : null}
 
       {isFailure && status ? (

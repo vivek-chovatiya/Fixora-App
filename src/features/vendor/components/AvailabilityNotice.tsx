@@ -51,9 +51,10 @@ function AvailabilityNoticeComponent({ onTurnOn, isTurningOn, testID }: Availabi
         accessible
         accessibilityRole="text"
         accessibilityLabel={COPY.noticeTitle}>
-        <Icon name="warning" size="md" color="warning" />
+        {/* The tint's own ink, words and glyph (3G-4): `warning` is 2.9:1 here in light. */}
+        <Icon name="warning" size="md" color="onWarningSubtle" />
         {/* A definite width, so the sentence wraps rather than clips (3E-3). */}
-        <Text variant="bodyStrong" style={styles.copy}>
+        <Text variant="bodyStrong" color="onWarningSubtle" style={styles.copy}>
           {COPY.noticeTitle}
         </Text>
       </View>

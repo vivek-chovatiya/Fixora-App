@@ -322,6 +322,16 @@ export type VendorStackParamList = {
    */
   CompleteWork: { requestId: string };
   /**
+   * Recording, after the job, that a customer recorded "Not paid yet" has now
+   * paid (owner decision, 21/10/2026; section 37's offline record), pushed
+   * from "Record payment" on a finished request's details.
+   *
+   * ⚠️ The reference and nothing else, as `CompleteWork`. Not the amount, not
+   * the record: the service decides whether there is an unpaid record of this
+   * vendor's to change, and refuses otherwise.
+   */
+  RecordPayment: { requestId: string };
+  /**
    * The vendor's notifications (section 57; in-app only, section 80 — push is
    * section 72's Phase 2), pushed from the bell on the Dashboard.
    *

@@ -21,13 +21,20 @@
  * the other. Sized by the grid it is placed in (`style`), never by a number;
  * its words wrap rather than truncate, so a large font grows the card instead
  * of cutting a figure off.
+ *
+ * Since Phase 3E-15 the dashboard draws its Today's Requests and Rating with
+ * it too (section 30): the same figure, the same card, on both screens. There
+ * the rating opens Reviews, so the card can be a button (`onPress`): then the
+ * card itself is the one stop, says the same phrase with a hint, and carries a
+ * chevron — never a button wrapped round a separate block, which a screen
+ * reader would stop on twice. Without `onPress` it is exactly what it was.
  */
 
 import React, { memo } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Card, Icon, StarRating, Text } from '@/shared/components';
-import { useTheme, type ColorTokens, type IconName } from '@/shared/theme';
+import { SUBTLE_INK, useTheme, type IconName, type SubtleTint } from '@/shared/theme';
 
 export interface ReportFigureCardProps {
   /** What the figure counts, under it: "Completed". */
@@ -41,10 +48,17 @@ export interface ReportFigureCardProps {
   /** The whole card as one phrase. */
   spoken: string;
   icon: IconName;
-  tint: keyof ColorTokens;
-  tintBackground: keyof ColorTokens;
+  /**
+   * The glyph disc's tint. The glyph takes that tint's own ink from
+   * `SUBTLE_INK` (3G-4) — never a tone colour, which is under 4.5:1 on its
+   * own tint in at least one theme — so the pair cannot be mismatched.
+   */
+  tint: SubtleTint;
   /** The card's place in the grid. */
   style?: StyleProp<ViewStyle>;
+  /** Makes the whole card a button to somewhere, said as `spoken` with this hint. */
+  onPress?: () => void;
+  accessibilityHint?: string;
   testID?: string;
 }
 
@@ -56,58 +70,90 @@ function ReportFigureCardComponent({
   spoken,
   icon,
   tint,
-  tintBackground,
   style,
+  onPress,
+  accessibilityHint,
   testID,
 }: ReportFigureCardProps) {
   const theme = useTheme();
   const part = (name: string) => (testID ? `${testID}-${name}` : undefined);
 
+  const glyph = (
+    <View
+      style={[
+        styles.glyph,
+        {
+          width: theme.spacing.xxxl,
+          height: theme.spacing.xxxl,
+          borderRadius: theme.radius.full,
+          backgroundColor: theme.colors[tint],
+        },
+      ]}>
+      <Icon name={icon} size="sm" color={SUBTLE_INK[tint]} />
+    </View>
+  );
+
+  const body = (
+    <View
+      style={{ gap: theme.spacing.sm }}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants">
+      {onPress ? (
+        <View style={styles.glyphRow}>
+          {glyph}
+          {/* Affordance only; the card is the target. */}
+          <Icon name="forward" size="sm" color="textTertiary" />
+        </View>
+      ) : (
+        glyph
+      )}
+
+      {value !== undefined ? (
+        // Wraps under a very large font rather than pushing the stars off the card.
+        <View style={[styles.figure, { columnGap: theme.spacing.md, rowGap: theme.spacing.xs }]}>
+          <Text variant="h1" testID={part('value')}>
+            {value}
+          </Text>
+          {stars !== undefined ? <StarRating value={stars} size="sm" /> : null}
+        </View>
+      ) : null}
+
+      <View style={{ gap: theme.spacing.xxs }}>
+        <Text variant="caption" color="textSecondary" testID={part('label')}>
+          {label}
+        </Text>
+        {note ? (
+          <Text
+            // Standing in for a missing figure, it is the card's message, not a footnote.
+            variant={value === undefined ? 'bodyStrong' : 'caption'}
+            color={value === undefined ? 'textPrimary' : 'textSecondary'}
+            testID={part('note')}>
+            {note}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+
+  if (onPress) {
+    return (
+      <Card
+        bordered
+        shadow="sm"
+        style={style}
+        onPress={onPress}
+        accessibilityLabel={spoken}
+        accessibilityHint={accessibilityHint}
+        testID={testID}>
+        {body}
+      </Card>
+    );
+  }
+
   return (
     <Card bordered shadow="sm" style={style} testID={testID}>
       <View accessible accessibilityRole="text" accessibilityLabel={spoken}>
-        <View
-          style={{ gap: theme.spacing.sm }}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants">
-          <View
-            style={[
-              styles.glyph,
-              {
-                width: theme.spacing.xxxl,
-                height: theme.spacing.xxxl,
-                borderRadius: theme.radius.full,
-                backgroundColor: theme.colors[tintBackground],
-              },
-            ]}>
-            <Icon name={icon} size="sm" color={tint} />
-          </View>
-
-          {value !== undefined ? (
-            // Wraps under a very large font rather than pushing the stars off the card.
-            <View style={[styles.figure, { columnGap: theme.spacing.md, rowGap: theme.spacing.xs }]}>
-              <Text variant="h1" testID={part('value')}>
-                {value}
-              </Text>
-              {stars !== undefined ? <StarRating value={stars} size="sm" /> : null}
-            </View>
-          ) : null}
-
-          <View style={{ gap: theme.spacing.xxs }}>
-            <Text variant="caption" color="textSecondary" testID={part('label')}>
-              {label}
-            </Text>
-            {note ? (
-              <Text
-                // Standing in for a missing figure, it is the card's message, not a footnote.
-                variant={value === undefined ? 'bodyStrong' : 'caption'}
-                color={value === undefined ? 'textPrimary' : 'textSecondary'}
-                testID={part('note')}>
-                {note}
-              </Text>
-            ) : null}
-          </View>
-        </View>
+        {body}
       </View>
     </Card>
   );
@@ -117,6 +163,11 @@ const styles = StyleSheet.create({
   glyph: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  glyphRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   figure: {
     flexDirection: 'row',

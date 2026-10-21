@@ -7,7 +7,8 @@
  * - the Team tab is the team, and Profile's "Manage team" opens it; the tab bar
  *   is unchanged
  * - each member reads as one block (name, role, phone when there is one), with
- *   Edit and Remove named for them
+ *   Edit and Remove named for them; the phone is written "+91 90000 00101"
+ *   on the card and in the block, never the stored run of digits (3G-4)
  * - nobody yet is section 48's sentence with its one Add
  * - loading, a failed first read and its retry (once, however often pressed),
  *   a failed pull keeping the team under a notice, and a read on returning
@@ -32,7 +33,10 @@
  *   says exactly what it said before; the form adds, replaces and removes it,
  *   uploads it when chosen, keeps everything typed when the upload fails,
  *   never saves while an upload runs nor uploads while a save does, and asks
- *   before a chosen photo is left behind
+ *   before a chosen photo is left behind; an upload says "Uploading the
+ *   photo…" once, then shows its own figure as a bar that is a progressbar
+ *   stop and never a live region (3G-4)
+ * - Disable is the quiet danger button, and the dialog's Disable the filled one
  */
 
 import React from 'react';
@@ -53,6 +57,7 @@ import { TeamMemberFormScreen } from '@/features/vendor/screens/TeamMemberFormSc
 import type { VendorStackParamList } from '@/navigation/types';
 import { VendorNavigator } from '@/navigation/VendorNavigator';
 import { ToastProvider } from '@/shared/components';
+import { formatPhone } from '@/shared/presentation/phone';
 import { MockVendorDashboardService } from '@/shared/services/mock/MockVendorDashboardService';
 import { MockVendorProfileService } from '@/shared/services/mock/MockVendorProfileService';
 import { MockVendorRequestService } from '@/shared/services/mock/MockVendorRequestService';
@@ -60,7 +65,11 @@ import { MockVendorTeamService } from '@/shared/services/mock/MockVendorTeamServ
 import { NO_LATENCY } from '@/shared/services/mock/mockUtils';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { CategoryService } from '@/shared/services/types/CategoryService';
-import type { ImageAsset, ImageService } from '@/shared/services/types/ImageService';
+import type {
+  ImageAsset,
+  ImageService,
+  UploadProgressListener,
+} from '@/shared/services/types/ImageService';
 import type { TeamMember } from '@/shared/services/types/VendorTeamService';
 import { AppError } from '@/shared/types/error';
 import { ThemeProvider } from '@/shared/theme';
@@ -358,17 +367,24 @@ describe('Vendor team — the list', () => {
   it('says each member as one block — the phone only when there is one', async () => {
     const screen = await render();
 
-    expect(screen.details('tm_1')).toBe('Suresh Naik, Senior technician. Phone 9000000101');
+    expect(screen.details('tm_1')).toBe('Suresh Naik, Senior technician. Phone +91 90000 00101');
     expect(screen.details('tm_3')).toBe('Farhan Ali, Helper');
     expect(screen.has('team-member-tm_3-phone')).toBe(false);
-    expect(screen.text('team-member-tm_1-phone')).toBe('9000000101');
+    expect(screen.text('team-member-tm_1-phone')).toBe('+91 90000 00101');
+  });
+
+  it('writes a phone formatted, never as the stored run of digits (owner, 21/10/2026)', async () => {
+    const screen = await render();
+
+    expect(screen.text('team-member-tm_1')).not.toContain('9000000101');
+    expect(screen.details('tm_1')).not.toContain('9000000101');
   });
 
   it('draws a long name and role whole in what is said', async () => {
     const screen = await render();
 
     expect(screen.details('tm_2')).toBe(
-      'Venkata Subrahmanya Lakshmi Narasimhamurthy-Ramachandran, Installation and wiring specialist, weekend shifts. Phone 9000000102',
+      'Venkata Subrahmanya Lakshmi Narasimhamurthy-Ramachandran, Installation and wiring specialist, weekend shifts. Phone +91 90000 00102',
     );
     expect(screen.host('team-member-tm_2-name').props.numberOfLines).toBe(2);
   });
@@ -969,7 +985,7 @@ describe('Vendor team — status on the card', () => {
     const screen = await render();
 
     expect(screen.has('team-member-tm_1-status')).toBe(false);
-    expect(screen.details('tm_1')).toBe('Suresh Naik, Senior technician. Phone 9000000101');
+    expect(screen.details('tm_1')).toBe('Suresh Naik, Senior technician. Phone +91 90000 00101');
     expect(screen.text('team-member-tm_1')).not.toContain(COPY.statusActive);
   });
 
@@ -991,7 +1007,7 @@ describe('Vendor team — status on the card', () => {
 
     expect(screen.text('team-member-tm_1-status')).toBe(COPY.statusUnknown);
     expect(screen.details('tm_1')).toBe(
-      'Suresh Naik, Senior technician. Phone 9000000101. Status unavailable',
+      'Suresh Naik, Senior technician. Phone +91 90000 00101. Status unavailable',
     );
     expect(screen.text('vendor-team')).not.toMatch(/ON_LEAVE|on leave/i);
   });
@@ -1254,7 +1270,7 @@ describe('Vendor team — changing the status on the edit form', () => {
       phone: '9000000101',
       status: 'DISABLED',
     });
-    expect(screen.details('tm_1')).toBe('Suresh Naik, Supervisor. Phone 9000000101. Disabled');
+    expect(screen.details('tm_1')).toBe('Suresh Naik, Supervisor. Phone +91 90000 00101. Disabled');
   });
 
   it('shows the change on the team after going back', async () => {
@@ -1635,7 +1651,9 @@ describe('Vendor team — the photo', () => {
 
     expect(pictureOf(screen, 'team-member-tm_1-avatar')).toEqual({ uri: STORED });
     // The same one sentence — "photo" is never a stop of its own.
-    expect(screen.details('tm_1')).toBe(COPY.memberSpoken(SURESH.name, SURESH.role, SURESH.phone));
+    expect(screen.details('tm_1')).toBe(
+      COPY.memberSpoken(SURESH.name, SURESH.role, formatPhone(SURESH.phone)),
+    );
     expect(hiddenFromScreenReader(screen, 'team-member-tm_1-avatar')).toBe(true);
   });
 
@@ -1913,5 +1931,153 @@ describe('Vendor team — the photo', () => {
 
     expect(screen.onForm()).toBe(true);
     expect(screen.pressable(FORM.discardKeep)).toHaveLength(1);
+  });
+
+  /* The upload's progress (3G-4) ------------------------------------------ */
+
+  /** An upload held open, with the progress listener the form handed it. */
+  const holdUpload = () => {
+    const uploading = held<{ assetId: string; remoteUrl: string }>();
+    let progress: UploadProgressListener | undefined;
+    upload.mockImplementationOnce((_asset: ImageAsset, onProgress?: UploadProgressListener) => {
+      progress = onProgress;
+      return uploading.promise;
+    });
+    const report = async (screen: Screen, fraction: number) => {
+      await act(async () => {
+        progress?.({ assetId: ASSET.id, status: 'uploading', progress: fraction });
+      });
+      await screen.flush();
+    };
+    return { uploading, report };
+  };
+
+  /** Every live region inside a node, the node itself included. */
+  const liveRegionsIn = (node: Instance): unknown[] =>
+    [node, ...node.findAll(candidate => typeof candidate.type === 'string')]
+      .map(candidate => candidate.props?.accessibilityLiveRegion)
+      .filter(region => region !== undefined && region !== 'none');
+
+  it('says it is uploading once, and shows no figure before the upload has given one', async () => {
+    const { uploading } = holdUpload();
+    const screen = await render();
+    await screen.press(COPY.add);
+
+    await screen.press(FORM.photoAddCameraSpoken, screen.form());
+
+    expect(screen.text('team-member-photo-busy')).toBe(FORM.photoUploading);
+    expect(screen.host('team-member-photo-busy').props.accessibilityLiveRegion).toBe('polite');
+    // Not 0%: how far it has got is not known yet.
+    expect(screen.has('team-member-photo-progress')).toBe(false);
+
+    await act(async () => {
+      uploading.land({ assetId: ASSET.id, remoteUrl: UPLOADED });
+    });
+    await screen.flush();
+  });
+
+  it('shows the upload’s own figure as a bar, one progressbar stop with its value', async () => {
+    const { uploading, report } = holdUpload();
+    const screen = await render();
+    await screen.press(COPY.add);
+    await screen.press(FORM.photoAddCameraSpoken, screen.form());
+
+    await report(screen, 0.42);
+
+    const bar = screen.host('team-member-photo-progress');
+    expect(screen.text('team-member-photo-progress').trim()).toBe(FORM.photoProgress(42));
+    expect(FORM.photoProgress(42)).toBe('Uploading… 42%');
+    expect(bar.props.accessible).toBe(true);
+    expect(bar.props.accessibilityRole).toBe('progressbar');
+    expect(bar.props.accessibilityLabel).toBe(FORM.photoUploading);
+    expect(bar.props.accessibilityValue).toEqual({ min: 0, max: 100, now: 42 });
+    expect(screen.host('team-member-photo-progress-fill').props.style).toEqual(
+      expect.arrayContaining([expect.objectContaining({ width: '42%' })]),
+    );
+    // The line it replaced is gone, so nothing says "uploading" twice.
+    expect(screen.has('team-member-photo-busy')).toBe(false);
+
+    await report(screen, 0.8);
+    expect(screen.host('team-member-photo-progress').props.accessibilityValue).toEqual({
+      min: 0,
+      max: 100,
+      now: 80,
+    });
+    expect(screen.text('team-member-photo-progress').trim()).toBe('Uploading… 80%');
+
+    await act(async () => {
+      uploading.land({ assetId: ASSET.id, remoteUrl: UPLOADED });
+    });
+    await screen.flush();
+  });
+
+  it('never speaks the figure as it climbs: no live region anywhere in the bar', async () => {
+    const { uploading, report } = holdUpload();
+    const screen = await render();
+    await screen.press(COPY.add);
+    await screen.press(FORM.photoAddCameraSpoken, screen.form());
+
+    await report(screen, 0.2);
+    expect(liveRegionsIn(screen.host('team-member-photo-progress'))).toEqual([]);
+    await report(screen, 0.6);
+    expect(liveRegionsIn(screen.host('team-member-photo-progress'))).toEqual([]);
+    // Nor anywhere else in the card while the figure is up.
+    expect(liveRegionsIn(screen.host('team-member-photo'))).toEqual([]);
+
+    await act(async () => {
+      uploading.land({ assetId: ASSET.id, remoteUrl: UPLOADED });
+    });
+    await screen.flush();
+  });
+
+  it('takes the bar away when the upload lands, and when it fails', async () => {
+    const first = holdUpload();
+    const screen = await render();
+    await screen.press(COPY.add);
+    await screen.press(FORM.photoAddCameraSpoken, screen.form());
+    await first.report(screen, 0.5);
+    expect(screen.has('team-member-photo-progress')).toBe(true);
+
+    await act(async () => {
+      first.uploading.land({ assetId: ASSET.id, remoteUrl: UPLOADED });
+    });
+    await screen.flush();
+    expect(screen.has('team-member-photo-progress')).toBe(false);
+    expect(screen.has('team-member-photo-busy')).toBe(false);
+
+    const second = holdUpload();
+    await screen.press(FORM.photoReplaceGallerySpoken, screen.form());
+    await second.report(screen, 0.3);
+    expect(screen.has('team-member-photo-progress')).toBe(true);
+
+    await act(async () => {
+      second.uploading.fail(offline());
+    });
+    await screen.flush();
+    expect(screen.has('team-member-photo-progress')).toBe(false);
+    expect(screen.text('team-member-photo-error')).toContain(FORM.photoFailedTitle);
+  });
+});
+
+describe('Vendor team — the quiet Disable', () => {
+  /** The `Button` elements in a subtree, as [label, variant]. */
+  const variantsIn = (node: Instance) =>
+    node
+      .findAll(candidate => typeof candidate.props?.variant === 'string' && typeof candidate.props?.label === 'string')
+      .map(candidate => [candidate.props.label, candidate.props.variant]);
+
+  it('is the quiet danger button, and the dialog’s Disable stays the filled one', async () => {
+    const screen = await render();
+    await screen.press(COPY.editSpoken('Suresh Naik'));
+
+    expect(variantsIn(screen.host('team-member-status'))).toContainEqual([FORM.disable, 'dangerSecondary']);
+    expect(variantsIn(screen.host('team-member-status'))).not.toContainEqual([FORM.disable, 'danger']);
+
+    await screen.press(FORM.disable, screen.form());
+
+    expect(variantsIn(screen.host('team-member-disable-dialog'))).toContainEqual([
+      FORM.disableConfirm,
+      'danger',
+    ]);
   });
 });

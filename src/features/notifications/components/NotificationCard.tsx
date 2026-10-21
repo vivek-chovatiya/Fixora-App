@@ -104,10 +104,10 @@ function NotificationCardComponent({ notification, onPress, testID }: Notificati
             <DynamicIcon
               glyph={notification.iconName}
               size="lg"
-              color={unread ? 'primary' : 'textSecondary'}
+              color={unread ? 'onPrimarySubtle' : 'textSecondary'}
             />
           ) : (
-            <Icon name="notifications" size="lg" color={unread ? 'primary' : 'textSecondary'} />
+            <Icon name="notifications" size="lg" color={unread ? 'onPrimarySubtle' : 'textSecondary'} />
           )}
         </View>
 

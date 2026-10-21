@@ -27,18 +27,45 @@
  * group a request is in. The read is a refresh, so what is on screen stays
  * until the new answer replaces it, and a read already in the air is superseded
  * rather than waited for: it may have started before the change.
+ *
+ * Since Phase 3E-15 (owner-approved, 21/10/2026) three more things live here:
+ *
+ * - Section 30's Today's Requests and Rating (`useDashboardFigures`), each its
+ *   own read with its own wait, failure and retry, beside the work and never
+ *   in its way.
+ * - The bell's count (`useUnreadNotifications`), so the pull — the page's
+ *   gesture — reads everything on the page, the badge included. It used to
+ *   read the work alone and leave the badge to the next focus.
+ * - ⚠️ A quiet read when the Dashboard tab is shown again — not on arrival,
+ *   which the mount has just read (`useNavigationEvent`, `onlyOnReturn`).
+ *   Quiet: no placeholders, no spinner, what is on screen kept until each
+ *   answer; a read already in the air is not joined by a second
+ *   (`refreshQuietly`). The bell reads itself on every return already.
+ *
+ * ⚠️ A failed read with something on screen keeps it and says so, once, for
+ * the page (`isStale`) — the work, today's requests or the rating, after a
+ * pull or a quiet read alike. Before this, a failed pull here said nothing.
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
+import { useUnreadNotifications } from '@/features/notifications/hooks/useUnreadNotificationCount';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import { useCategoryNames } from '@/features/vendor/hooks/useCategoryNames';
+import {
+  useDashboardFigures,
+  type VendorFigureState,
+} from '@/features/vendor/hooks/useVendorFigures';
 import { useVendorProfile } from '@/features/vendor/state/VendorProfileContext';
 import { useVendorWorkSync } from '@/features/vendor/state/VendorWorkSync';
+import { useNavigationEvent } from '@/shared/hooks/useNavigationEvent';
 import { useServiceQuery } from '@/shared/hooks/useServiceQuery';
+import { useStaleState } from '@/shared/hooks/useStaleState';
 import { getService } from '@/shared/services/ServiceRegistry';
+import type { VendorReviews } from '@/shared/services/types/ReviewService';
 import type { VendorDashboard } from '@/shared/services/types/VendorDashboardService';
 import type { VendorProfile } from '@/shared/services/types/VendorProfileService';
+import type { VendorReport } from '@/shared/services/types/VendorReportService';
 import type { AppError } from '@/shared/types/error';
 
 const COPY = VENDOR_COPY.dashboard;
@@ -81,9 +108,20 @@ export interface VendorDashboardState {
   error: AppError | null;
   retry: () => void;
 
-  /** Pull-to-refresh: the page's gesture, so it re-reads everything on it. */
+  /** Section 30's Today's Requests: today's report, read on its own. */
+  today: VendorFigureState<VendorReport>;
+  /** Section 30's Rating: the reviews' average and count, read on its own. */
+  rating: VendorFigureState<VendorReviews>;
+  /** The bell's unread count, or null while it is unknown. A failure is no badge. */
+  unreadNotifications: number | null;
+
+  /** Pull-to-refresh: the page's gesture, so it re-reads everything on it — the badge too. */
   refresh: () => void;
   isRefreshing: boolean;
+  /** Something on the page is from before a read that failed: the work, today's figure or the rating. */
+  isStale: boolean;
+  /** Why, for the notice. Null unless `isStale`. */
+  staleError: AppError | null;
 }
 
 export function useVendorDashboard(): VendorDashboardState {
@@ -130,14 +168,39 @@ export function useVendorDashboard(): VendorDashboardState {
     refreshQuery();
   }, [refreshQuery, revision]);
 
+  const { today, rating } = useDashboardFigures();
+  const { count: unreadNotifications, refresh: refreshUnread } = useUnreadNotifications();
+
   const { retry: retryCategories, error: categoriesError } = categories;
+  const { refresh: refreshToday, refreshQuietly: refreshTodayQuietly } = today;
+  const { refresh: refreshRating, refreshQuietly: refreshRatingQuietly } = rating;
   const refresh = useCallback(() => {
     refreshQuery();
+    refreshToday();
+    refreshRating();
+    refreshUnread();
     // Only when they failed: the names do not change between pulls.
     if (categoriesError) {
       retryCategories();
     }
-  }, [categoriesError, refreshQuery, retryCategories]);
+  }, [categoriesError, refreshQuery, refreshRating, refreshToday, refreshUnread, retryCategories]);
+
+  // The tab shown again: everything read again under what is on screen. Not on arrival.
+  const { refreshQuietly: refreshWorkQuietly } = query;
+  const readQuietly = useCallback(() => {
+    refreshWorkQuietly();
+    refreshTodayQuietly();
+    refreshRatingQuietly();
+  }, [refreshRatingQuietly, refreshTodayQuietly, refreshWorkQuietly]);
+  useNavigationEvent('focus', readQuietly, { onlyOnReturn: true });
+
+  // With the work on screen a failed read is a stale page, not an error; the figures' own rule is theirs.
+  const work = useStaleState({
+    hasData: data !== undefined,
+    error,
+    isRefreshing: query.isRefreshing,
+  });
+  const staleError = work.staleError ?? today.staleError ?? rating.staleError;
 
   const name = useMemo(
     () => profile?.ownerName.trim().split(/\s+/)[0] || COPY.greetingFallbackName,
@@ -154,7 +217,13 @@ export function useVendorDashboard(): VendorDashboardState {
     isLoading,
     error,
     retry,
+    today,
+    rating,
+    unreadNotifications,
     refresh,
-    isRefreshing: query.isRefreshing,
+    // The pull's spinner stays while any of the page's reads it started is out.
+    isRefreshing: query.isRefreshing || today.isRefreshing || rating.isRefreshing,
+    isStale: staleError !== null,
+    staleError,
   };
 }

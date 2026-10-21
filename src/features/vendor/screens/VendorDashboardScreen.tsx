@@ -20,9 +20,19 @@
  * if it fails, the failure and its retry sit where the work would have been and
  * the rest of the screen stays as it was.
  *
- * Section 30 also lists Today's Requests and Rating. Neither is drawn: there is
- * no contract for "today" yet and ratings belong to the reviews phase. An
- * unbuilt figure drawn as a zero would read as a fact.
+ * Section 30 also lists Today's Requests and Rating. Since Phase 3E-15 (owner
+ * approval, 21/10/2026) both are drawn, side by side under the business card:
+ * today's requests from the `today` report, the rating — stars, average and
+ * how many reviews, or "No reviews yet", never "0.0" — from the reviews, which
+ * it opens. Each is its own read (`DashboardFigure`): its own placeholder, its
+ * own small failure with its own Try again, and never in the way of the work
+ * or of each other. Accepted and In Progress as separate counts are still not
+ * drawn — nothing the app is sent says them apart from Active.
+ *
+ * ⚠️ A pull reads everything on the page, the bell's count included, and so
+ * does showing the tab again — quietly, under what is on screen. A read that
+ * fails with something on screen keeps it, and one notice above the figures
+ * says the dashboard may be out of date, with Try again (a pull, by hand).
  *
  * ⚠️ While the vendor is not accepting new requests (section 38's
  * "Availability"), a notice under the greeting says so, with "Turn on" — the
@@ -34,23 +44,25 @@
  * the work.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { NotificationBell } from '@/features/notifications/components/NotificationBell';
-import { useUnreadNotificationCount } from '@/features/notifications/hooks/useUnreadNotificationCount';
 import { AvailabilityNotice } from '@/features/vendor/components/AvailabilityNotice';
 import { BusinessSummaryCard } from '@/features/vendor/components/BusinessSummaryCard';
+import { DashboardFigure } from '@/features/vendor/components/DashboardFigure';
 import { DashboardOverview } from '@/features/vendor/components/DashboardOverview';
 import { JobPreviewSection } from '@/features/vendor/components/JobPreviewSection';
+import { presentTodayRequests } from '@/features/vendor/constants/reportPresentation';
+import { presentRatingFigure } from '@/features/vendor/constants/reviewPresentation';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import { useAcceptingRequests } from '@/features/vendor/hooks/useAcceptingRequests';
 import { useVendorDashboard } from '@/features/vendor/hooks/useVendorDashboard';
 import type { VendorStackParamList, VendorTabParamList } from '@/navigation/types';
-import { ContentSection, ErrorState, Screen, Skeleton, Text } from '@/shared/components';
+import { ContentSection, ErrorState, Screen, Skeleton, StaleNotice, Text } from '@/shared/components';
 import { useTheme } from '@/shared/theme';
 
 const COPY = VENDOR_COPY.dashboard;
@@ -80,16 +92,56 @@ export function VendorDashboardScreen({ navigation }: Props) {
     isLoading,
     error,
     retry,
+    today,
+    rating,
+    unreadNotifications,
     refresh,
     isRefreshing,
+    isStale,
+    staleError,
   } = useVendorDashboard();
 
   const openProfile = useCallback(() => navigation.navigate('Profile'), [navigation]);
   const openRequests = useCallback(() => navigation.navigate('Requests'), [navigation]);
+  // The reviews screen that was already there (section 41); the route carries nothing.
+  const openReviews = useCallback(() => navigation.navigate('VendorReviews'), [navigation]);
 
-  // The bell (section 57): read on arrival and on every return; the inbox is a pushed screen.
-  const unreadNotifications = useUnreadNotificationCount();
+  // The bell (section 57): read on arrival, on every return and on every pull; the inbox is a pushed screen.
   const openNotifications = useCallback(() => navigation.navigate('Notifications'), [navigation]);
+
+  // Section 30's two figures, in the report's and the reviews' own words.
+  const todayFigure = useMemo(() => {
+    if (!today.data) {
+      return undefined;
+    }
+    const shown = presentTodayRequests(today.data);
+    return {
+      label: COPY.todayLabel,
+      value: shown.value,
+      spoken: shown.spoken,
+      icon: 'calendar' as const,
+      tint: 'primarySubtle' as const,
+    };
+  }, [today.data]);
+
+  const ratingFigure = useMemo(() => {
+    if (!rating.data) {
+      return undefined;
+    }
+    const shown = presentRatingFigure(rating.data);
+    return {
+      label: shown.caption,
+      value: shown.average,
+      stars: shown.stars,
+      note: shown.note,
+      spoken: shown.spoken,
+      // The glyph the reports' rating carries, so the figure looks the same on both.
+      icon: 'starOutline' as const,
+      tint: 'warningSubtle' as const,
+      onPress: openReviews,
+      accessibilityHint: COPY.ratingHint,
+    };
+  }, [openReviews, rating.data]);
 
   // Section 38's availability: a notice only while new requests are off, and its one way back on.
   const { isAccepting, isChanging: isTurningOn, setAccepting } = useAcceptingRequests();
@@ -148,6 +200,50 @@ export function VendorDashboardScreen({ navigation }: Props) {
           testID="dashboard-business"
         />
       ) : null}
+
+      {isStale ? (
+        <StaleNotice
+          title={COPY.staleTitle}
+          message={COPY.staleMessage}
+          error={staleError}
+          retryLabel={COPY.staleRetry}
+          retryHint={COPY.staleRetryHint}
+          // The pull, by hand: everything stays where it is while it reads.
+          onRetry={refresh}
+          isRetrying={isRefreshing}
+          testID="dashboard-stale"
+        />
+      ) : null}
+
+      {/*
+        Section 30's Today's Requests and Rating, each its own read. Two to a
+        row; a failure takes the row, because its retry does not fit in half a
+        360dp phone (DashboardFigure).
+      */}
+      <View style={[styles.figures, { gap: theme.spacing.sm }]} testID="dashboard-figures">
+        <DashboardFigure
+          figure={todayFigure}
+          error={today.error}
+          loadingLabel={COPY.todayLoading}
+          failedTitle={COPY.todayFailedTitle}
+          retryLabel={COPY.figureRetry}
+          retrySpoken={COPY.todayRetrySpoken}
+          retryHint={COPY.todayRetryHint}
+          onRetry={today.retry}
+          testID="dashboard-today"
+        />
+        <DashboardFigure
+          figure={ratingFigure}
+          error={rating.error}
+          loadingLabel={COPY.ratingLoading}
+          failedTitle={COPY.ratingFailedTitle}
+          retryLabel={COPY.figureRetry}
+          retrySpoken={COPY.ratingRetrySpoken}
+          retryHint={COPY.ratingRetryHint}
+          onRetry={rating.retry}
+          testID="dashboard-rating"
+        />
+      </View>
 
       {isLoading ? (
         <View
@@ -235,6 +331,10 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
+  },
+  figures: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
   },
   tile: {
     // An equal share of the row, not the placeholder's default full width.

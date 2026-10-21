@@ -14,8 +14,15 @@
  *
  * The rating arrived in Phase 3E-6 as a way in, not a figure: "Customer
  * reviews" opens the Reviews screen (section 41), which reads the average and
- * the reviews itself. Drawing the number here too would be a second read of
- * it on a screen that otherwise needs none.
+ * the reviews itself. Since Phase 3E-15 (lead decision, 21/10/2026) the figure
+ * is shown too, under that button — stars, average and "N reviews", or "No
+ * reviews yet" — read on its own by the dashboard's hook (`useVendorRating`)
+ * and worded as the dashboard words it (`presentRatingFigure`). ⚠️ It never
+ * holds up or blanks the profile: while it is read, and if the read fails,
+ * the button is simply drawn without it — no placeholder, no error here; the
+ * Reviews screen has the full failure and its retry. The figure is the
+ * button's to say ("Customer reviews. Rating 4.3 out of 5, …"), so the line
+ * itself is hidden from a screen reader.
  *
  * Team management (section 38's "Manage Team") arrived in Phase 3E-7 the same
  * way: "Manage team" switches to the Team tab, which is the team — one list,
@@ -44,7 +51,7 @@
  * vendor's key for when they sign back in.
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
@@ -54,9 +61,11 @@ import { useSignOut } from '@/features/auth/hooks/useAuth';
 import { AvailabilitySection } from '@/features/vendor/components/AvailabilitySection';
 import { ProfileDetailRow } from '@/features/vendor/components/ProfileDetailRow';
 import { ShopImagesSection } from '@/features/vendor/components/ShopImagesSection';
+import { presentRatingFigure } from '@/features/vendor/constants/reviewPresentation';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import { useAcceptingRequests } from '@/features/vendor/hooks/useAcceptingRequests';
 import { useCategoryNames } from '@/features/vendor/hooks/useCategoryNames';
+import { useVendorRating } from '@/features/vendor/hooks/useVendorFigures';
 import { useVendorProfile } from '@/features/vendor/state/VendorProfileContext';
 import type { VendorStackParamList, VendorTabParamList } from '@/navigation/types';
 import {
@@ -67,8 +76,10 @@ import {
   ErrorState,
   Screen,
   SecondaryButton,
+  StarRating,
   Text,
 } from '@/shared/components';
+import { formatPhone } from '@/shared/presentation/phone';
 import { useTheme } from '@/shared/theme';
 
 const COPY = VENDOR_COPY.profile;
@@ -87,6 +98,13 @@ export function VendorProfileScreen({ navigation }: Props) {
   const categories = useCategoryNames(profile?.serviceCategoryIds ?? []);
   const { mutate: signOut, isSubmitting: isLoggingOut, error: logoutError } = useSignOut();
   const availability = useAcceptingRequests();
+
+  // Section 38's Rating, read on its own: until it answers, or if it fails, there is simply no figure.
+  const rating = useVendorRating();
+  const ratingFigure = useMemo(
+    () => (rating.data ? presentRatingFigure(rating.data) : undefined),
+    [rating.data],
+  );
 
   const [isConfirming, setIsConfirming] = useState(false);
 
@@ -203,7 +221,12 @@ export function VendorProfileScreen({ navigation }: Props) {
         {profile.ownerName ? (
           <ProfileDetailRow label={COPY.ownerLabel} value={profile.ownerName} />
         ) : null}
-        <ProfileDetailRow label={COPY.phoneLabel} value={profile.phone} />
+        {/* Written "+91 90000 00001" (owner decision, 21/10/2026); display only. */}
+        <ProfileDetailRow
+          label={COPY.phoneLabel}
+          value={formatPhone(profile.phone)}
+          testID="vendor-profile-tab-phone"
+        />
         {profile.email ? <ProfileDetailRow label={COPY.emailLabel} value={profile.email} /> : null}
       </Card>
 
@@ -217,14 +240,41 @@ export function VendorProfileScreen({ navigation }: Props) {
           accessibilityHint={COPY.teamHint}
         />
 
-        <SecondaryButton
-          label={COPY.reviews}
-          icon="starOutline"
-          onPress={openReviews}
-          disabled={isLoggingOut}
-          fullWidth
-          accessibilityHint={COPY.reviewsHint}
-        />
+        {/* The way in, with the rating under it once read; the line is the button's to say. */}
+        <View style={{ gap: theme.spacing.xs }} testID="vendor-profile-reviews">
+          <SecondaryButton
+            label={COPY.reviews}
+            icon="starOutline"
+            onPress={openReviews}
+            disabled={isLoggingOut}
+            fullWidth
+            accessibilityLabel={ratingFigure ? COPY.reviewsWithRating(ratingFigure.spoken) : undefined}
+            accessibilityHint={COPY.reviewsHint}
+          />
+          {ratingFigure ? (
+            <View
+              style={[styles.rating, { columnGap: theme.spacing.sm, rowGap: theme.spacing.xxs }]}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              testID="vendor-profile-rating">
+              {ratingFigure.average !== undefined ? (
+                <>
+                  <StarRating value={ratingFigure.stars ?? 0} size="sm" />
+                  <Text variant="bodyStrong" testID="vendor-profile-rating-average">
+                    {ratingFigure.average}
+                  </Text>
+                  <Text variant="caption" color="textSecondary" testID="vendor-profile-rating-count">
+                    {ratingFigure.caption}
+                  </Text>
+                </>
+              ) : (
+                <Text variant="caption" color="textSecondary" testID="vendor-profile-rating-note">
+                  {ratingFigure.note}
+                </Text>
+              )}
+            </View>
+          ) : null}
+        </View>
 
         <SecondaryButton
           label={COPY.reports}
@@ -284,5 +334,12 @@ export function VendorProfileScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   identity: {
     alignItems: 'center',
+  },
+  rating: {
+    // Centred under its button, and wrapping under a large font rather than running off the screen.
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

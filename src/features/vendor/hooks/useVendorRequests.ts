@@ -39,11 +39,22 @@
  * mounted under the details it opened, so a request answered there is re-read
  * here while the details are still on screen, and is where it belongs by the
  * time the vendor comes back.
+ *
+ * ⚠️ Read again, quietly, whenever the tab is shown again (Phase 3E-15, owner
+ * decision 21/10/2026) — coming back from another tab or from a request's
+ * details — but not on arrival, which the mount has just read. Quiet: no
+ * placeholders and no spinner, the list and the chosen filter (the screen's)
+ * left as they are until the answer, and nothing sent while a read is already
+ * out (`refreshQuietly`). Broadcast leads go stale (section 31.2), and a list
+ * that changed only when pulled kept showing leads that may already be gone.
+ * A failed quiet read keeps the list and raises the same notice a failed pull
+ * does.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useVendorWorkSync } from '@/features/vendor/state/VendorWorkSync';
+import { useNavigationEvent } from '@/shared/hooks/useNavigationEvent';
 import { useSingleFlightQuery } from '@/shared/hooks/useSingleFlightQuery';
 import { useStaleState } from '@/shared/hooks/useStaleState';
 import { getService } from '@/shared/services/ServiceRegistry';
@@ -207,6 +218,9 @@ export function useVendorRequests(): VendorRequestsState {
     readAt.current = revision;
     refresh();
   }, [refresh, revision]);
+
+  // The tab shown again: read under what is on screen. Not on arrival — that read is the load.
+  useNavigationEvent('focus', query.refreshQuietly, { onlyOnReturn: true });
 
   const list = useMemo(() => (data ? applySettledAnswers(data, settled) : undefined), [data, settled]);
 

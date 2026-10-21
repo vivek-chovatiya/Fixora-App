@@ -15,6 +15,9 @@
  * - every review is listed, newest first, each one block that says whose it
  *   is, the stars in words, when, which job and the comment; a review with no
  *   comment never announces one; a long comment is drawn whole
+ * - whose it is, is a first name and a last initial ("Karthik I."), and the
+ *   surname appears nowhere on the screen — drawn or said (owner decision,
+ *   21/10/2026)
  * - nothing on the screen can change a review: Back is the only control
  * - no reviews says so calmly, with no summary
  * - loading, a failed first read and its retry — once, however often it is
@@ -96,6 +99,27 @@ const RAVI_BREAKDOWN = [
 
 let current: AuthUser;
 let reviews: MockReviewService;
+/**
+ * The same reviews, for the dashboard underneath. Since Phase 3E-15 the
+ * dashboard — the first screen — reads the rating as it opens, and that read
+ * must not use up a failure or a held answer a test lined up for this screen,
+ * nor be counted as one of its reads. So the registered service sends a read
+ * to `reviews` only while the Reviews screen is on screen, and to this one —
+ * which nobody spies on — otherwise.
+ */
+let dashboards: MockReviewService;
+/** The tree being tested, so the registered service can see which screen is up. */
+let tree: ReactTestRenderer.ReactTestRenderer | undefined;
+
+function reviewsOnScreen(): boolean {
+  if (!tree) {
+    return false;
+  }
+  return (
+    tree.root.findAll(node => typeof node.type === 'string' && node.props?.testID === 'vendor-reviews')
+      .length > 0
+  );
+}
 
 beforeEach(async () => {
   resetServices();
@@ -111,18 +135,25 @@ beforeEach(async () => {
     listSubCategories: jest.fn(async () => []),
   } as CategoryService);
 
-  reviews = new MockReviewService({
-    // The vendor's side never reads a customer's request.
-    requests: {
-      getRequest: jest.fn(() => {
-        throw new Error('getRequest must never be called for a vendor’s reviews');
-      }),
-    } as Pick<RequestService, 'getRequest'>,
-    latency: NO_LATENCY,
-    currentUser,
-    // The real clock, as the cards use it, so a review a day old reads "1 day ago".
+  const vendorReviews = () =>
+    new MockReviewService({
+      // The vendor's side never reads a customer's request.
+      requests: {
+        getRequest: jest.fn(() => {
+          throw new Error('getRequest must never be called for a vendor’s reviews');
+        }),
+      } as Pick<RequestService, 'getRequest'>,
+      latency: NO_LATENCY,
+      currentUser,
+      // The real clock, as the cards use it, so a review a day old reads "1 day ago".
+    });
+  reviews = vendorReviews();
+  dashboards = vendorReviews();
+  registerService('review', {
+    getReview: requestId => reviews.getReview(requestId),
+    submitReview: input => reviews.submitReview(input),
+    getVendorReviews: () => (reviewsOnScreen() ? reviews : dashboards).getVendorReviews(),
   });
-  registerService('review', reviews);
 
   setSessionStorage({
     read: async () => ({ token: 'token', user: current }),
@@ -141,6 +172,7 @@ afterEach(async () => {
   await act(async () => {
     mounted.splice(0).forEach(renderer => renderer.unmount());
   });
+  tree = undefined;
 });
 
 type Instance = ReactTestRenderer.ReactTestInstance;
@@ -154,6 +186,18 @@ const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
 /** The text drawn inside one rendered element. */
 function textOf(node: Instance): string {
   return node.children.map(child => (typeof child === 'string' ? child : textOf(child))).join(' ');
+}
+
+/** Every word a subtree draws and every label it says, as one string to search. */
+function drawnAndSaid(root: Instance): string {
+  return JSON.stringify(
+    root
+      .findAll(node => typeof node.type === 'string')
+      .map(node => ({
+        label: node.props?.accessibilityLabel,
+        text: node.children.filter(child => typeof child === 'string'),
+      })),
+  );
 }
 
 /** Whether a node sits inside a part hidden from assistive technology, below `root`. */
@@ -203,6 +247,7 @@ async function render({ open = true }: { open?: boolean } = {}) {
     );
   });
   mounted.push(renderer);
+  tree = renderer;
   await flush();
 
   /** Host nodes only, so one drawn element is counted once. */
@@ -296,9 +341,29 @@ async function render({ open = true }: { open?: boolean } = {}) {
       });
       await flush();
     },
+    /**
+     * Profile's way in. Found by its hint: since Phase 3E-15 its spoken name
+     * carries the rating once read ("Customer reviews. Rating 4.3 …").
+     */
+    reviewsButton: () =>
+      renderer.root.findAll(
+        node =>
+          node.props?.accessibilityHint === PROFILE.reviewsHint &&
+          typeof node.props?.onPress === 'function',
+      )[0],
+    pressReviews: async () => {
+      const button = screen.reviewsButton();
+      if (!button) {
+        throw new Error('No Customer reviews button on screen');
+      }
+      await act(async () => {
+        button.props.onPress();
+      });
+      await flush();
+    },
     openReviews: async () => {
       await screen.press('Profile');
-      await screen.press(PROFILE.reviews);
+      await screen.pressReviews();
     },
   };
 
@@ -317,7 +382,7 @@ describe('Vendor reviews — getting there', () => {
     expect(screen.has('vendor-profile')).toBe(true);
     expect(screen.has('vendor-reviews')).toBe(false);
 
-    await screen.press(PROFILE.reviews);
+    await screen.pressReviews();
     expect(screen.has('vendor-reviews')).toBe(true);
     expect(screen.text('vendor-reviews-heading')).toBe(COPY.title);
 
@@ -339,7 +404,8 @@ describe('Vendor reviews — getting there', () => {
     const screen = await render({ open: false });
     await screen.press('Profile');
 
-    const [button] = screen.pressable(PROFILE.reviews);
+    const button = screen.reviewsButton();
+    expect(String(button.props.accessibilityLabel).startsWith(PROFILE.reviews)).toBe(true);
     expect(button.props.accessibilityHint).toBe(PROFILE.reviewsHint);
   });
 });
@@ -488,7 +554,7 @@ describe('Vendor reviews — the list', () => {
     const screen = await render();
 
     expect(screen.block('REQ-30912').props.accessibilityLabel).toBe(
-      'Review from Karthik Iyer. 5 out of 5 stars. 1 day ago. Geyser wiring, Ref REQ-30912. ' +
+      'Review from Karthik I. 5 out of 5 stars. 1 day ago. Geyser wiring, Ref REQ-30912. ' +
         'Comment: Arrived on time, found the loose connection quickly and explained what had ' +
         'gone wrong. Left everything clean.',
     );
@@ -497,9 +563,30 @@ describe('Vendor reviews — the list', () => {
   it('draws the customer, the job and the comment on the card', async () => {
     const screen = await render();
 
-    expect(screen.text('vendor-review-REQ-30912-customer')).toBe('Karthik Iyer');
+    expect(screen.text('vendor-review-REQ-30912-customer')).toBe('Karthik I.');
     expect(screen.text('vendor-review-REQ-30912-context')).toBe('Geyser wiring · Ref REQ-30912');
     expect(screen.text('vendor-review-REQ-30912-comment')).toContain('Arrived on time');
+  });
+
+  it('names each reviewer by first name and last initial, and never shows a surname', async () => {
+    const screen = await render();
+
+    expect(screen.listed()).toEqual(RAVI_ORDER);
+    /*
+      The Reviews screen alone, serialised: every word drawn and every label
+      said. Not the whole tree — the dashboard underneath shows the same
+      customers on its job cards, which is not a review.
+    */
+    const everything = drawnAndSaid(screen.host('vendor-reviews'));
+
+    // It is looking: all four reviewers are there, shortened.
+    for (const shortened of ['Karthik I.', 'Sana K.', 'Joseph M.', 'Pooja N.']) {
+      expect(everything).toContain(shortened);
+    }
+    for (const surname of ['Iyer', 'Khan', 'Mathew', 'Nair']) {
+      expect(everything).not.toContain(surname);
+    }
+    expect(screen.text('vendor-review-REQ-30876-customer')).toBe('Sana K.');
   });
 
   it('keeps the stars inside the block, so the rating is said once', async () => {
@@ -523,7 +610,7 @@ describe('Vendor reviews — the list', () => {
     const screen = await render();
 
     const label = String(screen.block('REQ-30833').props.accessibilityLabel);
-    expect(label).toBe('Review from Joseph Mathew. 5 out of 5 stars. 4 days ago. Socket replacement, Ref REQ-30833');
+    expect(label).toBe('Review from Joseph M. 5 out of 5 stars. 4 days ago. Socket replacement, Ref REQ-30833');
     expect(label).not.toContain(COPY.commentSpoken);
     expect(screen.has('vendor-review-REQ-30833-comment')).toBe(false);
   });
@@ -825,7 +912,7 @@ describe('Vendor reviews — whose reviews', () => {
     await screen.openReviews();
     expect(screen.listed()).toEqual([]);
     expect(screen.has('vendor-reviews-empty')).toBe(true);
-    expect(screen.text('vendor-reviews')).not.toContain('Karthik Iyer');
+    expect(screen.text('vendor-reviews')).not.toContain('Karthik');
 
     await screen.switchTo(RAVI);
     await screen.openReviews();

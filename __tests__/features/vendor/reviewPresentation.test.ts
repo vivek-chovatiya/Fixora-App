@@ -9,17 +9,27 @@
  * - a review is said as one sentence: whose, the stars in words, when, which
  *   job, and then the comment — and a review with no comment never says
  *   "Comment"
- * - names and comments are kept whole; the comment exactly as written
+ * - comments are kept whole and exactly as written; a reviewer is a first name
+ *   and a last initial, on screen and in what is said, and the surname never
+ *   leaves the presentation (owner decision, 21/10/2026 — `reviewerName`);
+ *   the initial is a capital where its letter has one, the first name is never
+ *   re-cased
+ * - the dashboard's rating and today's figure (Phase 3E-15) are the reviews'
+ *   and the report's own words: "No reviews yet", never "0.0"; a count the
+ *   app cannot trust is a dash
  * - the breakdown is five rows from five stars down, each drawn as "80%" and
  *   said as "5 stars, 80 percent, 12 reviews" — singular for one star and one
  *   review — its percentages adding up to 100; nothing to share, or a
  *   breakdown that cannot be read, draws none
  */
 
+import { presentTodayRequests } from '@/features/vendor/constants/reportPresentation';
 import {
   presentRatingBreakdown,
+  presentRatingFigure,
   presentRatingSummary,
   presentVendorReview,
+  reviewerName,
 } from '@/features/vendor/constants/reviewPresentation';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import type { VendorReview } from '@/shared/services/types/ReviewService';
@@ -134,12 +144,12 @@ describe('presentRatingBreakdown', () => {
 describe('presentVendorReview', () => {
   it('says the whole review in one sentence, in the order a person would', () => {
     expect(presentVendorReview(REVIEW, NOW)).toEqual({
-      customerName: 'Karthik Iyer',
+      customerName: 'Karthik I.',
       date: '1 day ago',
       context: 'Geyser wiring · Ref REQ-30912',
       comment: 'Arrived on time.',
       spoken:
-        'Review from Karthik Iyer. 5 out of 5 stars. 1 day ago. Geyser wiring, Ref REQ-30912. Comment: Arrived on time.',
+        'Review from Karthik I. 5 out of 5 stars. 1 day ago. Geyser wiring, Ref REQ-30912. Comment: Arrived on time.',
     });
   });
 
@@ -148,7 +158,7 @@ describe('presentVendorReview', () => {
 
     expect('comment' in shown).toBe(false);
     expect(shown.spoken).toBe(
-      'Review from Karthik Iyer. 5 out of 5 stars. 1 day ago. Geyser wiring, Ref REQ-30912',
+      'Review from Karthik I. 5 out of 5 stars. 1 day ago. Geyser wiring, Ref REQ-30912',
     );
     expect(shown.spoken).not.toContain(COPY.commentSpoken);
   });
@@ -182,12 +192,22 @@ describe('presentVendorReview', () => {
     }
   });
 
-  it('keeps a long name whole in what is said', () => {
+  it('shortens a long name the same way, on screen and in what is said', () => {
     const name = 'Venkata Subrahmanya Lakshmi Narasimhamurthy-Ramachandran';
     const shown = presentVendorReview({ ...REVIEW, customerName: name }, NOW);
 
-    expect(shown.customerName).toBe(name);
-    expect(shown.spoken.startsWith(COPY.fromSpoken(name))).toBe(true);
+    expect(shown.customerName).toBe('Venkata N.');
+    expect(shown.spoken.startsWith(`${COPY.fromSpoken('Venkata N.')} 5 out of 5 stars`)).toBe(true);
+  });
+
+  it('never lets the surname out, on screen or in what is said', () => {
+    const shown = presentVendorReview({ ...REVIEW, customerName: 'Priya Sharma' }, NOW);
+
+    expect(JSON.stringify(shown)).not.toContain('Sharma');
+    expect(shown.customerName).toBe('Priya S.');
+    // One full stop after the initial, never two.
+    expect(shown.spoken.startsWith('Review from Priya S. 5 out of 5 stars.')).toBe(true);
+    expect(shown.spoken).not.toContain('..');
   });
 
   it('names the job by reference alone when the backend gives no service', () => {
@@ -209,7 +229,7 @@ describe('presentVendorReview', () => {
 
     expect(shown.date).toBe('');
     expect(shown.spoken).toBe(
-      'Review from Karthik Iyer. 5 out of 5 stars. Geyser wiring, Ref REQ-30912. Comment: Arrived on time.',
+      'Review from Karthik I. 5 out of 5 stars. Geyser wiring, Ref REQ-30912. Comment: Arrived on time.',
     );
   });
 
@@ -219,5 +239,85 @@ describe('presentVendorReview', () => {
         `${rating} out of 5 stars`,
       );
     }
+  });
+});
+
+describe('reviewerName — first name and last initial (owner decision, 21/10/2026)', () => {
+  it.each<[string, string]>([
+    ['Priya Sharma', 'Priya S.'],
+    ['Priya', 'Priya'],
+    ['  Priya   Sharma  ', 'Priya S.'],
+    ['Priya\tKumari\nSharma', 'Priya S.'],
+    ['Mary-Jane O’Neil', 'Mary-Jane O.'],
+    ['Priya S.', 'Priya S.'],
+    ['Priya S', 'Priya S.'],
+    // Only the initial the app makes is upper-cased; the first name is the backend's spelling.
+    ['priya sharma', 'priya S.'],
+    ['Anil ölz', 'Anil Ö.'],
+    // No case to change: the initial stays as it is.
+    ['Asha शर्मा', 'Asha श.'],
+    ['Wei 王', 'Wei 王.'],
+    // A capital that would be two letters keeps its own form: one initial, not two.
+    ['Anna ßeta', 'Anna ß.'],
+  ])('reads %j as %j', (given, shown) => {
+    expect(reviewerName(given)).toBe(shown);
+  });
+
+  it('keeps an initial whole when it is more than one UTF-16 unit', () => {
+    expect(reviewerName('Asha \u{1D4AE}harma')).toBe('Asha \u{1D4AE}.');
+  });
+
+  it.each([undefined, null, '', '   ', '\n\t'])('gives no name for %j, so none is drawn', given => {
+    expect(reviewerName(given)).toBeUndefined();
+  });
+});
+
+describe('presentRatingFigure — the rating on the dashboard and the Profile tab (Phase 3E-15)', () => {
+  it('is the reviews’ own average, stars, count and sentence', () => {
+    expect(presentRatingFigure({ averageRating: 4.25, totalReviews: 4 })).toEqual({
+      average: '4.3',
+      stars: 4,
+      caption: '4 reviews',
+      spoken: 'Rating 4.3 out of 5, based on 4 reviews.',
+    });
+  });
+
+  it('says "No reviews yet" for none, never 0.0 and never a star', () => {
+    const shown = presentRatingFigure({ averageRating: null, totalReviews: 0 });
+
+    expect(shown).toEqual({
+      caption: COPY.figureLabel,
+      note: COPY.figureNone,
+      spoken: COPY.figureNoneSpoken,
+    });
+    expect(JSON.stringify(shown)).not.toMatch(/0\.0|\b0 reviews/);
+  });
+
+  it('shows the count alone when the average cannot be trusted, never "No reviews yet"', () => {
+    expect(presentRatingFigure({ averageRating: 7, totalReviews: 3 })).toEqual({
+      caption: COPY.figureLabel,
+      note: '3 reviews',
+      spoken: 'Rating, 3 reviews',
+    });
+  });
+});
+
+describe('presentTodayRequests — section 30 on the dashboard (Phase 3E-15)', () => {
+  it('is the report’s total, said as what it counts', () => {
+    expect(presentTodayRequests({ totalRequests: 4 })).toEqual({
+      value: '4',
+      spoken: "Today's requests, 4",
+    });
+  });
+
+  it('draws zero as a figure', () => {
+    expect(presentTodayRequests({ totalRequests: 0 }).value).toBe('0');
+  });
+
+  it.each([-1, 2.5, Number.NaN])('draws %p as a dash and says it is not available, never a zero', total => {
+    expect(presentTodayRequests({ totalRequests: total })).toEqual({
+      value: VENDOR_COPY.reports.unavailable,
+      spoken: "Today's requests, not available",
+    });
   });
 });

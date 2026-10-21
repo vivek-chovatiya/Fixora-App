@@ -46,9 +46,12 @@
  * The route carries the reference and nothing else. Nothing about the job is
  * read here: the reference is shown so the vendor can see which job this is,
  * and the service checks that it is theirs and in progress.
+ *
+ * The method field and its chips are `PaymentMethodField` (21/10/2026), shared
+ * with recording a payment after the job, so the two cannot ask differently.
  */
 
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { NavigationAction } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -57,6 +60,7 @@ import { Controller, useForm, useWatch } from 'react-hook-form';
 
 import { AppConfig } from '@/core/config/AppConfig';
 import { CompleteWorkDialog } from '@/features/vendor/components/CompleteWorkDialog';
+import { PaymentChoice, PaymentMethodField } from '@/features/vendor/components/PaymentMethodField';
 import {
   presentPaymentStatus,
   SELECTABLE_PAYMENT_STATUSES,
@@ -77,20 +81,15 @@ import {
   FieldLabel,
   PrimaryButton,
   Screen,
-  SecondaryButton,
-  SelectionChip,
-  Skeleton,
   Text,
 } from '@/shared/components';
 import { currencySymbol } from '@/shared/presentation/money';
 import {
   COMPLETION_NOTES_MAX_LENGTH,
   PAYMENT_STATUS_PAID,
-  type PaymentMethodOption,
   type VendorCompletionInput,
 } from '@/shared/services/types/VendorRequestService';
 import { useTheme } from '@/shared/theme';
-import type { AppError } from '@/shared/types/error';
 
 const COPY = VENDOR_COPY.completeForm;
 
@@ -313,7 +312,7 @@ export function CompleteWorkScreen({ navigation, route }: Props) {
             control={control}
             name="paymentMethodId"
             render={({ field: { value, onChange }, fieldState: { error } }) => (
-              <MethodField
+              <PaymentMethodField
                 methods={methods}
                 isLoading={isLoadingMethods}
                 loadError={methodsError}
@@ -321,6 +320,7 @@ export function CompleteWorkScreen({ navigation, route }: Props) {
                 value={value}
                 onChange={onChange}
                 error={error?.message}
+                testID="complete-work"
               />
             )}
           />
@@ -431,139 +431,6 @@ function ChoiceField({ label, error, testID, children }: ChoiceFieldProps) {
   );
 }
 
-interface PaymentChoiceProps {
-  /** What is stored when chosen: a status constant, or a method's id. */
-  value: string;
-  label: string;
-  selected: boolean;
-  onChange: (value: string) => void;
-  /** Told after the form has the new value. */
-  onChosen?: (value: string) => void;
-  hint: string;
-  testID: string;
-}
-
-/** One option: the chip, handed its own value so no render builds a new handler. */
-function PaymentChoiceComponent({
-  value,
-  label,
-  selected,
-  onChange,
-  onChosen,
-  hint,
-  testID,
-}: PaymentChoiceProps) {
-  const press = useCallback(() => {
-    onChange(value);
-    onChosen?.(value);
-  }, [onChange, onChosen, value]);
-
-  return (
-    <SelectionChip
-      label={label}
-      selected={selected}
-      onPress={press}
-      accessibilityHint={hint}
-      testID={testID}
-    />
-  );
-}
-
-const PaymentChoice = memo(PaymentChoiceComponent);
-
-interface MethodFieldProps {
-  methods: PaymentMethodOption[] | undefined;
-  isLoading: boolean;
-  loadError: AppError | null;
-  onRetry: () => void;
-  value: string;
-  onChange: (methodId: string) => void;
-  error?: string;
-}
-
-/**
- * The payment method: the service's options as chips — or, while they load, a
- * placeholder that says so; or, when they could not be read, the reason and a
- * way to try again, beside the field and nowhere else.
- */
-function MethodField({ methods, isLoading, loadError, onRetry, value, onChange, error }: MethodFieldProps) {
-  const theme = useTheme();
-
-  /*
-    Each state is keyed, so it replaces the one before rather than updating it:
-    a native view that was a busy progress indicator and is reused for the
-    chips keeps its busy state (found on the recent-requests list).
-  */
-  let options: React.ReactNode;
-  if (methods && methods.length > 0) {
-    options = (
-      <View
-        key="methods"
-        accessibilityRole="radiogroup"
-        accessibilityLabel={COPY.methodLabel}
-        style={[styles.choices, { gap: theme.spacing.sm }]}
-        testID="complete-work-methods">
-        {methods.map(method => (
-          <PaymentChoice
-            key={method.id}
-            value={method.id}
-            label={method.label}
-            selected={value === method.id}
-            onChange={onChange}
-            hint={COPY.methodHint}
-            testID={`complete-work-method-${method.id}`}
-          />
-        ))}
-      </View>
-    );
-  } else if (isLoading) {
-    options = (
-      <View
-        key="methods-loading"
-        accessible
-        accessibilityRole="progressbar"
-        // Label and busy state together and from the first render.
-        accessibilityLabel={COPY.methodsLoading}
-        accessibilityState={{ busy: true }}
-        testID="complete-work-methods-loading">
-        <Skeleton height={theme.hitSlop.minTarget} radiusToken="full" />
-      </View>
-    );
-  } else {
-    // Failed — or the service offered none, which a retry is also the answer to.
-    const reason = loadError ? `${COPY.methodsFailed} ${loadError.userMessage}` : COPY.methodsNone;
-    options = (
-      <View key="methods-failed" style={[styles.start, { gap: theme.spacing.sm }]} testID="complete-work-methods-error">
-        <Text variant="caption" color="danger" accessibilityLiveRegion="polite">
-          {reason}
-        </Text>
-        <SecondaryButton
-          label={COPY.methodsRetry}
-          icon="retry"
-          onPress={onRetry}
-          accessibilityHint={COPY.methodsRetryHint}
-        />
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ gap: theme.spacing.sm }} testID="complete-work-method">
-      <FieldLabel required>{COPY.methodLabel}</FieldLabel>
-      {options}
-      {error ? (
-        <Text
-          variant="caption"
-          color="danger"
-          accessibilityLiveRegion="polite"
-          testID="complete-work-method-error">
-          {error}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   bar: {
     justifyContent: 'center',
@@ -571,8 +438,5 @@ const styles = StyleSheet.create({
   choices: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-  },
-  start: {
-    alignItems: 'flex-start',
   },
 });

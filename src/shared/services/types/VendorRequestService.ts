@@ -5,11 +5,14 @@
  * request opened (Phase 3E-3), the answer to one that is waiting — accept or
  * reject (Phase 3E-4) — and the work on one that was accepted: start it, then
  * mark it completed (Phase 3E-5), recording what the job came to and whether
- * the customer has paid (sections 36 and 37, the offline payment record).
+ * the customer has paid (sections 36 and 37, the offline payment record) — and,
+ * later, that a customer who had not paid yet now has (owner decision,
+ * 21/10/2026: `recordPayment`).
  *
- * ⚠️ Those four are the only changes there are. Nothing here cancels, reassigns,
- * schedules or closes a request — so no screen can do any of it, because there
- * is no operation to call.
+ * ⚠️ Those five are the only changes there are. Nothing here cancels, reassigns,
+ * schedules or closes a request, and nothing changes a completion record except
+ * "Not paid yet" becoming "Paid" — so no screen can do any of the rest, because
+ * there is no operation to call.
  *
  * ⚠️ Payment is recorded, never processed (section 37: "Payment Recorded ✅,
  * Payment Processed by Fixora ❌"). Completing a job carries what the vendor
@@ -45,6 +48,7 @@
  * request that is not this vendor's does not exist as far as this service says.
  */
 
+import type { RequestAddress } from '@/shared/services/types/RequestService';
 import type { VendorJobSummary } from '@/shared/services/types/VendorDashboardService';
 
 /**
@@ -75,22 +79,71 @@ export interface VendorRequestList {
 }
 
 /**
- * One request, opened.
+ * One request, opened (section 32: "Request ID, Customer Information, Service,
+ * Sub Service, Priority, Description, Images, Notes, Address, Preferred
+ * Date/Time, Current Status").
  *
- * Section 32 lists more than this — address, images, notes, preferred date and
- * time, customer information. Only what is safe to show before the vendor has
- * taken the job is here:
+ * ⚠️ What the vendor is told depends on whether they hold the work (owner
+ * decision, 21/10/2026):
  *
- * ⚠️ No address, no photographs, no phone number. Whether a vendor sees where
- * the customer lives before accepting is a product decision nobody has made,
- * and it is one that cannot be taken back once shipped. They arrive with the
- * accept flow, on this record, when that is decided.
+ * - **before** — a request still waiting for their answer, or one they
+ *   declined: the service, its category, the priority, what the customer said,
+ *   the photographs, the preferred date and time, and the **area only**
+ *   (`locality`). No `customerName`, no `customerPhone`, no `address`: the
+ *   backend leaves them off the record, so they are never on the device;
+ * - **once they hold it** — accepted, in progress, completed: all of the
+ *   above, and the customer's name and phone and the full address.
+ *
+ * A screen must draw those three only for work the vendor holds, even if a
+ * record carries them anyway — the record and the screen each keep the rule,
+ * so one mistake does not show a stranger's address.
+ *
+ * ⚠️ Every field added here on 21/10/2026 is this app's guess at the backend:
+ * the shapes are the customer's own (`CreateRequestInput` read back), because a
+ * request is one request whoever opens it. Each is optional, and absent — not
+ * empty — when there is nothing to say.
+ *
+ * Section 32's "Description" and "Notes" are one field: the customer's
+ * request has a single free-text box (`CreateRequestInput.notes`; description
+ * is folded into it), so `description` here is that text, read back.
  */
 export interface VendorRequestDetails extends VendorJobSummary {
   /** The category the service belongs to. Rendered, never matched (section 11). */
   categoryName?: string;
-  /** What the customer wrote about the job. Absent when they wrote nothing. */
+  /**
+   * What the customer wrote about the job — their request's notes
+   * (`CreateRequestInput.notes`), exactly as sent. Absent when they wrote
+   * nothing.
+   */
   description?: string;
+  /**
+   * The photographs the customer attached (section 16), as remote URLs, in the
+   * order they were attached. Absent when there are none — never `[]`.
+   * Shown before the vendor holds the work: they describe the job, not the
+   * customer.
+   */
+  imageUrls?: string[];
+  /** `YYYY-MM-DD`, exactly as the customer sent it. Absent: no preference. */
+  preferredDate?: string;
+  /** `HH:mm`, 24-hour, exactly as the customer sent it. Absent: no preference. */
+  preferredTime?: string;
+  /**
+   * The customer's phone number as stored — digits, never formatted (the
+   * screen writes it with `formatPhone`).
+   *
+   * ⚠️ Only on work this vendor holds. Never on a request waiting for their
+   * answer or one they declined.
+   */
+  customerPhone?: string;
+  /**
+   * Where the work is, exactly as the customer gave it (section 18) — the
+   * customer's own `RequestAddress`, so the two sides cannot describe one
+   * place two ways.
+   *
+   * ⚠️ Only on work this vendor holds. Before that, the area (`locality`) is
+   * all the vendor is told.
+   */
+  address?: RequestAddress;
   /**
    * What the vendor recorded when they completed it (sections 36 and 37).
    *
@@ -182,6 +235,24 @@ export interface VendorCompletionRecord {
   notes?: string;
 }
 
+/**
+ * What a vendor sends to record, after completing a job, that the customer has
+ * now paid (owner decision, 21/10/2026: "Not paid yet" may become "Paid"
+ * later; only that way, and once paid it is final).
+ *
+ * ⚠️ Exact keys, both required: the status the record becomes and how the
+ * customer paid — what the completion form requires of a paid job, and nothing
+ * else. The amount is not here: it was fixed when the job was completed, and
+ * nothing in the record but the payment changes. The app's guess at the
+ * backend's body, like the rest of the payment record.
+ */
+export interface VendorPaymentInput {
+  /** `PAYMENT_STATUS_PAID` — the one status a record can be moved to. */
+  paymentStatus: string;
+  /** One of `listPaymentMethods`' ids. */
+  paymentMethodId: string;
+}
+
 /** The two answers a waiting request can be given (section 33). */
 export type VendorRequestDecision = 'accept' | 'reject';
 
@@ -222,8 +293,14 @@ export type VendorRequestDecisionResult<Outcome extends 'accepted' | 'rejected'>
 /** The two steps of accepted work (sections 35 and 36). */
 export type VendorWorkStep = 'start' | 'complete';
 
-/** Everything a vendor can do to a request: answer it, or move its work along. */
-export type VendorRequestAction = VendorRequestDecision | VendorWorkStep;
+/** Recording, after completion, that a customer who had not paid now has (21/10/2026). */
+export type VendorPaymentStep = 'recordPayment';
+
+/**
+ * Everything a vendor can do to a request: answer it, move its work along, or
+ * record a payment that came after the job.
+ */
+export type VendorRequestAction = VendorRequestDecision | VendorWorkStep | VendorPaymentStep;
 
 /**
  * Why a work step was not applied: the request is not in the status the step
@@ -245,6 +322,23 @@ export type VendorWorkRefusal = 'invalidTransition';
  */
 export type VendorWorkStepResult<Outcome extends 'started' | 'completed'> =
   | { outcome: Outcome; request: VendorRequestDetails }
+  | { outcome: 'refused'; reason: VendorWorkRefusal };
+
+/**
+ * What recording a later payment came to: the request as the service now holds
+ * it — its completion record paid — or a refusal with no record, in the work
+ * steps' own words: `invalidTransition` when there is no "Not paid yet" record
+ * to change (the job is not finished, or finished without a record, or its
+ * record says something other than paid or not paid). Faults reject as for a
+ * work step.
+ *
+ * ⚠️ A record that is already paid is not a refusal: it comes back as it is,
+ * `recorded`, so a call retried after it had in fact gone through is not
+ * reported as a failure. Whatever method the retry named, the first one stands
+ * — a paid record is final.
+ */
+export type VendorPaymentResult =
+  | { outcome: 'recorded'; request: VendorRequestDetails }
   | { outcome: 'refused'; reason: VendorWorkRefusal };
 
 export interface VendorRequestService {
@@ -296,8 +390,8 @@ export interface VendorRequestService {
    * `completedAt` set and the vendor's completion recorded on the request
    * (`VendorRequestDetails.completion`). Anything else — including accepted
    * work that was never started — is refused with `invalidTransition`.
-   * Completed work is listed under `completed` from then on, and nothing more
-   * can be done to it.
+   * Completed work is listed under `completed` from then on, and the only thing
+   * left that can be done to it is `recordPayment`.
    *
    * Rejects with `validation`, and records nothing, when the completion does
    * not hold: an amount that is not a whole number of minor units above 0 and
@@ -309,6 +403,22 @@ export interface VendorRequestService {
     requestId: string,
     completion: VendorCompletionInput,
   ): Promise<VendorWorkStepResult<'completed'>>;
+
+  /**
+   * Records that the customer of a finished job, recorded "Not paid yet", has
+   * now paid (owner decision, 21/10/2026). The record's status becomes
+   * `PAYMENT_STATUS_PAID` with the method and its label; the amount, the
+   * currency and the notes are left exactly as they were. The request stays
+   * where it is in the list.
+   *
+   * Rejects with `validation`, and records nothing, when the body does not
+   * hold: a status other than `PAYMENT_STATUS_PAID`, or a method that is not
+   * one of `listPaymentMethods`'. Refused with `invalidTransition` when there is
+   * no "Not paid yet" record to change; answered with the record as it is when
+   * it is already paid (see `VendorPaymentResult`). Recorded, never processed:
+   * no money moves.
+   */
+  recordPayment(requestId: string, payment: VendorPaymentInput): Promise<VendorPaymentResult>;
 
   /**
    * The ways a customer can have paid, in the order to offer them (section

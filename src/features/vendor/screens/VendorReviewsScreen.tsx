@@ -29,7 +29,13 @@
  * that they may be out of date — the request list's notice (3E-3).
  *
  * Reached from the Profile tab (section 38 lists the rating there; section 43
- * keeps the tab bar to four), as a pushed screen with its own Back.
+ * keeps the tab bar to four), as a pushed screen with its own Back — and since
+ * Phase 3E-15 from the dashboard's rating too, which is why Back says "Back"
+ * and not where it goes.
+ *
+ * ⚠️ A reviewer is a first name and a last initial ("Priya S."), never the
+ * surname (owner decision, 21/10/2026). The rule is `reviewerName`, applied in
+ * `presentVendorReview` before the card or a screen reader sees the name.
  */
 
 import React, { useCallback, useMemo } from 'react';

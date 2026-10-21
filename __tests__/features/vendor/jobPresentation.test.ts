@@ -8,6 +8,7 @@
  */
 
 import {
+  holdsWork,
   isAwaitingAnswer,
   isFinishedWork,
   nextWorkStep,
@@ -136,4 +137,25 @@ describe('vendorGreetingFor', () => {
   ])('greets at %i:00 with "%s"', (hour, greeting) => {
     expect(vendorGreetingFor(at(hour))).toBe(greeting);
   });
+});
+
+/*
+  Whether a request's details may show who the customer is and exactly where
+  (owner decision, 21/10/2026): only once the vendor holds the work. Anything
+  the app cannot read shows the less.
+*/
+describe('holdsWork (who and where, only for work the vendor holds)', () => {
+  it.each(['ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CLOSED', ' in_progress '])(
+    'holds the work for %p',
+    status => {
+      expect(holdsWork({ status })).toBe(true);
+    },
+  );
+
+  it.each(['CREATED', 'PENDING_VENDOR', 'REJECTED', 'AWAITING_PARTS', ''])(
+    'does not hold the work for %p, so nothing of the customer is shown',
+    status => {
+      expect(holdsWork({ status })).toBe(false);
+    },
+  );
 });

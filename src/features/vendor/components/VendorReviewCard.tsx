@@ -17,7 +17,9 @@
  * paragraph, which wraps on any phone; cutting it short would put a "more"
  * control on a screen that otherwise has nothing to press, and Fixora has no
  * expand pattern to reuse. A long name wraps to two lines and is then cut off
- * on screen, never in what is spoken.
+ * on screen, never in what is spoken. The name is already shortened to a first
+ * name and last initial by `presentVendorReview` (owner decision, 21/10/2026):
+ * this card never sees the surname, and must never be handed it.
  */
 
 import React, { memo, useMemo } from 'react';

@@ -42,6 +42,13 @@
  * reference is enough for. Same guard, same toasts, same signal: it is still
  * one of the four actions, and while it is in the air nothing else is sent.
  *
+ * ⚠️ Recording a payment after the job (owner decision, 21/10/2026) is
+ * `recordPayment(requestId, payment)`, for the reason completing is its own
+ * call: it carries what was recorded. Same guard, same toasts, same signal —
+ * so the list and the dashboard hear of it — and a refusal (`invalidTransition`:
+ * there is no "Not paid yet" record to change) is the calm 3E-5 message. It is
+ * not one of section 54's events, so it sends none.
+ *
  * ⚠️ Section 54's vendor events are sent here, from the service's answer and
  * nothing else — `request_accepted`, `request_rejected`, `work_started` and
  * `work_completed` when it says done, `request_accept_lost` when an accept is
@@ -67,6 +74,7 @@ import type {
 import type { VendorJobDispatch } from '@/shared/services/types/VendorDashboardService';
 import type {
   VendorCompletionInput,
+  VendorPaymentInput,
   VendorRequestAction,
   VendorRequestDetails,
   VendorRequestRefusal,
@@ -83,8 +91,11 @@ const log = createLogger('useVendorRequestDecision');
 /** Why an action did not happen, as a business answer rather than a fault. */
 export type VendorActionRefusal = VendorRequestRefusal | VendorWorkRefusal | 'notFound';
 
-/** The actions a reference is enough for. Completing also carries what was recorded. */
-export type VendorReferenceAction = Exclude<VendorRequestAction, 'complete'>;
+/**
+ * The actions a reference is enough for. Completing, and recording a payment
+ * later, also carry what was recorded.
+ */
+export type VendorReferenceAction = Exclude<VendorRequestAction, 'complete' | 'recordPayment'>;
 
 export type VendorDecisionOutcome =
   /** The service recorded it; `request` is the record as it now stands. */
@@ -116,6 +127,8 @@ export interface VendorRequestDecisionState {
   ) => Promise<VendorDecisionOutcome>;
   /** Completes work under way with the vendor's record of it (sections 36 and 37). */
   complete: (requestId: string, completion: VendorCompletionInput) => Promise<VendorDecisionOutcome>;
+  /** Records that the customer of a finished, unpaid job has now paid (21/10/2026). */
+  recordPayment: (requestId: string, payment: VendorPaymentInput) => Promise<VendorDecisionOutcome>;
 }
 
 /** One service call, whatever the action: done with a record, or refused with a reason. */
@@ -158,6 +171,10 @@ const ACTIONS: Readonly<Record<VendorRequestAction, ActionSpec>> = {
     done: { message: WORK.completed, tone: 'success', icon: 'completeWork' },
     failed: WORK.completeFailed,
   },
+  recordPayment: {
+    done: { message: WORK.paymentRecorded, tone: 'success', icon: 'success' },
+    failed: WORK.recordPaymentFailed,
+  },
 };
 
 /** The calls behind the actions a reference is enough for. */
@@ -176,8 +193,12 @@ const REFUSAL_COPY: Readonly<Record<VendorActionRefusal, string>> = {
   notFound: COPY.unavailable,
 };
 
-/** Section 54's event for each action the service said was done. */
-const DONE_EVENT: Readonly<Record<VendorRequestAction, VendorAnalyticsEvent>> = {
+/**
+ * Section 54's event for each action the service said was done. A payment
+ * recorded later has none: section 54 lists only essential events, and this is
+ * not one of them.
+ */
+const DONE_EVENT: Readonly<Partial<Record<VendorRequestAction, VendorAnalyticsEvent>>> = {
   accept: 'request_accepted',
   reject: 'request_rejected',
   start: 'work_started',
@@ -238,7 +259,10 @@ export function useVendorRequestDecision(): VendorRequestDecisionState {
           return unavailable(result.reason);
         }
 
-        track(DONE_EVENT[decision], counted);
+        const event = DONE_EVENT[decision];
+        if (event) {
+          track(event, counted);
+        }
         showToast(action.done);
         workChanged();
         return { kind: 'answered', decision, request: result.request };
@@ -290,11 +314,24 @@ export function useVendorRequestDecision(): VendorRequestDecisionState {
     [run],
   );
 
+  const recordPayment = useCallback(
+    (requestId: string, payment: VendorPaymentInput) =>
+      run(
+        requestId,
+        'recordPayment',
+        async service => sent(await service.recordPayment(requestId, payment)),
+        // Never sent: no section 54 event is named for it (see DONE_EVENT).
+        {},
+      ),
+    [run],
+  );
+
   return {
     answeringId: inAir?.requestId ?? null,
     answering: inAir?.decision ?? null,
     isAnswering: inAir !== null,
     answer,
     complete,
+    recordPayment,
   };
 }

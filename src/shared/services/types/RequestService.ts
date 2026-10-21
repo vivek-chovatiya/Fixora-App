@@ -202,10 +202,13 @@ export interface RequestAddress {
  *
  * Section 18's **address** is here now, and it is the one field on this input
  * that no backend has agreed to. It is carried as a `RequestAddress` value
- * rather than as an `addressId`, because an id would mean a saved-address book —
- * select, add, edit, delete, default — which is a capability of its own with no
- * service and no screen. A request states where the work is; the address book
- * that remembers it for next time can arrive later and change only this field.
+ * rather than as an `addressId`, even though the customer now has a saved
+ * address book (`AddressBookService`, Phase 3D-9) and can choose from it while
+ * raising a request (3D-10). Choosing one copies the address by value
+ * (`requestAddressFromSaved`) — never its `id` or `isDefault` — so a request
+ * states where the work is, a later edit or delete in the book cannot move a
+ * request already raised, and a saved address sends exactly what the same
+ * address typed by hand would.
  *
  * Description is folded into `notes`. Section 14 lists both, but section 17's
  * own example of a note — "the fan is making noise and stops after 10 minutes" —

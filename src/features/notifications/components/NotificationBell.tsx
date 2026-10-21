@@ -10,7 +10,7 @@
  *
  * ⚠️ Presentational. It is handed a count and a press handler and knows
  * neither where it leads nor how the count is read — the screen navigates and
- * `useUnreadNotificationCount` reads, so the bell cannot drift between the two
+ * `useUnreadNotifications` reads, so the bell cannot drift between the two
  * applications that draw it.
  *
  * ⚠️ The badge is not the only way the count is said. It is hidden inside the

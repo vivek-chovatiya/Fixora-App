@@ -19,7 +19,8 @@
  *   order the answers arrive in, and a newer period's failure never shows the
  *   older period's figures
  * - no other service is asked: the figures are not built from requests,
- *   reviews or the team
+ *   reviews or the team (while Reports is on screen — the dashboard underneath
+ *   reads its own rating and today's figure since Phase 3E-15)
  * - one vendor never sees another's figures, and a route cannot point the
  *   screen at somebody else or choose its period
  */
@@ -103,14 +104,38 @@ let reports: MockVendorReportService;
 /** The same figures, from a second service nobody spies on. */
 let truth: MockVendorReportService;
 let touched: string[];
+/** The tree being tested, so the registered services can see which screen is up. */
+let tree: ReactTestRenderer.ReactTestRenderer | undefined;
 
-/** A service whose every method records the call and throws. */
+/**
+ * Whether the Reports screen is on screen.
+ *
+ * Since Phase 3E-15 the dashboard — the first screen — reads today's figures
+ * and the rating as it opens. Those reads are the dashboard's, not this
+ * screen's: they must not use up a failure or a held answer a test lined up
+ * for Reports, be counted as its reads, or be taken for Reports asking the
+ * reviews. So what is asked while Reports is not on screen goes to `truth`,
+ * and is not recorded.
+ */
+function reportsOnScreen(): boolean {
+  if (!tree) {
+    return false;
+  }
+  return (
+    tree.root.findAll(node => typeof node.type === 'string' && node.props?.testID === 'vendor-reports')
+      .length > 0
+  );
+}
+
+/** A service whose every method records the call — while Reports is on screen — and throws. */
 function refusing<K extends ServiceKey>(key: K): ServiceMap[K] {
   return new Proxy(
     {},
     {
       get: (_target, method) => () => {
-        touched.push(`${key}.${String(method)}`);
+        if (reportsOnScreen()) {
+          touched.push(`${key}.${String(method)}`);
+        }
         throw new Error(`${key}.${String(method)} must never be called for a report`);
       },
     },
@@ -136,7 +161,9 @@ beforeEach(async () => {
 
   reports = new MockVendorReportService({ latency: NO_LATENCY, currentUser });
   truth = new MockVendorReportService({ latency: NO_LATENCY, currentUser });
-  registerService('vendorReports', reports);
+  registerService('vendorReports', {
+    getReport: period => (reportsOnScreen() ? reports : truth).getReport(period),
+  });
 
   setSessionStorage({
     read: async () => ({ token: 'token', user: current }),
@@ -161,6 +188,7 @@ afterEach(async () => {
   await act(async () => {
     mounted.splice(0).forEach(renderer => renderer.unmount());
   });
+  tree = undefined;
   jest.restoreAllMocks();
 });
 
@@ -218,6 +246,7 @@ async function render({ open = true }: { open?: boolean } = {}) {
     );
   });
   mounted.push(renderer);
+  tree = renderer;
   await flush();
 
   /** Host nodes only, so one drawn element is counted once. */

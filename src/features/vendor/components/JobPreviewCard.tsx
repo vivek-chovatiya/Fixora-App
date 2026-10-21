@@ -31,6 +31,14 @@
  * area off the card altogether, and where the job is matters more to a vendor
  * than the last third of a name.
  *
+ * ⚠️ The customer's name only on work the vendor holds (owner decision,
+ * 21/10/2026). A request waiting for them, or one they declined, shows the
+ * area alone and says "Area: Koramangala" where a held one says "Customer:
+ * Asha Patel, Koramangala" — section 31's "Customer", read as the customer
+ * once the work is theirs and where it is until then. Decided here from the
+ * status (`holdsWork`) as well as by the service leaving the name off, so a
+ * record that carries one anyway still does not show it.
+ *
  * It is one stop for a screen reader and says the whole card in one sentence,
  * including what is truncated on screen. An urgent request is told apart by its
  * word and its glyph as well as its colour (section 31).
@@ -39,7 +47,7 @@
 import React, { memo, useCallback, useMemo, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View, type PressableStateCallbackType } from 'react-native';
 
-import { presentJobStatus } from '@/features/vendor/constants/jobPresentation';
+import { holdsWork, presentJobStatus } from '@/features/vendor/constants/jobPresentation';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import { Card, Icon, StatusBadge, Text } from '@/shared/components';
 import {
@@ -87,19 +95,31 @@ function JobPreviewCardComponent({ job, onPress, actions, testID }: JobPreviewCa
       ? dated(COPY.rejectedLabel, job.rejectedAt)
       : dated(COPY.raisedLabel, job.createdAt);
 
+  /*
+    The name only for work the vendor holds, whatever the record carries
+    (21/10/2026); otherwise the area is said in its place — and with no area
+    either, nothing, never "Customer: undefined".
+  */
+  const customer = holdsWork(job) ? job.customerName?.trim() : undefined;
+  const area = job.locality?.trim();
+
   const spokenLabel = useMemo(
     () =>
       [
         job.serviceName,
         `${COPY.statusLabel}: ${status.label}`,
-        `${COPY.customerLabel}: ${
-          job.locality ? `${job.customerName}, ${job.locality}` : job.customerName
-        }`,
+        customer
+          ? `${COPY.customerLabel}: ${area ? `${customer}, ${area}` : customer}`
+          : area
+            ? `${COPY.areaLabel}: ${area}`
+            : undefined,
         `${COPY.priorityLabel}: ${priority.label}`,
         when,
         reference,
-      ].join('. '),
-    [job.customerName, job.locality, job.serviceName, priority.label, reference, status.label, when],
+      ]
+        .filter(Boolean)
+        .join('. '),
+    [area, customer, job.serviceName, priority.label, reference, status.label, when],
   );
 
   const open = useCallback(() => {
@@ -135,12 +155,14 @@ function JobPreviewCardComponent({ job, onPress, actions, testID }: JobPreviewCa
       </View>
 
       <View style={{ gap: theme.spacing.xxs }}>
-        <View style={[styles.row, { gap: theme.spacing.xs }]}>
-          <Icon name="customer" size="sm" color="textTertiary" />
-          <Text variant="body" color="textSecondary" numberOfLines={1} style={styles.shrinks}>
-            {job.customerName}
-          </Text>
-        </View>
+        {customer ? (
+          <View style={[styles.row, { gap: theme.spacing.xs }]}>
+            <Icon name="customer" size="sm" color="textTertiary" />
+            <Text variant="body" color="textSecondary" numberOfLines={1} style={styles.shrinks}>
+              {customer}
+            </Text>
+          </View>
+        ) : null}
 
         {job.locality ? (
           <View style={[styles.row, { gap: theme.spacing.xs }]}>

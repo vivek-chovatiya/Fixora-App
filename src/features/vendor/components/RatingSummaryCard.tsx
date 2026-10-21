@@ -37,7 +37,7 @@ import type {
   RatingSummaryPresentation,
 } from '@/features/vendor/constants/reviewPresentation';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
-import { Card, Icon, StarRating, Text } from '@/shared/components';
+import { Card, Icon, ProgressBar, StarRating, Text } from '@/shared/components';
 import { useTheme } from '@/shared/theme';
 
 const COPY = VENDOR_COPY.reviews;
@@ -70,27 +70,14 @@ function BreakdownRow({ row, testID }: BreakdownRowProps) {
           <Icon name="star" size="xs" color="warning" />
         </View>
 
-        <View
-          style={[
-            styles.track,
-            {
-              height: theme.spacing.sm,
-              borderRadius: theme.radius.full,
-              backgroundColor: theme.colors.borderStrong,
-            },
-          ]}>
-          <View
-            style={[
-              styles.fill,
-              {
-                width: `${row.percent}%`,
-                borderRadius: theme.radius.full,
-                backgroundColor: theme.colors.warning,
-              },
-            ]}
-            testID={testID ? `${testID}-fill` : undefined}
-          />
-        </View>
+        {/* Silent: the row is the one stop and already says the percentage. */}
+        <ProgressBar
+          value={row.percent / 100}
+          fillColor="warning"
+          thickness="sm"
+          style={styles.track}
+          fillTestID={testID ? `${testID}-fill` : undefined}
+        />
 
         <View>
           <Text
@@ -183,10 +170,6 @@ const styles = StyleSheet.create({
   track: {
     // The bar takes whatever the two text columns leave.
     flex: 1,
-    overflow: 'hidden',
-  },
-  fill: {
-    height: '100%',
   },
   figure: {
     // Every digit the same width, so "1" and "5" start their bars level.

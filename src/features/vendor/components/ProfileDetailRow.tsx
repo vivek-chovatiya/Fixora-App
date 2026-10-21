@@ -2,7 +2,7 @@
  * ProfileDetailRow
  *
  * One read-only fact about the vendor: a label and its value, read as one
- * phrase by a screen reader ("Phone, 9000000001") rather than as two stops.
+ * phrase by a screen reader ("Phone, +91 90000 00001") rather than as two stops.
  *
  * Used by the setup form, for the contact details that come from the account,
  * and by the Profile tab for everything it shows.

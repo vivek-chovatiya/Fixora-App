@@ -154,12 +154,20 @@ describe('Accepting a waiting request', () => {
     });
   });
 
-  it('carries no address, phone number or photograph on the record it returns', async () => {
+  /*
+    Until 21/10/2026 this pinned the opposite: no address, phone or photograph
+    on any record, while nobody had decided what a vendor may see. The owner
+    has: once the vendor holds the work, the customer and the full address.
+  */
+  it('returns the record whole once accepted — the customer, their phone and the full address', async () => {
     const result = await as(RAVI).acceptRequest(OPEN);
-    const keys = result.outcome === 'accepted' ? Object.keys(result.request) : [];
+    if (result.outcome !== 'accepted') {
+      throw new Error('expected the accept to go through');
+    }
 
-    expect(keys).not.toEqual(expect.arrayContaining(['address']));
-    expect(keys.join(' ')).not.toMatch(/address|phone|photo|image/i);
+    expect(result.request.customerName).toBe('Asha Patel');
+    expect(result.request.customerPhone).toBe('9000031042');
+    expect(result.request.address?.formattedAddress).toContain('Koramangala');
   });
 });
 
@@ -254,11 +262,16 @@ describe('What a vendor declined — their own history (owner decision, 2026-10-
     expect(idsOf((await at(RAVI).listRequests()).rejected)).toEqual([DIRECTED, OPEN_LONG, PLAIN]);
   });
 
-  it('opens a declined request by reference exactly as the list has it', async () => {
+  it('opens a declined request by reference as the list has it — less the customer’s name', async () => {
     await at(RAVI).rejectRequest(DIRECTED);
     const { rejected } = await at(RAVI).listRequests();
+    // Declined is not held: the details leave the name off (owner decision, 21/10/2026).
+    const expected = { ...rejected[0] };
+    delete expected.customerName;
 
-    await expect(at(RAVI).getRequest(DIRECTED)).resolves.toMatchObject(rejected[0]);
+    const opened = await at(RAVI).getRequest(DIRECTED);
+    expect(opened).toMatchObject(expected);
+    expect('customerName' in opened).toBe(false);
   });
 
   it('never shows one vendor what another declined', async () => {

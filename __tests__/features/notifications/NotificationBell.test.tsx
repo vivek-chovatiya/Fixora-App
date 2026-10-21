@@ -14,6 +14,8 @@
  *   a bell that has gone stops listening
  * - inside a navigator, it is read again each time its screen comes back into
  *   focus, and arrival is still one read
+ * - it is read again when the page asks, which is how a pull reads the badge
+ *   with everything else (3D-12)
  */
 
 import React from 'react';
@@ -23,7 +25,7 @@ import { NavigationContext } from '@react-navigation/native';
 
 import { NotificationBell } from '@/features/notifications/components/NotificationBell';
 import { NOTIFICATIONS_COPY } from '@/features/notifications/constants/notificationsCopy';
-import { useUnreadNotificationCount } from '@/features/notifications/hooks/useUnreadNotificationCount';
+import { useUnreadNotifications } from '@/features/notifications/hooks/useUnreadNotificationCount';
 import { notificationsRead } from '@/features/notifications/state/notificationSync';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { NotificationService } from '@/shared/services/types/NotificationService';
@@ -136,13 +138,16 @@ describe('NotificationBell', () => {
   });
 });
 
-/** The hook's answer, drawn as the bell would be. */
+/** The hook's answer, drawn as the bell would be, and its way to read again for a test to press. */
+let readAgain: (() => void) | null = null;
+
 function CountedBell() {
-  const count = useUnreadNotificationCount();
+  const { count, refresh } = useUnreadNotifications();
+  readAgain = refresh;
   return <NotificationBell unreadCount={count} onPress={jest.fn()} testID="bell" />;
 }
 
-describe('useUnreadNotificationCount', () => {
+describe('useUnreadNotifications', () => {
   function register(getUnreadCount: () => Promise<number>) {
     const stub = jest.fn(getUnreadCount);
     registerService('notification', {
@@ -204,6 +209,22 @@ describe('useUnreadNotificationCount', () => {
     await flush();
 
     expect(view.badge()).toBeNull();
+  });
+
+  it('reads again when the page asks — its pull (3D-12)', async () => {
+    let unread = 3;
+    const count = register(async () => unread);
+    const view = await mount(<CountedBell />);
+    expect(view.badge()).toBe('3');
+
+    unread = 5;
+    await act(async () => {
+      readAgain?.();
+    });
+    await flush();
+
+    expect(count).toHaveBeenCalledTimes(2);
+    expect(view.badge()).toBe('5');
   });
 
   it('reads again when the inbox says notifications were read', async () => {

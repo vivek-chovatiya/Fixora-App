@@ -23,7 +23,7 @@ import { StyleSheet, View } from 'react-native';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import { Card, Icon, Text } from '@/shared/components';
 import type { VendorDashboardCounts } from '@/shared/services/types/VendorDashboardService';
-import { useTheme, type ColorTokens, type IconName } from '@/shared/theme';
+import { SUBTLE_INK, useTheme, type IconName, type SubtleTint } from '@/shared/theme';
 
 const COPY = VENDOR_COPY.dashboard;
 
@@ -32,12 +32,16 @@ interface TileProps {
   spokenLabel: string;
   count: number;
   icon: IconName;
-  tint: keyof ColorTokens;
-  tintBackground: keyof ColorTokens;
+  /**
+   * The glyph disc's tint. The glyph takes that tint's own ink from
+   * `SUBTLE_INK` (3G-4) — never a tone colour, which is under 4.5:1 on its
+   * own tint in at least one theme — so the pair cannot be mismatched.
+   */
+  tint: SubtleTint;
   testID?: string;
 }
 
-function StatTile({ label, spokenLabel, count, icon, tint, tintBackground, testID }: TileProps) {
+function StatTile({ label, spokenLabel, count, icon, tint, testID }: TileProps) {
   const theme = useTheme();
 
   return (
@@ -54,10 +58,10 @@ function StatTile({ label, spokenLabel, count, icon, tint, tintBackground, testI
               width: theme.spacing.xxxl,
               height: theme.spacing.xxxl,
               borderRadius: theme.radius.full,
-              backgroundColor: theme.colors[tintBackground],
+              backgroundColor: theme.colors[tint],
             },
           ]}>
-          <Icon name={icon} size="sm" color={tint} />
+          <Icon name={icon} size="sm" color={SUBTLE_INK[tint]} />
         </View>
 
         <View>
@@ -88,8 +92,7 @@ function DashboardOverviewComponent({ counts, testID }: DashboardOverviewProps) 
         spokenLabel={COPY.pendingSpoken(counts.pending)}
         count={counts.pending}
         icon="pending"
-        tint="warning"
-        tintBackground="warningSubtle"
+        tint="warningSubtle"
         testID="dashboard-stat-pending"
       />
       <StatTile
@@ -97,8 +100,7 @@ function DashboardOverviewComponent({ counts, testID }: DashboardOverviewProps) 
         spokenLabel={COPY.activeSpoken(counts.active)}
         count={counts.active}
         icon="requests"
-        tint="info"
-        tintBackground="infoSubtle"
+        tint="infoSubtle"
         testID="dashboard-stat-active"
       />
       <StatTile
@@ -106,8 +108,7 @@ function DashboardOverviewComponent({ counts, testID }: DashboardOverviewProps) 
         spokenLabel={COPY.completedSpoken(counts.completed)}
         count={counts.completed}
         icon="success"
-        tint="success"
-        tintBackground="successSubtle"
+        tint="successSubtle"
         testID="dashboard-stat-completed"
       />
     </View>

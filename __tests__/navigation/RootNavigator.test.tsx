@@ -333,4 +333,41 @@ describe('RootNavigator', () => {
     await dispatch(signedIn(VENDOR_SESSION));
     expect(routeNames()).toContain('VendorReports');
   });
+
+  /*
+    Working hours (Phase 3E-12) are a vendor's to set, and live only in the
+    vendor application: no session and a customer's have no route to them, so
+    no navigate, deep link or restored state can open them.
+  */
+  it('gives only a vendor the route to their working hours', async () => {
+    const { dispatch, routeNames } = await render();
+    await dispatch(sessionAbsent());
+    expect(routeNames()).not.toContain('WorkingHours');
+
+    await dispatch(signedIn(CUSTOMER_SESSION));
+    expect(routeNames()).toContain('RequestReview');
+    expect(routeNames()).not.toContain('WorkingHours');
+
+    await dispatch(sessionAbsent());
+    await dispatch(signedIn(VENDOR_SESSION));
+    expect(routeNames()).toContain('WorkingHours');
+  });
+
+  /*
+    Recording a payment after the job (21/10/2026) is a vendor's record of
+    their own work: a customer, or nobody, has no route to it at all.
+  */
+  it('gives only a vendor the route to record a payment', async () => {
+    const { dispatch, routeNames } = await render();
+    await dispatch(sessionAbsent());
+    expect(routeNames()).not.toContain('RecordPayment');
+
+    await dispatch(signedIn(CUSTOMER_SESSION));
+    expect(routeNames()).toContain('RequestReview');
+    expect(routeNames()).not.toContain('RecordPayment');
+
+    await dispatch(sessionAbsent());
+    await dispatch(signedIn(VENDOR_SESSION));
+    expect(routeNames()).toContain('RecordPayment');
+  });
 });

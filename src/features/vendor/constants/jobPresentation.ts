@@ -17,7 +17,8 @@
  * ⚠️ What may be done to a request is read from its status here too
  * (`isAwaitingAnswer`, Phase 3E-4; `nextWorkStep`, Phase 3E-5), so a button can
  * never be offered for a status this table would word differently (section 33:
- * "never show actions that are invalid for the current status").
+ * "never show actions that are invalid for the current status") — and so is
+ * what may be shown of the customer (`holdsWork`, 21/10/2026).
  *
  * ⚠️ A status the app has never seen reads "Status unavailable" (Phase 3E-3).
  * It used to be shown tidied — `AWAITING_PARTS` as "Awaiting parts" — and that
@@ -107,4 +108,21 @@ export function nextWorkStep(job: Pick<VendorJobSummary, 'status'>): 'start' | '
 export function isFinishedWork(job: Pick<VendorJobSummary, 'status'>): boolean {
   const status = typeof job.status === 'string' ? job.status.trim().toUpperCase() : '';
   return status === 'COMPLETED' || status === 'CLOSED';
+}
+
+/**
+ * Whether this vendor holds the work — accepted, in progress, or finished —
+ * the only states in which a request's details may show who the customer is
+ * and exactly where (owner decision, 21/10/2026: no customer name, phone or
+ * full address before the vendor has accepted).
+ *
+ * Built from the two questions above rather than a list of its own, so the
+ * statuses that offer a work step or a payment are exactly the ones that show
+ * the customer. ⚠️ Anything else is no: waiting, declined, and a status the
+ * app does not recognise — showing less is the only safe answer to a status
+ * nobody worded. The service withholds the same fields; this is the screen's
+ * half of the rule, kept even when a record carries them.
+ */
+export function holdsWork(job: Pick<VendorJobSummary, 'status'>): boolean {
+  return nextWorkStep(job) !== null || isFinishedWork(job);
 }

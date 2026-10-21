@@ -187,8 +187,11 @@ describe('MockVendorRequestService — one request', () => {
   it('opens a request as its summary with a category and the customer’s description', async () => {
     const list = await service('mixed').listRequests();
     const opened = await service('mixed').getRequest('REQ-31042');
+    // Waiting, so not the vendor's yet: the summary less the customer's name (21/10/2026).
+    const summary = { ...list.pending[0] };
+    delete summary.customerName;
 
-    expect(opened).toMatchObject(list.pending[0]);
+    expect(opened).toMatchObject(summary);
     expect(opened.categoryName).toBe('Electrician');
     expect(opened.description).toContain('switchboard');
   });
@@ -210,12 +213,17 @@ describe('MockVendorRequestService — one request', () => {
     expect(await kindOf(() => service('mixed').getRequest('REQ-0'))).toBe('notFound');
   });
 
-  it('never carries an address, a phone number or a photograph — list or details', async () => {
+  /*
+    The list is glanced at in public and cached more freely: it never carries
+    where the customer lives, how to reach them or their photographs, whatever
+    the vendor holds. What a request's details carry is pinned in
+    MockVendorRequestPrivacy.test.ts (owner decision, 21/10/2026).
+  */
+  it('never carries an address, a phone number or a photograph on the list', async () => {
     const list = await service('mixed').listRequests();
-    const opened = await service('mixed').getRequest('REQ-31042');
     const forbidden = ['address', 'formattedAddress', 'phone', 'customerPhone', 'imageUrls', 'email'];
 
-    for (const record of [...list.pending, ...list.active, ...list.completed, ...list.rejected, opened]) {
+    for (const record of [...list.pending, ...list.active, ...list.completed, ...list.rejected]) {
       for (const key of forbidden) {
         expect(Object.keys(record)).not.toContain(key);
       }

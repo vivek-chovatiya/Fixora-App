@@ -14,16 +14,22 @@
  * - the payload's exact keys: a method only when paid (a method chosen and then
  *   "Not paid yet" is dropped), notes only when something was written and then
  *   exactly as typed, the currency from configuration
+ * - recording a payment later (21/10/2026): a method is required, with the
+ *   completion form's own message, and the payload is exactly the paid status
+ *   and the method — never an amount, a currency or notes
  */
 
 import { AppConfig } from '@/core/config/AppConfig';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import {
   buildCompletionInput,
+  buildPaymentInput,
   completeWorkFormValues,
   completeWorkSchema,
   parseAmountToMinor,
   readAmount,
+  recordPaymentFormValues,
+  recordPaymentSchema,
   type CompleteWorkForm,
 } from '@/features/vendor/validation/completeWorkSchema';
 import {
@@ -187,5 +193,34 @@ describe('What the form sends', () => {
     expect(wire).not.toContain('₹');
     expect(wire).not.toContain('1,250');
     expect(wire).not.toContain('1250.50');
+  });
+});
+
+describe('Recording a payment later (21/10/2026)', () => {
+  it('opens with no method chosen, and refuses that with the completion form’s message', () => {
+    const values = recordPaymentFormValues();
+    expect(values).toEqual({ paymentMethodId: '' });
+
+    const result = recordPaymentSchema.safeParse(values);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map(issue => issue.message)).toEqual([COPY.paymentMethodRequired]);
+  });
+
+  it('accepts a chosen method', () => {
+    expect(recordPaymentSchema.safeParse({ paymentMethodId: 'upi' }).success).toBe(true);
+  });
+
+  it('sends exactly the paid status and the method — nothing the recording does not change', () => {
+    const payment = buildPaymentInput({ paymentMethodId: 'cash' });
+
+    expect(Object.keys(payment).sort()).toEqual(['paymentMethodId', 'paymentStatus']);
+    expect(payment).toStrictEqual({ paymentStatus: 'PAID', paymentMethodId: 'cash' });
+  });
+
+  it('opens fresh each time, so one form cannot leave a choice in the next', () => {
+    const first = recordPaymentFormValues();
+    first.paymentMethodId = 'upi';
+
+    expect(recordPaymentFormValues().paymentMethodId).toBe('');
   });
 });

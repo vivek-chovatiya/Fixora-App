@@ -22,6 +22,10 @@
  * draw an average it cannot trust — so a vendor's rating cannot read one way
  * on Reviews and another way here. No ratings in the period is "No ratings
  * yet", never "0.0", which would read as a vendor rated zero.
+ *
+ * The dashboard's Today's Requests (section 30, Phase 3E-15) is this report's
+ * `today` total, worded here by `presentTodayRequests` so a count the app
+ * cannot trust is a dash on both screens, never a zero on one of them.
  */
 
 import { presentRatingSummary } from '@/features/vendor/constants/reviewPresentation';
@@ -30,6 +34,7 @@ import { REVIEW_RATING_MAX } from '@/shared/services/types/ReviewService';
 import type { VendorReport, VendorReportPeriod } from '@/shared/services/types/VendorReportService';
 
 const COPY = VENDOR_COPY.reports;
+const DASHBOARD = VENDOR_COPY.dashboard;
 
 /** Section 42's time filters, in its order, with the words each chip shows. */
 export const VENDOR_REPORT_PERIOD_OPTIONS: ReadonlyArray<{ value: VendorReportPeriod; label: string }> = [
@@ -105,6 +110,27 @@ function presentRating(report: VendorReport): ReportRatingPresentation {
     stars: summary.stars,
     note: COPY.ratingCount(report.ratingCount),
     spoken: COPY.ratingSpoken(summary.average, REVIEW_RATING_MAX, report.ratingCount),
+  };
+}
+
+export interface TodayRequestsPresentation {
+  /** The figure as drawn: "3", or a dash when the server's value is not a count. */
+  value: string;
+  /** "Today's requests, 3". */
+  spoken: string;
+}
+
+/**
+ * The dashboard's Today's Requests: the `today` report's total, as given. The
+ * caller asks for `today`; nothing here checks the period or works the figure
+ * out from anything else.
+ */
+export function presentTodayRequests(report: Pick<VendorReport, 'totalRequests'>): TodayRequestsPresentation {
+  const value = countText(report.totalRequests);
+
+  return {
+    value: value ?? COPY.unavailable,
+    spoken: DASHBOARD.todaySpoken(value ?? COPY.unavailableSpoken),
   };
 }
 

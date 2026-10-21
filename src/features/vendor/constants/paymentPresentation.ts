@@ -20,6 +20,7 @@
 import {
   describePayment,
   isPaidStatus,
+  isUnpaidStatus,
   PAYMENT_COPY,
   presentPaymentStatus,
 } from '@/shared/presentation/payment';
@@ -28,7 +29,7 @@ import {
   PAYMENT_STATUS_UNPAID,
 } from '@/shared/services/types/VendorRequestService';
 
-export { describePayment, isPaidStatus, PAYMENT_COPY, presentPaymentStatus };
+export { describePayment, isPaidStatus, isUnpaidStatus, PAYMENT_COPY, presentPaymentStatus };
 
 /**
  * The payment statuses a vendor chooses between, in the order offered: paid

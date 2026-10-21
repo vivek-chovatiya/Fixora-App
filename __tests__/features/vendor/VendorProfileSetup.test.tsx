@@ -11,7 +11,9 @@
  * - a valid save sends trimmed values and swaps setup for the application —
  *   without any screen navigating
  * - Save cannot be pressed twice; a failed save keeps everything and retries
- * - a photo that fails to upload is kept for Try again, and saved with the form
+ * - a photo that fails to upload is kept for Try again, and saved with the form;
+ *   an upload says so once, then shows its own figure as a progressbar (3G-4)
+ * - the account's phone is written formatted, on the form and the Profile tab
  * - the same form edits the profile later, from the Profile tab
  * - another vendor on the same device starts from their own, empty profile
  */
@@ -33,7 +35,11 @@ import { MockVendorProfileService } from '@/shared/services/mock/MockVendorProfi
 import { NO_LATENCY } from '@/shared/services/mock/mockUtils';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { CategoryService } from '@/shared/services/types/CategoryService';
-import type { ImageAsset, ImageService } from '@/shared/services/types/ImageService';
+import type {
+  ImageAsset,
+  ImageService,
+  UploadProgressListener,
+} from '@/shared/services/types/ImageService';
 import type {
   VendorProfile,
   VendorProfileUpdate,
@@ -227,7 +233,9 @@ describe('Vendor profile setup — which screen', () => {
     current = MEENA;
     const screen = await render();
 
-    expect(screen.text()).toContain('9000000002');
+    // Formatted for reading (owner decision, 21/10/2026), never the stored digits.
+    expect(screen.text()).toContain('+91 90000 00002');
+    expect(screen.text()).not.toContain('9000000002');
     expect(screen.text()).toContain('meena.iyer@example.com');
     expect(screen.text()).toContain('Meena Iyer');
     expect(() => screen.field('vendor-profile-phone')).toThrow();
@@ -472,6 +480,47 @@ describe('Vendor profile setup — the photo', () => {
     expect(save).toHaveBeenCalledTimes(1);
     expect(save.mock.calls[0][0].imageUrl).toBe(UPLOADED);
   });
+
+  it('says it is uploading once, then shows the upload’s own figure as a bar (3G-4)', async () => {
+    let land!: (uploaded: { assetId: string; remoteUrl: string }) => void;
+    let progress: UploadProgressListener | undefined;
+    upload.mockImplementationOnce((_asset: ImageAsset, onProgress?: UploadProgressListener) => {
+      progress = onProgress;
+      return new Promise(resolve => (land = resolve));
+    });
+    const screen = await render();
+    const host = (id: string) =>
+      screen.renderer.root.findAll(
+        node => typeof node.type === 'string' && node.props?.testID === id,
+      )[0];
+
+    await screen.press(FORM.photoAddCameraSpoken);
+    expect(host('vendor-profile-photo-busy')?.props.accessibilityLiveRegion).toBe('polite');
+    expect(screen.has('vendor-profile-photo-progress')).toBe(false);
+
+    await act(async () => {
+      progress?.({ assetId: ASSET.id, status: 'uploading', progress: 0.6 });
+    });
+    await flush();
+
+    const bar = host('vendor-profile-photo-progress');
+    expect(bar.props.accessibilityRole).toBe('progressbar');
+    expect(bar.props.accessibilityValue).toEqual({ min: 0, max: 100, now: 60 });
+    expect(bar.props.accessibilityLiveRegion).toBeUndefined();
+    expect(screen.text()).toContain(FORM.photoProgress(60));
+    expect(screen.has('vendor-profile-photo-busy')).toBe(false);
+
+    await act(async () => {
+      land({ assetId: ASSET.id, remoteUrl: UPLOADED });
+    });
+    await flush();
+    expect(screen.has('vendor-profile-photo-progress')).toBe(false);
+    // The business picture still names itself, as it did before the merge.
+    const namedPicture = screen.renderer.root.findAll(
+      node => node.props?.accessibilityRole === 'image' && node.props?.accessibilityLabel === FORM.photoSpoken,
+    );
+    expect(namedPicture.length).toBeGreaterThan(0);
+  });
 });
 
 describe('Vendor profile — editing and ownership', () => {
@@ -482,6 +531,14 @@ describe('Vendor profile — editing and ownership', () => {
     await screen.press('Profile');
     expect(screen.text()).toContain('Kumar Electricals');
     expect(screen.text()).toContain('Electrician');
+    // The Profile tab writes the phone formatted too, and says it so.
+    expect(screen.text()).toContain('+91 90000 00001');
+    expect(screen.text()).not.toContain('9000000001');
+    expect(
+      screen.renderer.root.findAll(
+        node => typeof node.type === 'string' && node.props?.testID === 'vendor-profile-tab-phone',
+      )[0]?.props.accessibilityLabel,
+    ).toBe(`${VENDOR_COPY.profile.phoneLabel}, +91 90000 00001`);
 
     await screen.press(VENDOR_COPY.profile.edit);
     expect(screen.has('vendor-profile-edit')).toBe(true);

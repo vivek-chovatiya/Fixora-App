@@ -73,8 +73,14 @@ const LONG_CUSTOMER = 'Venkata Subrahmanya Lakshmi Narasimhamurthy-Ramachandran'
 const LONG_LOCALITY = 'Hoysala Nagar, Indiranagar 2nd Stage Extension';
 const LONG_SERVICE = 'Full house wiring inspection before tenancy handover';
 
-/** What a card for the first waiting request says, whole. */
-const FIRST_CARD = `Switchboard repair. ${JOB.statusLabel}: ${JOB.statusBroadcast}. ${JOB.customerLabel}: Asha Patel, Koramangala. ${JOB.priorityLabel}: Emergency. ${JOB.raisedLabel} 12 min ago. ${JOB.referencePrefix} REQ-31042`;
+/**
+ * What a card for the first waiting request says, whole — the area where a
+ * held job names the customer (owner decision, 21/10/2026).
+ */
+const FIRST_CARD = `Switchboard repair. ${JOB.statusLabel}: ${JOB.statusBroadcast}. ${JOB.areaLabel}: Koramangala. ${JOB.priorityLabel}: Emergency. ${JOB.raisedLabel} 12 min ago. ${JOB.referencePrefix} REQ-31042`;
+
+/** The customers of the four waiting requests: never on their cards. */
+const WAITING_CUSTOMERS = ['Asha Patel', 'Rahul Menon', LONG_CUSTOMER, 'Neha Sharma'];
 
 /** Anything that would cancel, reassign or reach the customer. None may exist yet. */
 const MUTATION = /decline|cancel|reassign|call|chat|message|pay/i;
@@ -149,6 +155,17 @@ async function flush() {
   for (let i = 0; i < 6; i += 1) {
     await act(async () => {});
   }
+}
+
+/** Everything a subtree draws or says, as text — for what must never be in it. */
+function everythingIn(root: Instance): string {
+  return [
+    textOf(root),
+    ...root
+      .findAll(node => typeof node.type === 'string')
+      .flatMap(node => [node.props?.accessibilityLabel, node.props?.accessibilityHint])
+      .filter((value): value is string => typeof value === 'string'),
+  ].join('\n');
 }
 
 /** Renders the vendor application and, unless told otherwise, opens the Requests tab. */
@@ -681,10 +698,10 @@ describe('Vendor requests — a card', () => {
     expect(button?.props.accessibilityHint).toBe(JOB.openHint);
   });
 
-  it('says long names, a long area and a long reference in full, and keeps them to a line on screen', async () => {
+  it('says a long service, a long area and a long reference in full, and keeps them to their lines on screen', async () => {
     const screen = await render();
 
-    const spoken = `${LONG_SERVICE}. ${JOB.statusLabel}: ${JOB.statusBroadcast}. ${JOB.customerLabel}: ${LONG_CUSTOMER}, ${LONG_LOCALITY}. ${JOB.priorityLabel}: High. ${JOB.raisedLabel} 3 hr ago. ${JOB.referencePrefix} ${LONG_ID}`;
+    const spoken = `${LONG_SERVICE}. ${JOB.statusLabel}: ${JOB.statusBroadcast}. ${JOB.areaLabel}: ${LONG_LOCALITY}. ${JOB.priorityLabel}: High. ${JOB.raisedLabel} 3 hr ago. ${JOB.referencePrefix} ${LONG_ID}`;
     expect(screen.pressable(spoken).length).toBeGreaterThan(0);
 
     const card = screen.host(`vendor-request-${LONG_ID}`);
@@ -692,9 +709,85 @@ describe('Vendor requests — a card', () => {
       card.findAll(node => typeof node.type === 'string' && textOf(node) === text)[0]?.props
         .numberOfLines;
     expect(lines(LONG_SERVICE)).toBe(2);
-    expect(lines(LONG_CUSTOMER)).toBe(1);
     expect(lines(LONG_LOCALITY)).toBe(1);
     expect(lines(`${JOB.referencePrefix} ${LONG_ID}`)).toBe(1);
+  });
+
+  it('says a long name in full and keeps it to a line, once the vendor holds the work', async () => {
+    // Accepted before the list is read: the name is the vendor's to see now.
+    await requests.acceptRequest(LONG_ID);
+    const screen = await render();
+
+    const spoken = `${LONG_SERVICE}. ${JOB.statusLabel}: ${JOB.statusAccepted}. ${JOB.customerLabel}: ${LONG_CUSTOMER}, ${LONG_LOCALITY}. ${JOB.priorityLabel}: High. ${JOB.raisedLabel} 3 hr ago. ${JOB.referencePrefix} ${LONG_ID}`;
+    expect(screen.pressable(spoken).length).toBeGreaterThan(0);
+
+    const card = screen.host(`vendor-request-${LONG_ID}`);
+    const nameLine = card.findAll(
+      node => typeof node.type === 'string' && textOf(node) === LONG_CUSTOMER,
+    )[0];
+    expect(nameLine?.props.numberOfLines).toBe(1);
+  });
+
+  /*
+    Owner decision, 21/10/2026: before the vendor holds the work — waiting, or
+    declined — a card shows the area, never the customer's name, in what is
+    drawn and in what is said.
+  */
+  it('never draws or says the customer’s name on a waiting card', async () => {
+    const screen = await render();
+    await screen.choose('pending');
+
+    const drawn = everythingIn(screen.host('vendor-requests'));
+    for (const name of WAITING_CUSTOMERS) {
+      expect(drawn).not.toContain(name);
+    }
+    expect(drawn).toContain(`${JOB.areaLabel}: Koramangala`);
+  });
+
+  it('never draws or says the customer’s name on a declined card', async () => {
+    await requests.rejectRequest('REQ-31042');
+    await requests.rejectRequest('REQ-31038');
+    const screen = await render();
+    await screen.choose('rejected');
+
+    expect(screen.cards()).toEqual(['vendor-request-REQ-31038', 'vendor-request-REQ-31042']);
+    const drawn = everythingIn(screen.host('vendor-requests'));
+    expect(drawn).not.toContain('Asha Patel');
+    expect(drawn).not.toContain('Rahul Menon');
+    expect(drawn).toContain(`${JOB.areaLabel}: HSR Layout`);
+  });
+
+  it('draws no name on a waiting or declined card even when a record carries one', async () => {
+    const real = await requests.listRequests();
+    jest.spyOn(requests, 'listRequests').mockResolvedValue({
+      ...real,
+      pending: [{ ...real.pending[0], customerName: 'Zara Hidden' }],
+      rejected: [
+        {
+          ...real.pending[1],
+          id: 'REQ-99010',
+          status: 'REJECTED',
+          rejectedAt: new Date().toISOString(),
+          customerName: 'Yusuf Hidden',
+        },
+      ],
+    });
+    const screen = await render();
+
+    await screen.choose('pending');
+    expect(everythingIn(screen.host('vendor-requests'))).not.toContain('Zara Hidden');
+    await screen.choose('rejected');
+    expect(screen.cards()).toEqual(['vendor-request-REQ-99010']);
+    expect(everythingIn(screen.host('vendor-requests'))).not.toContain('Yusuf Hidden');
+  });
+
+  it('still names the customer on work the vendor holds', async () => {
+    const screen = await render();
+    await screen.choose('active');
+
+    const drawn = everythingIn(screen.host('vendor-requests'));
+    expect(drawn).toContain('Imran Sheikh');
+    expect(drawn).toContain(`${JOB.customerLabel}: Imran Sheikh, BTM Layout`);
   });
 
   it('offers each request only the step it is ready for, and nothing else that changes one', async () => {
@@ -748,7 +841,7 @@ describe('Vendor request details', () => {
     return screen;
   }
 
-  it('shows the request: service, status, urgency, reference, category, customer, area, origin and description', async () => {
+  it('shows the request: service, status, urgency, reference, category, area, origin and description', async () => {
     const screen = await open();
 
     expect(screen.text('vendor-request-service')).toBe('Switchboard repair');
@@ -760,8 +853,10 @@ describe('Vendor request details', () => {
     expect(summary).toContain('Electrician');
     expect(summary).toContain('12 min ago');
     expect(summary).toContain(DETAILS.originBroadcast);
-    expect(screen.text('vendor-request-customer')).toContain('Asha Patel');
-    expect(screen.text('vendor-request-customer')).toContain('Koramangala');
+    // Waiting for this vendor: the area, and nobody's name (owner decision, 21/10/2026).
+    expect(screen.text('vendor-request-location')).toContain('Koramangala');
+    expect(screen.has('vendor-request-customer')).toBe(false);
+    expect(screen.text('vendor-request-details')).not.toContain('Asha Patel');
     expect(screen.text('vendor-request-description')).toContain('switchboard is sparking');
   });
 
@@ -818,7 +913,7 @@ describe('Vendor request details', () => {
 
     expect(screen.text('vendor-request-description')).toContain(DETAILS.descriptionMissing);
     // No locality, no category and no dispatch on this one: no empty rows for them.
-    expect(screen.text('vendor-request-customer')).not.toContain(DETAILS.localityLabel);
+    expect(screen.has('vendor-request-area')).toBe(false);
     expect(screen.text('vendor-request-summary')).not.toContain(DETAILS.categoryLabel);
     expect(screen.has('vendor-request-origin')).toBe(false);
   });
@@ -830,8 +925,9 @@ describe('Vendor request details', () => {
     expect(screen.text('vendor-request-service')).toBe(LONG_SERVICE);
     expect(screen.host('vendor-request-service').props.numberOfLines).toBeUndefined();
     expect(screen.text('vendor-request-reference')).toContain(LONG_ID);
-    expect(screen.text('vendor-request-customer')).toContain(LONG_CUSTOMER);
-    expect(screen.text('vendor-request-customer')).toContain(LONG_LOCALITY);
+    // Waiting: the long area is shown whole, the long name not at all (21/10/2026).
+    expect(screen.text('vendor-request-area')).toContain(LONG_LOCALITY);
+    expect(screen.text('vendor-request-details')).not.toContain(LONG_CUSTOMER);
   });
 
   it('says a status it does not recognise is unavailable, and never draws the raw value', async () => {

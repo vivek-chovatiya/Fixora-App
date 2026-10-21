@@ -5,9 +5,16 @@
  * sections 33 to 36): who accepted which request and which vendor rejected
  * which (Phase 3E-4), and how far each vendor's accepted work has got — started,
  * then completed (Phase 3E-5), with the amount and payment the vendor recorded
- * on completing it (sections 36 and 37). The fixtures in `mockVendorDashboardData` say
+ * on completing it (sections 36 and 37), and a payment recorded later on a job
+ * left "Not paid yet" (21/10/2026). The fixtures in `mockVendorDashboardData` say
  * what each vendor was offered; this says what they did about it, and
  * `applyVendorAnswers` puts the two together into what a vendor sees now.
+ *
+ * ⚠️ What a vendor sees of a request they do not hold leaves the customer's
+ * name off (owner decision, 21/10/2026): a request waiting for them, and one
+ * they declined, is listed with its area and no name — on the list and on the
+ * dashboard alike, because both are built here. `unheld` is the one place a
+ * summary is cut down; work they accepted keeps the name.
  *
  * ⚠️ One book, shared by the dashboard and the request list. Both mocks are
  * handed the same instance (`ServiceRegistry`), so a request accepted on one
@@ -74,6 +81,14 @@ export class MockVendorRequestBook {
   private readonly rejections = new Map<string, Map<string, MockRejection>>();
   /** Vendor id → request reference → how far that job has got. */
   private readonly progress = new Map<string, Map<string, MockWorkProgress>>();
+  /**
+   * Vendor id → request reference → the completion record as it stands after a
+   * payment recorded later (owner decision, 21/10/2026). Apart from `progress`
+   * on purpose: a payment is not a step, so it must not move the job's place
+   * in the completed list — and the job may have been completed before this
+   * book existed (a fixture's record), with no progress entry at all.
+   */
+  private readonly payments = new Map<string, Map<string, VendorCompletionRecord>>();
   private sequence = 0;
 
   /** Who accepted a request, if anybody has. */
@@ -136,6 +151,26 @@ export class MockVendorRequestBook {
     });
   }
 
+  /**
+   * The completion record a later payment left, if one was recorded. Takes
+   * precedence over the record kept with the completion, which it replaces.
+   */
+  paymentOf(vendorId: string, requestId: string): VendorCompletionRecord | undefined {
+    return this.payments.get(vendorId)?.get(requestId);
+  }
+
+  /**
+   * The caller has checked the job is finished with a "Not paid yet" record,
+   * and built the paid record from it — the amount, currency and notes as they
+   * were.
+   */
+  recordPayment(vendorId: string, requestId: string, record: VendorCompletionRecord): void {
+    const records = this.payments.get(vendorId) ?? new Map<string, VendorCompletionRecord>();
+    // A copy: the caller's object is not the book's record.
+    records.set(requestId, { ...record });
+    this.payments.set(vendorId, records);
+  }
+
   private setProgress(
     vendorId: string,
     requestId: string,
@@ -160,6 +195,18 @@ function answered(job: VendorJobSummary, status: 'ACCEPTED' | 'REJECTED'): Vendo
 }
 
 export const asAccepted = (job: VendorJobSummary) => answered(job, 'ACCEPTED');
+
+/**
+ * A request as a vendor who does not hold it is told of it (owner decision,
+ * 21/10/2026): the customer's name left off — absent, not blanked. The area
+ * (`locality`) stays; it is all they are told of where. Used for every summary
+ * of waiting or declined work, and by the details record for the same states.
+ */
+export function unheld(job: VendorJobSummary): VendorJobSummary {
+  const next: VendorJobSummary = { ...job };
+  delete next.customerName;
+  return next;
+}
 
 /** A declined request, dated when it was declined. */
 export const asRejected = (job: VendorJobSummary, rejectedAt: string): VendorJobSummary => ({
@@ -189,7 +236,8 @@ export const asCompleted = (job: VendorJobSummary, completedAt: string): VendorJ
  * - accepted by somebody else → gone: it was never this vendor's job;
  * - rejected by this vendor → gone from every group here (the request list
  *   shows it under its own `rejected` group — `rejectedByVendor`);
- * - otherwise → still waiting, where it was.
+ * - otherwise → still waiting, where it was — without the customer's name
+ *   (`unheld`): the vendor does not hold it yet.
  *
  * Then this vendor's progress on their active work (3E-5):
  *
@@ -214,7 +262,7 @@ export function applyVendorAnswers(
     if (holder === vendorId) {
       accepted.push(asAccepted(job));
     } else if (holder === undefined && !book.hasRejected(vendorId, job.id)) {
-      pending.push(job);
+      pending.push(unheld(job));
     }
   }
 
@@ -266,7 +314,8 @@ export function rejectedByVendor(
   for (const job of work.pending) {
     const rejection = book.rejectionOf(vendorId, job.id);
     if (rejection) {
-      declined.push({ job: asRejected(job, rejection.rejectedAt), sequence: rejection.sequence });
+      // Declined is not held: no customer name (21/10/2026).
+      declined.push({ job: unheld(asRejected(job, rejection.rejectedAt)), sequence: rejection.sequence });
     }
   }
 
