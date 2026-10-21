@@ -85,6 +85,12 @@ export interface ColorTokens {
   warningSubtle: string;
   danger: string;
   dangerSubtle: string;
+  /**
+   * Text on a `danger` fill — the unread badge, and the danger button's label
+   * and icon. White in both themes (4.8:1 on red500); `textInverse` is
+   * near-black in dark mode and only 4.2:1.
+   */
+  onDanger: string;
   info: string;
   infoSubtle: string;
   /** Neutral tone for inert states. */
@@ -93,6 +99,13 @@ export interface ColorTokens {
 
   /** Scrim behind modals and bottom sheets. */
   overlay: string;
+  /**
+   * Text and icons drawn directly on `overlay` — light in both themes, because
+   * the scrim is dark in both. Not `textInverse`: that is dark in dark mode,
+   * and on the scrim it all but disappeared (request photo tiles, found in
+   * the 20/10/2026 shop-images slice).
+   */
+  onOverlay: string;
   skeleton: string;
   shadow: string;
 }
@@ -131,12 +144,14 @@ export const lightColors: ColorTokens = {
   warningSubtle: palette.amber100,
   danger: palette.red500,
   dangerSubtle: palette.red100,
+  onDanger: palette.white,
   info: palette.blue500,
   infoSubtle: palette.blue100,
   neutral: palette.gray500,
   neutralSubtle: palette.gray100,
 
   overlay: 'rgba(3, 7, 18, 0.5)',
+  onOverlay: palette.white,
   skeleton: palette.gray200,
   shadow: palette.black,
 };
@@ -174,12 +189,14 @@ export const darkColors: ColorTokens = {
   warningSubtle: palette.amber950,
   danger: palette.red500,
   dangerSubtle: palette.red950,
+  onDanger: palette.white,
   info: palette.blue400,
   infoSubtle: palette.blue950,
   neutral: palette.gray400,
   neutralSubtle: palette.gray800,
 
   overlay: 'rgba(0, 0, 0, 0.65)',
+  onOverlay: palette.white,
   skeleton: palette.gray800,
   shadow: palette.black,
 };

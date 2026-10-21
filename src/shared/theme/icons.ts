@@ -64,6 +64,19 @@ export const icons = Object.freeze({
   edit: 'pencil-outline',
   remove: 'delete-outline',
   retry: 'refresh',
+  /**
+   * Marking every notification as read. Two ticks rather than `selected`'s one:
+   * it acts on the whole list, and choosing one item is a different gesture.
+   */
+  markAllRead: 'check-all',
+  /**
+   * Putting something on the clipboard.
+   *
+   * Distinct from `document`, which is a file. The copy action borrowed that one
+   * and read as "open the paperwork" rather than "take a copy of this" — seen on
+   * the request-sent screen, where the control sits beside a reference number.
+   */
+  copy: 'content-copy',
   send: 'send-outline',
   call: 'phone-outline',
   logout: 'logout',
@@ -83,6 +96,24 @@ export const icons = Object.freeze({
    * that an operation completed — selecting something completes nothing.
    */
   selected: 'check',
+
+  /**
+   * Answering a request (PROJECT_BIBLE.md section 33). Their own names, not
+   * `selected` and `close`: taking a job is not choosing an option, and
+   * declining one is not dismissing a sheet — and the glyphs can change apart.
+   */
+  accept: 'check',
+  reject: 'close-circle-outline',
+  /**
+   * A request called off (section 42's "Cancelled Requests"). Not `reject`:
+   * the vendor declining and the job being cancelled are different outcomes,
+   * and on the report they sit side by side, so they differ in shape too.
+   */
+  cancelled: 'cancel',
+
+  /** Moving accepted work along (sections 35 and 36). */
+  startWork: 'play-circle-outline',
+  completeWork: 'check-circle-outline',
 
   // Status and feedback
   success: 'check-circle-outline',

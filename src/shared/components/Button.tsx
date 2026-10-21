@@ -26,7 +26,7 @@ import {
 
 import { Icon } from '@/shared/components/Icon';
 import { Text } from '@/shared/components/Text';
-import { useTheme, type ColorTokens, type IconName } from '@/shared/theme';
+import { useTheme, type ColorTokens, type IconName, type SpacingToken } from '@/shared/theme';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'danger';
 
@@ -47,6 +47,16 @@ export interface ButtonProps {
    * button moves you on — so it reads after the words, not before them.
    */
   iconPosition?: 'leading' | 'trailing';
+  /**
+   * Spoken name, when the label alone does not identify the action.
+   *
+   * ⚠️ For a button repeated down a list — "Edit" beside each of five saved
+   * addresses — where the visible word is enough for somebody who can see which
+   * row it is in and says nothing to somebody who cannot. Defaults to `label`,
+   * which is right everywhere else, and must always still contain the label so
+   * that voice control can reach it by the word on screen.
+   */
+  accessibilityLabel?: string;
   accessibilityHint?: string;
   style?: StyleProp<ViewStyle>;
 }
@@ -82,12 +92,29 @@ const VARIANTS: Readonly<Record<ButtonVariant, VariantColors>> = {
     backgroundPressed: 'borderStrong',
     label: 'textPrimary',
   },
+  /**
+   * ⚠️ The label is `onDanger`, never `textInverse`. `danger` is the same red in
+   * both themes, but `textInverse` flips to near-black in dark mode — 4.2:1 on
+   * that red, under the 4.5:1 a label needs. White is 4.8:1 in both (owner's
+   * decision, 21/10/2026). The icon and the busy spinner take the label's
+   * colour, so all three move together.
+   */
   danger: {
     background: 'danger',
     backgroundPressed: 'danger',
-    label: 'textInverse',
+    label: 'onDanger',
   },
 };
+
+/**
+ * The capsule's padding either side of its label, as a spacing token.
+ *
+ * Exported for one reader: `ConfirmDialog` works out whether its two answers'
+ * labels fit side by side, and the room a label has is its button's width less
+ * this on both sides. A copy of the number there would let the two drift apart
+ * — and a dialog that thought it had more room than it does cuts a label off.
+ */
+export const BUTTON_LABEL_INSET: SpacingToken = 'xxl';
 
 function ButtonComponent({
   label,
@@ -98,6 +125,7 @@ function ButtonComponent({
   fullWidth = false,
   icon,
   iconPosition = 'leading',
+  accessibilityLabel,
   accessibilityHint,
   style,
 }: ButtonProps) {
@@ -128,7 +156,7 @@ function ButtonComponent({
         paddingVertical: theme.spacing.sm,
         // Wider than a rectangle needs, for the same reason the field is: a
         // capsule curves away from its own label.
-        paddingHorizontal: theme.spacing.xxl,
+        paddingHorizontal: theme.spacing[BUTTON_LABEL_INSET],
         // The shared control height, not the accessibility floor. Both clear
         // the floor; this one also matches the field above it.
         minHeight: theme.controlHeight,
@@ -148,7 +176,7 @@ function ButtonComponent({
       disabled={isInactive}
       style={resolveStyle}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled: isInactive, busy: isLoading }}>
       {isLoading ? (

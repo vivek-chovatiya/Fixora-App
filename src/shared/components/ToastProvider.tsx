@@ -74,8 +74,24 @@ export function ToastProvider({ children }: PropsWithChildren) {
 
   const dwellMs = theme.animation.duration.toast;
 
+  /**
+   * False once the provider has gone.
+   *
+   * ⚠️ Unmounting clears the timer of a toast already showing, but a toast can
+   * be raised after that: a save answering once the tree above it has gone, or
+   * — in a suite — a test torn down with a save still in the air. Its dwell
+   * timer would be one nothing could clear, firing into a provider that is no
+   * longer there, so a show after unmount is ignored. There is nowhere left to
+   * draw it anyway.
+   */
+  const mountedRef = useRef(true);
+
   const showToast = useCallback(
     ({ message, tone = 'neutral', icon = 'info' }: ToastOptions) => {
+      if (!mountedRef.current) {
+        return;
+      }
+
       clearDwell();
       setContent({ message, tone, icon });
       setIsVisible(true);
@@ -96,7 +112,13 @@ export function ToastProvider({ children }: PropsWithChildren) {
   }, []);
 
   // A timer that outlives the tree would call setState on an unmounted provider.
-  useEffect(() => clearDwell, [clearDwell]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearDwell();
+    };
+  }, [clearDwell]);
 
   const value = useMemo<ToastContextValue>(
     () => ({ showToast, hideToast }),

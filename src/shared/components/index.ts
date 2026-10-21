@@ -45,8 +45,15 @@ export { BackButton, type BackButtonProps } from './BackButton';
 export { Screen, type ScreenProps } from './Screen';
 export { Card, type CardProps } from './Card';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
+export { ConfirmDialog, type ConfirmDialogProps } from './ConfirmDialog';
+export { useDialogBackdropPadding, type DialogBackdropPadding } from './dialogBackdrop';
 export { ErrorState, type ErrorStateProps } from './ErrorState';
 export { ERROR_PRESENTATION, type ErrorPresentation } from './errorPresentation';
+export {
+  AppErrorBoundary,
+  APP_ERROR_FALLBACK_COPY,
+  type AppErrorBoundaryProps,
+} from './AppErrorBoundary';
 
 export { Toast, type ToastProps } from './Toast';
 export {
@@ -59,4 +66,15 @@ export { useErrorToast } from './useErrorToast';
 
 export { StatusBadge, type StatusBadgeProps, type StatusTone } from './StatusBadge';
 export { Avatar, getInitials, type AvatarProps, type AvatarSize } from './Avatar';
+export {
+  ServiceCategoryField,
+  type ServiceCategoryFieldProps,
+} from './ServiceCategoryField';
+export { Skeleton, type SkeletonProps } from './Skeleton';
+export { SelectionChip, type SelectionChipProps } from './SelectionChip';
+export { StarRating, type StarRatingProps } from './StarRating';
+export { ContentSection, type ContentSectionProps } from './ContentSection';
+export { StaleNotice, type StaleNoticeProps } from './StaleNotice';
 export { BrandMark, type BrandMarkProps, type BrandMarkSize } from './BrandMark';
+export { OfflineBanner, OFFLINE_BANNER_COPY, type OfflineBannerProps } from './OfflineBanner';
+export { WindowOffsetContext, useWindowOffset } from './windowOffset';

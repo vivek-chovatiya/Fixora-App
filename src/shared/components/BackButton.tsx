@@ -20,11 +20,11 @@
  * Loader and ErrorState: a shared control has to be usable without a caller
  * having to name it, and "Back" is not a sentence any feature owns.
  *
- * ⚠️ The authentication flow has its own copy of this control,
- * `AuthBackButton`, which predates this one and is deliberately left alone —
- * collapsing the two means editing the auth module. See the note in the
- * Categories work: it is a refactor waiting on permission, not a difference of
- * opinion.
+ * ⚠️ The only back control in the app. The authentication flow used to keep
+ * its own copy, `AuthBackButton` — the same disc, the same words — and it now
+ * draws this one, passing its words from the auth copy file (`AuthTopBar`).
+ * A screen that wants different words passes them; a second back control is
+ * the drift this replaced.
  */
 
 import React, { memo } from 'react';

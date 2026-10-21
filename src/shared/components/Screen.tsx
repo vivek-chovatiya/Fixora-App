@@ -25,6 +25,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 
+import { useWindowOffset } from '@/shared/components/windowOffset';
 import { useTheme, type ColorTokens } from '@/shared/theme';
 
 export interface ScreenProps {
@@ -72,6 +73,7 @@ function ScreenComponent({
   testID,
 }: ScreenProps) {
   const theme = useTheme();
+  const windowOffset = useWindowOffset();
 
   const padding = padded ? { padding: theme.screenPadding } : null;
 
@@ -119,7 +121,12 @@ function ScreenComponent({
           // hands the keyboard over as an inset instead. Leaving the behaviour
           // unset there made this component a no-op: the keyboard simply covered
           // whatever was beneath it, submit buttons included.
-          behavior="padding">
+          behavior="padding"
+          // Zero unless the offline banner has pushed the navigators down. The
+          // view measures itself within its parent but the keyboard on the
+          // window, so without this a form would stay the banner's height
+          // under the keyboard (shared/components/windowOffset.ts).
+          keyboardVerticalOffset={windowOffset}>
           {body}
         </KeyboardAvoidingView>
       ) : (
