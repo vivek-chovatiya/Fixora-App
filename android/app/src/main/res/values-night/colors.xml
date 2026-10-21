@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Native colours, dark mode. Chosen by Android from the system appearance, the
+  same authority the JS ThemeProvider follows (CLAUDE.md section 4).
+
+  window_background is darkColors.background (gray950) in
+  src/shared/theme/colors.ts. values/colors.xml explains why it exists.
+
+  ⚠️ A copy, not a reference: if the `background` token changes, change it here
+  as well.
+-->
+<resources>
+    <color name="window_background">#030712</color>
+</resources>

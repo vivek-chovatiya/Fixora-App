@@ -75,9 +75,95 @@ react {
 }
 
 /**
- * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
+ * Shrinks release builds with R8: unused code and resources are removed, and
+ * names are obfuscated.
+ *
+ * On for release since the Phase 1 launch preparation. React Native and every
+ * native library in this app ship the keep rules they need inside their own
+ * AARs (React Native's keep everything a NativeModule, every `native` method
+ * and every @DoNotStrip member; reanimated and worklets add theirs), which is
+ * why proguard-rules.pro holds only what is ours. The images the JavaScript
+ * bundles are found by name at run time, which the resource shrinker cannot
+ * see; React Native's bundle step writes a raw/keep.xml listing every one of
+ * them into the generated resources, so they survive. Never add a
+ * res/raw/keep.xml of our own: it has the same name and one hides the other.
+ *
+ * ⚠️ R8 breaks things at run time, not at build time. A green assembleRelease
+ * proves nothing about a class reached by reflection or from C++. After any
+ * change here, or any new native dependency, install the release APK and run the
+ * smoke test in docs/RELEASE.md. Keep each release's
+ * build/outputs/mapping/release/mapping.txt — without it a crash report from
+ * that build cannot be read.
  */
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = true
+
+/**
+ * Release signing.
+ *
+ * The upload key and its passwords never enter this repository. They are read
+ * from four Gradle properties kept in the machine-wide
+ * ~/.gradle/gradle.properties (docs/RELEASE.md says how to create the key and
+ * where to keep it). When all four are present, release builds are signed with
+ * the upload key and can go to the Play Store.
+ *
+ * When any is missing, what happens depends on what is being built:
+ *
+ * - An App Bundle (`bundleRelease`) is refused, and the build fails before any
+ *   task runs, naming the missing properties. An AAB exists only to go to the
+ *   Play Store, which rejects one signed with the debug key — after it has been
+ *   built and uploaded. Found in review, 21/10/2026: with only a warning, and
+ *   `-q` hiding warnings, `bundleRelease -q` produced a debug-signed AAB and said
+ *   nothing at all.
+ * - An APK (`assembleRelease`) falls back to the debug key, so a minified build
+ *   still installs for a smoke test on a machine without the key. Failing here
+ *   would stop every developer from ever testing a minified build. It says so
+ *   with `logger.error`, the one level `-q` still prints: a warning would vanish
+ *   from exactly the quiet build whose output nobody reads twice.
+ *
+ * ⚠️ Never put these values in android/gradle.properties, local.properties or
+ * any other file in the repo, and never hardcode them here. Only the names of
+ * missing properties are ever printed, never a value.
+ */
+def uploadKeyPropertyNames = [
+    "FIXORA_UPLOAD_STORE_FILE",
+    "FIXORA_UPLOAD_STORE_PASSWORD",
+    "FIXORA_UPLOAD_KEY_ALIAS",
+    "FIXORA_UPLOAD_KEY_PASSWORD",
+]
+def missingUploadKeyProperties = uploadKeyPropertyNames.findAll { name ->
+    !project.hasProperty(name) || project.property(name).toString().trim().isEmpty()
+}
+def hasUploadKey = missingUploadKeyProperties.isEmpty()
+
+// Decided only when a signed release artifact is actually being produced, so a
+// debug build is not told about a key it does not need.
+if (!hasUploadKey) {
+    gradle.taskGraph.whenReady { graph ->
+        def taskNames = graph.allTasks.findAll { task -> task.project == project }*.name
+        def missing = missingUploadKeyProperties.join(', ')
+
+        // The bundle first: a build that asks for both must not get as far as
+        // the APK's message and look like it worked.
+        if (taskNames.contains("bundleRelease") || taskNames.contains("signReleaseBundle")) {
+            throw new GradleException(
+                "This Fixora App Bundle cannot be built: the upload key is not configured.\n" +
+                "  An App Bundle is only for the Play Store, and one signed with the debug key is rejected there.\n" +
+                "  Missing Gradle properties: ${missing}\n" +
+                "  Set them in ~/.gradle/gradle.properties, never in this repository (see docs/RELEASE.md).\n" +
+                "  To test a release build on a device without the key, build the APK: assembleRelease."
+            )
+        }
+
+        if (taskNames.contains("packageRelease")) {
+            logger.error(
+                "\nWARNING: this Fixora release APK is signed with the DEBUG key.\n" +
+                "  The Play Store will not accept it. Use it only for testing on a device.\n" +
+                "  Missing Gradle properties: ${missing}\n" +
+                "  Set them in ~/.gradle/gradle.properties, never in this repository (see docs/RELEASE.md).\n"
+            )
+        }
+    }
+}
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -102,8 +188,11 @@ android {
         applicationId "com.fixora"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
+        // ⚠️ Every upload to the Play Store needs a higher versionCode than the
+        // last one, or it is rejected. versionName is what users see. The rules
+        // are in docs/RELEASE.md.
         versionCode 1
-        versionName "1.0"
+        versionName "1.0.0"
     }
     signingConfigs {
         debug {
@@ -112,16 +201,28 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        // Created only when the key is configured, so an incomplete signing
+        // config can never be picked up by accident.
+        if (hasUploadKey) {
+            release {
+                storeFile file(project.property("FIXORA_UPLOAD_STORE_FILE"))
+                storePassword project.property("FIXORA_UPLOAD_STORE_PASSWORD")
+                keyAlias project.property("FIXORA_UPLOAD_KEY_ALIAS")
+                keyPassword project.property("FIXORA_UPLOAD_KEY_PASSWORD")
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // The upload key when it is configured; otherwise the debug key for an
+            // APK (with the message above) and no App Bundle at all. See
+            // "Release signing".
+            signingConfig hasUploadKey ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
+            shrinkResources enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }

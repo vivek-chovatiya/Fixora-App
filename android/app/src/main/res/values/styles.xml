@@ -4,6 +4,12 @@
     <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
         <!-- Customize your theme here. -->
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <!--
+          The app's own page colour before the first React frame, and on
+          Android 12+ the system splash's background too. Light and dark come
+          from values/ and values-night/colors.xml.
+        -->
+        <item name="android:windowBackground">@color/window_background</item>
     </style>
 
 </resources>
