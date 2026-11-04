@@ -24,7 +24,7 @@ const environment: AppEnvironment = isDev ? 'development' : 'production';
  * Flipping this to `false` once ApiService implementations exist is the
  * single switch that moves the app onto real HTTP.
  */
-const useMockServices = true;
+const useMockServices = false;
 
 export const AppConfig = Object.freeze({
   environment,
@@ -39,8 +39,8 @@ export const AppConfig = Object.freeze({
   }),
 
   api: Object.freeze({
-    /** Placeholder until backend contracts are finalized. */
-    baseUrl: 'https://api.fixora.local',
+    /** Backend API endpoint */
+    baseUrl: 'http://localhost:5000/api/v1',
     /** Milliseconds before an in-flight request is aborted. */
     timeoutMs: 30000,
     /** Retry attempts for idempotent requests that fail on transport errors. */

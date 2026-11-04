@@ -7,7 +7,8 @@
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
-    "test": "jest"
+    "test": "jest",
+    "web": "vite"
   },
   "dependencies": {
     "@gorhom/bottom-sheet": "^5.2.14",
@@ -17,8 +18,10 @@
     "@react-navigation/native": "^7.3.14",
     "@react-navigation/native-stack": "^7.18.6",
     "@reduxjs/toolkit": "^2.12.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "axios": "^1.19.0",
     "react": "19.2.3",
+    "react-dom": "^19.2.3",
     "react-hook-form": "^7.84.0",
     "react-native": "0.86.2",
     "react-native-gesture-handler": "^3.1.0",
@@ -26,8 +29,10 @@
     "react-native-safe-area-context": "^5.5.2",
     "react-native-screens": "^4.26.2",
     "react-native-vector-icons": "^10.3.0",
+    "react-native-web": "^0.21.3",
     "react-native-worklets": "^0.11.3",
     "react-redux": "^9.3.0",
+    "vite": "^8.3.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -44,6 +49,7 @@
     "@react-native/typescript-config": "0.86.2",
     "@types/jest": "^29.5.13",
     "@types/react": "^19.2.0",
+    "@types/react-native-vector-icons": "^6.4.18",
     "@types/react-test-renderer": "^19.1.0",
     "babel-plugin-module-resolver": "^5.0.3",
     "eslint": "^8.19.0",
