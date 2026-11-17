@@ -10,16 +10,23 @@
 
 export { getTheme, lightTheme, darkTheme, type AppTheme, type ThemeMode } from './theme';
 
-export {
-  ThemeProvider,
-  useTheme,
-  useThemePreference,
-  type ThemePreference,
-} from './ThemeProvider';
+/**
+ * No preference API is exported, and none exists. The theme follows the system
+ * appearance, so there is nothing for a screen to set.
+ */
+export { ThemeProvider, useTheme } from './ThemeProvider';
 
-export { type ColorTokens, type ColorTone, lightColors, darkColors } from './colors';
+export {
+  type ColorTokens,
+  type ColorTone,
+  type SubtleTint,
+  lightColors,
+  darkColors,
+  SUBTLE_INK,
+} from './colors';
 export { spacing, screenPadding, hitSlop, type SpacingToken } from './spacing';
 export { radius, type RadiusToken } from './radius';
+export { borderWidth, type BorderWidthToken } from './borderWidth';
 export { elevation, type ElevationToken } from './elevation';
 export { createShadows, type ShadowToken, type ShadowTokens } from './shadows';
 export { opacity, type OpacityToken } from './opacity';

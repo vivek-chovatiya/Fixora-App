@@ -13,6 +13,17 @@
  *   () => getService('notification').getUnreadCount(),
  *   [],
  * );
+ *
+ * ⚠️ Three ways to read again, and only two of them show it. `retry` is the
+ * error's Try again (placeholders), `refresh` is a pull (the spinner), and
+ * `refreshQuietly` (Phase 3E-15, owner decision 21/10/2026) is a screen
+ * checking again by itself when its tab is shown again: nothing on screen
+ * changes until the answer — no placeholders, no spinner, and a failure from
+ * before stays where it is rather than being cleared and drawn again. It never
+ * starts a read beside one already in the air, whichever way that one began:
+ * the read in the air is at least as new as the one it would have sent. And
+ * it never holds a press back: `retry` and `refresh` start at once over a
+ * quiet read, which is then dropped as superseded — a tap is never swallowed.
  */
 
 import { useCallback, useEffect, useRef, useState, type DependencyList } from 'react';
@@ -39,7 +50,15 @@ export interface UseServiceQueryResult<T> {
   refresh: () => void;
   /** Re-runs the query, showing the loading state. For the error retry action. */
   retry: () => void;
+  /**
+   * Re-runs the query showing nothing — no loading, no refreshing, the last
+   * failure kept until this read answers. Does nothing while a read is in the
+   * air. For a screen reading again on its own, never for a gesture.
+   */
+  refreshQuietly: () => void;
 }
+
+type ReadMode = 'load' | 'refresh' | 'quiet';
 
 export function useServiceQuery<T>(
   fetcher: () => Promise<T>,
@@ -57,9 +76,18 @@ export function useServiceQuery<T>(
   const mountedRef = useRef(true);
   /** Discards responses from superseded requests, preventing stale overwrites. */
   const requestIdRef = useRef(0);
+  /**
+   * The newest read has not settled. Released only by the newest read, as
+   * `useSingleFlightQuery`'s guard is: a superseded read settling must not
+   * open it under a newer one still in the air. Only a quiet read defers to it.
+   */
+  const inFlightRef = useRef(false);
 
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
+
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -68,16 +96,20 @@ export function useServiceQuery<T>(
     };
   }, []);
 
-  const run = useCallback(async (mode: 'load' | 'refresh') => {
+  const run = useCallback(async (mode: ReadMode) => {
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
+    inFlightRef.current = true;
 
     if (mode === 'refresh') {
       setIsRefreshing(true);
-    } else {
+    } else if (mode === 'load') {
       setIsLoading(true);
     }
-    setError(null);
+    // A quiet read leaves the last failure on screen until it has an answer of its own.
+    if (mode !== 'quiet') {
+      setError(null);
+    }
 
     try {
       const result = await fetcherRef.current();
@@ -85,6 +117,8 @@ export function useServiceQuery<T>(
         return;
       }
       setData(result);
+      // Already null unless this read was quiet; then the failure it kept is answered.
+      setError(null);
     } catch (caught) {
       if (!mountedRef.current || requestIdRef.current !== requestId) {
         return;
@@ -93,9 +127,12 @@ export function useServiceQuery<T>(
       log.error('query failed', { kind: appError.kind, message: appError.message });
       setError(appError);
     } finally {
-      if (mountedRef.current && requestIdRef.current === requestId) {
-        setIsLoading(false);
-        setIsRefreshing(false);
+      if (requestIdRef.current === requestId) {
+        inFlightRef.current = false;
+        if (mountedRef.current) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
       }
     }
   }, []);
@@ -118,6 +155,15 @@ export function useServiceQuery<T>(
     void run('load');
   }, [run]);
 
+  const refreshQuietly = useCallback(() => {
+    if (!enabledRef.current || inFlightRef.current) {
+      return;
+    }
+    // Started, not awaited: `run` settles every read itself. `.catch` rather
+    // than `void`, so the lint baseline (WORKING_NOTES section 5) does not grow.
+    run('quiet').catch(() => undefined);
+  }, [run]);
+
   return {
     data,
     error,
@@ -126,5 +172,6 @@ export function useServiceQuery<T>(
     isError: error !== null,
     refresh,
     retry,
+    refreshQuietly,
   };
 }

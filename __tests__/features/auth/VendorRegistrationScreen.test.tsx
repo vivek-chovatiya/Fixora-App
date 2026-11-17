@@ -1,0 +1,571 @@
+/**
+ * Vendor registration is the widest form in the app, so these tests concentrate
+ * on the boundary rather than the layout: what is allowed to reach the service,
+ * in what shape, and what survives a failure.
+ *
+ * Two rules are structural and worth pinning. Registering must never produce a
+ * session — the response is a handle and a challenge, nothing more — and the
+ * services a vendor selects travel as identifiers, never as names.
+ */
+
+import React from 'react';
+import ReactTestRenderer, { act, type ReactTestRendererJSON } from 'react-test-renderer';
+
+import { AUTH_COPY } from '@/features/auth/constants/authCopy';
+import { VendorRegistrationScreen } from '@/features/auth/screens/VendorRegistrationScreen';
+import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
+import type { AuthService, VendorRegistration } from '@/shared/services/types/AuthService';
+import type { CategoryService, ServiceCategory } from '@/shared/services/types/CategoryService';
+import { ToastProvider } from '@/shared/components';
+import { ThemeProvider } from '@/shared/theme';
+import { AppError } from '@/shared/types/error';
+
+const CATEGORIES: ServiceCategory[] = [
+  { id: 'cat_test_a', name: 'Category A', iconGlyph: 'flash-outline' },
+  { id: 'cat_test_b', name: 'Category B', iconGlyph: 'water-outline' },
+];
+
+const REGISTRATION: VendorRegistration = {
+  registrationId: 'reg_test_1',
+  challenge: {
+    maskedDestination: '••••••3210',
+    expiresAt: new Date(Date.now() + 300_000).toISOString(),
+    resendAfterSeconds: 30,
+  },
+};
+
+const VALID = {
+  businessName: 'Sharma Electricals',
+  ownerFirstName: 'Neha',
+  ownerLastName: 'Sharma',
+  phone: '+91 98765-43210',
+  normalisedPhone: '919876543210',
+  email: 'Neha@Example.COM',
+};
+
+function stubAuthService(overrides: Partial<AuthService> = {}): AuthService {
+  const unexpected = (name: string) => () => {
+    throw new Error(`${name} must not be called from the registration screen`);
+  };
+
+  return {
+    registerVendor: jest.fn(async () => REGISTRATION),
+    requestCustomerOtp: unexpected('requestCustomerOtp'),
+    verifyCustomerOtp: unexpected('verifyCustomerOtp'),
+    requestVendorOtp: unexpected('requestVendorOtp'),
+    verifyVendorOtp: unexpected('verifyVendorOtp'),
+    verifyVendorAuthCode: unexpected('verifyVendorAuthCode'),
+    regenerateVendorAuthCode: unexpected('regenerateVendorAuthCode'),
+    signInVendor: unexpected('signInVendor'),
+    signOut: unexpected('signOut'),
+    ...overrides,
+  } as AuthService;
+}
+
+/**
+ * Sub-categories are part of the catalogue contract but no part of registering a
+ * business, so asking for them here is a mistake worth failing on rather than a
+ * call worth stubbing — the same treatment the auth operations above get.
+ */
+function stubCategoryService(
+  overrides: Partial<CategoryService> = {},
+): CategoryService {
+  return {
+    listServiceCategories: jest.fn(async () => CATEGORIES),
+    listSubCategories: jest.fn(() => {
+      throw new Error('listSubCategories must not be called from vendor registration');
+    }),
+    ...overrides,
+  };
+}
+
+async function render(service: AuthService, categories: CategoryService = stubCategoryService()) {
+  registerService('auth', service);
+  registerService('category', categories);
+
+  const navigate = jest.fn();
+  const navigation = { navigate } as never;
+
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = ReactTestRenderer.create(
+      <ThemeProvider>
+        <ToastProvider>
+          <VendorRegistrationScreen navigation={navigation} route={{} as never} />
+        </ToastProvider>
+      </ThemeProvider>,
+    );
+  });
+  mounted.push(renderer);
+
+  /**
+   * The text input itself, not the ControlledInput wrapper that also carries the
+   * testID — only one of them has an onChangeText to drive.
+   */
+  const field = (testID: string) => {
+    const matches = renderer.root.findAll(
+      node => node.props.testID === testID && typeof node.props.onChangeText === 'function',
+    );
+    if (matches.length === 0) {
+      throw new Error(`No editable field found for testID "${testID}"`);
+    }
+    return matches[matches.length - 1];
+  };
+
+  const fill = async (testID: string, value: string) => {
+    await act(async () => {
+      field(testID).props.onChangeText(value);
+    });
+  };
+
+  const press = async (accessibilityLabel: string) => {
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel }).props.onPress();
+    });
+  };
+
+  /** Fills every required field with valid values, selecting one category. */
+  const fillValid = async () => {
+    await fill('vendor-business-name', VALID.businessName);
+    await fill('vendor-first-name', VALID.ownerFirstName);
+    await fill('vendor-last-name', VALID.ownerLastName);
+    await fill('vendor-phone', VALID.phone);
+    await press(CATEGORIES[0].name);
+  };
+
+  return {
+    renderer,
+    navigate,
+    fill,
+    press,
+    fillValid,
+    submit: () => press('Continue'),
+    valueOf: (testID: string) => field(testID).props.value,
+    submitButton: () => renderer.root.findByProps({ accessibilityLabel: 'Continue' }).props,
+    text: () => textOf(renderer.toJSON()),
+  };
+}
+
+function textOf(node: ReactTestRendererJSON | ReactTestRendererJSON[] | null): string {
+  if (node === null) {
+    return '';
+  }
+  if (Array.isArray(node)) {
+    return node.map(textOf).join(' ');
+  }
+  return (node.children ?? [])
+    .map(child => (typeof child === 'string' ? child : textOf(child as ReactTestRendererJSON)))
+    .join(' ');
+}
+
+/**
+ * Every screen a test rendered, unmounted after it.
+ *
+ * Found tracing jest's "A worker process has failed to exit gracefully": a test
+ * that raised a toast left its dismiss timer running in a tree nobody
+ * unmounted, so the file's last tests were followed by renders after jest had
+ * torn the environment down and a worker that could not exit on time.
+ * Unmounting runs the cleanup `ToastProvider` already has.
+ */
+const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
+
+afterEach(() => {
+  for (const renderer of mounted.splice(0)) {
+    act(() => {
+      renderer.unmount();
+    });
+  }
+  resetServices();
+  jest.restoreAllMocks();
+});
+
+describe('VendorRegistrationScreen — the form', () => {
+  it('renders every field the service contract carries', async () => {
+    const { renderer, text } = await render(stubAuthService());
+
+    expect(renderer.root.findByProps({ testID: 'vendor-business-name' })).toBeDefined();
+    expect(renderer.root.findByProps({ testID: 'vendor-first-name' })).toBeDefined();
+    expect(renderer.root.findByProps({ testID: 'vendor-last-name' })).toBeDefined();
+    expect(renderer.root.findByProps({ testID: 'vendor-phone' })).toBeDefined();
+    expect(renderer.root.findByProps({ testID: 'vendor-email' })).toBeDefined();
+    expect(text()).toContain(CATEGORIES[0].name);
+  });
+
+  it('ends on the same foot as both sign-in screens', async () => {
+    const { renderer, text } = await render(stubAuthService());
+
+    // Registration was the one auth screen that stopped at a bare page. The
+    // artwork is decoration, but the sentence over it is not — it is rendered
+    // text, so it translates and scales with the user's type size.
+    expect(renderer.root.findByProps({ testID: 'vendor-registration-cityscape' })).toBeDefined();
+    expect(text()).toContain(AUTH_COPY.common.safetyNote);
+  });
+
+  it('keeps the artwork out of the way of anyone reading or touching the form', async () => {
+    const { renderer } = await render(stubAuthService());
+
+    const art = renderer.root.findByProps({ testID: 'vendor-registration-cityscape-art' });
+
+    expect(art.props.accessibilityElementsHidden).toBe(true);
+    expect(art.props.importantForAccessibility).toBe('no-hide-descendants');
+  });
+
+  it('marks the services field required the same way every other field is', async () => {
+    const { renderer } = await render(stubAuthService());
+
+    /*
+      The marker is the accent, not the asterisk. Rendered as plain text in the
+      label's own colour it was a character at the end of a word, and this was
+      the one required field on an eleven-field form you could not scan for.
+    */
+    const labels = renderer.root.findAll(
+      node => node.props?.children === ' *' && node.props?.color === 'primary',
+    );
+
+    expect(labels.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('says nothing about approval, review or waiting', async () => {
+    const { text } = await render(stubAuthService());
+
+    expect(text().toLowerCase()).not.toContain('approval');
+    expect(text().toLowerCase()).not.toContain('pending');
+    expect(text().toLowerCase()).not.toContain('review');
+  });
+});
+
+describe('VendorRegistrationScreen — the services field', () => {
+  it('names every service from the data, not from anything written here', async () => {
+    const { text } = await render(stubAuthService());
+
+    CATEGORIES.forEach(category => {
+      expect(text()).toContain(category.name);
+      // The identifier is the payload, never something the vendor reads.
+      expect(text()).not.toContain(category.id);
+    });
+  });
+
+  it('renders a long name in full rather than cutting it short', async () => {
+    // "Appliance Repair" rendered as "Appliance" at 360dp: the label broke onto
+    // a second line the chip's height then clipped. The chip is sized to the
+    // whole name, so the name must survive intact however long it is.
+    const long: ServiceCategory[] = [
+      { id: 'cat_long', name: 'Appliance Repair and Installation', iconGlyph: 'wrench-outline' },
+    ];
+    const { renderer } = await render(
+      stubAuthService(),
+      stubCategoryService({ listServiceCategories: jest.fn(async () => long) }),
+    );
+
+    const [label] = renderer.root.findAll(
+      node => node.props.numberOfLines === 1 && typeof node.props.children === 'string',
+    );
+
+    expect(label.props.children).toBe(long[0].name);
+  });
+
+  it('reports selection to assistive technology, not by colour alone', async () => {
+    const { renderer, press } = await render(stubAuthService());
+
+    const chip = (name: string) =>
+      renderer.root.findAll(
+        node => node.props.accessibilityLabel === name && node.props.accessibilityRole === 'checkbox',
+      )[0].props;
+
+    expect(chip(CATEGORIES[0].name).accessibilityState).toEqual(
+      expect.objectContaining({ checked: false }),
+    );
+
+    await press(CATEGORIES[0].name);
+
+    expect(chip(CATEGORIES[0].name).accessibilityState).toEqual(
+      expect.objectContaining({ checked: true }),
+    );
+    // Unrelated options are untouched: this is a multi-select, not a radio group.
+    expect(chip(CATEGORIES[1].name).accessibilityState).toEqual(
+      expect.objectContaining({ checked: false }),
+    );
+  });
+
+  it('lets the vendor retry when the services fail to load', async () => {
+    const listServiceCategories = jest
+      .fn<Promise<ServiceCategory[]>, []>()
+      .mockRejectedValueOnce(new AppError({ kind: 'network', message: 'socket hang up' }))
+      .mockResolvedValueOnce(CATEGORIES);
+
+    const { renderer, text, press } = await render(
+      stubAuthService(),
+      stubCategoryService({ listServiceCategories }),
+    );
+
+    expect(text()).toContain('No connection');
+    expect(text()).not.toContain('socket hang up');
+
+    await press('Try again');
+
+    expect(text()).toContain(CATEGORIES[0].name);
+    expect(renderer.root.findAllByProps({ accessibilityLabel: 'Try again' })).toHaveLength(0);
+  });
+
+  it('shows no options, and blocks submission, when there are none', async () => {
+    const service = stubAuthService();
+    const { text, fill, submit } = await render(
+      service,
+      stubCategoryService({ listServiceCategories: jest.fn(async () => []) }),
+    );
+
+    await fill('vendor-business-name', VALID.businessName);
+    await fill('vendor-first-name', VALID.ownerFirstName);
+    await fill('vendor-last-name', VALID.ownerLastName);
+    await fill('vendor-phone', VALID.phone);
+    await submit();
+
+    // Nothing selectable means nothing valid to send.
+    expect(service.registerVendor).not.toHaveBeenCalled();
+    expect(text()).toContain('service');
+  });
+});
+
+describe('VendorRegistrationScreen — validation', () => {
+  it('reports every missing required field at once', async () => {
+    const service = stubAuthService();
+    const { submit, text } = await render(service);
+
+    await submit();
+
+    const rendered = text();
+    expect(rendered).toContain('Enter the business name.');
+    expect(rendered).toContain('Enter the first name.');
+    expect(rendered).toContain('Enter the last name.');
+    expect(rendered).toContain('Enter your phone number.');
+    expect(rendered).toContain('Select at least one service you offer.');
+    expect(service.registerVendor).not.toHaveBeenCalled();
+  });
+
+  it('rejects an implausible phone number', async () => {
+    const service = stubAuthService();
+    const { fillValid, fill, submit, text } = await render(service);
+
+    await fillValid();
+    await fill('vendor-phone', '12345');
+    await submit();
+
+    expect(text()).toContain('too short');
+    expect(service.registerVendor).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed email but allows none at all', async () => {
+    const service = stubAuthService();
+    const { fillValid, fill, submit, text } = await render(service);
+
+    await fillValid();
+    await fill('vendor-email', 'neha@@example');
+    await submit();
+
+    expect(text()).toContain('Enter a valid email address.');
+    expect(service.registerVendor).not.toHaveBeenCalled();
+
+    // Email is optional in the contract, so clearing it must let the form through.
+    await fill('vendor-email', '');
+    await submit();
+
+    expect(service.registerVendor).toHaveBeenCalledTimes(1);
+    expect(service.registerVendor).toHaveBeenCalledWith(
+      expect.objectContaining({ email: undefined }),
+    );
+  });
+
+  it('requires at least one service to be selected', async () => {
+    const service = stubAuthService();
+    const { fillValid, press, submit, text } = await render(service);
+
+    await fillValid();
+    await press(CATEGORIES[0].name); // deselect
+
+    await submit();
+
+    expect(text()).toContain('Select at least one service you offer.');
+    expect(service.registerVendor).not.toHaveBeenCalled();
+  });
+});
+
+describe('VendorRegistrationScreen — submission', () => {
+  it('sends normalised values, with services as identifiers', async () => {
+    const service = stubAuthService();
+    const { fillValid, fill, press, submit } = await render(service);
+
+    await fillValid();
+    await fill('vendor-email', VALID.email);
+    await press(CATEGORIES[1].name);
+    await submit();
+
+    expect(service.registerVendor).toHaveBeenCalledWith({
+      businessName: VALID.businessName,
+      ownerFirstName: VALID.ownerFirstName,
+      ownerLastName: VALID.ownerLastName,
+      phone: VALID.normalisedPhone,
+      email: 'neha@example.com',
+      serviceCategoryIds: [CATEGORIES[0].id, CATEGORIES[1].id],
+    });
+  });
+
+  it('sends no category name, only identifiers', async () => {
+    const service = stubAuthService();
+    const { fillValid, submit } = await render(service);
+
+    await fillValid();
+    await submit();
+
+    const submitted = (service.registerVendor as jest.Mock).mock.calls[0][0];
+    expect(JSON.stringify(submitted)).not.toContain(CATEGORIES[0].name);
+  });
+
+  it('locks the button while the request is in flight', async () => {
+    let release!: (registration: VendorRegistration) => void;
+    const service = stubAuthService({
+      registerVendor: jest.fn(
+        () =>
+          new Promise<VendorRegistration>(resolve => {
+            release = resolve;
+          }),
+      ),
+    });
+    const { fillValid, submit, submitButton } = await render(service);
+
+    await fillValid();
+    expect(submitButton().accessibilityState.busy).toBe(false);
+
+    await submit();
+    expect(submitButton().accessibilityState.busy).toBe(true);
+    expect(submitButton().accessibilityState.disabled).toBe(true);
+
+    await act(async () => {
+      release(REGISTRATION);
+    });
+  });
+
+  it('will not register twice while the first request is unanswered', async () => {
+    let release!: (registration: VendorRegistration) => void;
+    const service = stubAuthService({
+      registerVendor: jest.fn(
+        () =>
+          new Promise<VendorRegistration>(resolve => {
+            release = resolve;
+          }),
+      ),
+    });
+    const { fillValid, submit } = await render(service);
+
+    await fillValid();
+    await submit();
+    await submit();
+
+    expect(service.registerVendor).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      release(REGISTRATION);
+    });
+  });
+
+  it('hands verification the registration id as its identity, and the number sent only to be remembered', async () => {
+    const service = stubAuthService();
+    const { fillValid, submit, navigate } = await render(service);
+
+    await fillValid();
+    await submit();
+
+    // Onboarding is identified by the handle — every onboarding call is keyed
+    // by it (VendorOtpScreen's tests). The phone travels beside it as the
+    // digits registration sent, to be remembered once onboarding finishes,
+    // and nothing else does: no code, no other detail.
+    expect(navigate).toHaveBeenCalledWith('VendorOtp', {
+      registrationId: REGISTRATION.registrationId,
+      phone: VALID.normalisedPhone,
+      challenge: REGISTRATION.challenge,
+    });
+    const params = navigate.mock.calls[0][1];
+    expect(Object.keys(params).sort()).toEqual(['challenge', 'phone', 'registrationId']);
+    expect(params.phone).toBe(
+      (service.registerVendor as jest.Mock).mock.calls[0][0].phone,
+    );
+  });
+});
+
+describe('VendorRegistrationScreen — failure', () => {
+  it('shows the safe message and keeps every entered value', async () => {
+    const failure = new AppError({
+      kind: 'conflict',
+      message: 'duplicate key vendors_phone_idx (9876543210)',
+      userMessage: 'An account already exists for this number. Try signing in instead.',
+    });
+    const service = stubAuthService({
+      registerVendor: jest.fn(async () => {
+        throw failure;
+      }),
+    });
+    const { fillValid, submit, text, valueOf } = await render(service);
+
+    await fillValid();
+    await submit();
+
+    expect(text()).toContain(failure.userMessage);
+    expect(text()).not.toContain('duplicate key');
+
+    expect(valueOf('vendor-business-name')).toBe(VALID.businessName);
+    expect(valueOf('vendor-first-name')).toBe(VALID.ownerFirstName);
+    expect(valueOf('vendor-phone')).toBe(VALID.phone);
+  });
+
+  it('allows a retry once the failure is understood', async () => {
+    const service = stubAuthService({
+      registerVendor: jest
+        .fn()
+        .mockRejectedValueOnce(new AppError({ kind: 'network' }))
+        .mockResolvedValueOnce(REGISTRATION),
+    });
+    const { fillValid, submit, navigate } = await render(service);
+
+    await fillValid();
+    await submit();
+    await submit();
+
+    expect(service.registerVendor).toHaveBeenCalledTimes(2);
+    expect(navigate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('VendorRegistrationScreen — nothing leaks', () => {
+  it('passes on no one-time code, because it is never given one', async () => {
+    const { fillValid, submit, navigate, text } = await render(stubAuthService());
+
+    await fillValid();
+    await submit();
+
+    expect(JSON.stringify(REGISTRATION)).not.toMatch(/\b\d{6}\b/);
+    expect(JSON.stringify(navigate.mock.calls)).not.toMatch(/\b\d{6}\b/);
+    expect(text()).not.toMatch(/\b\d{6}\b/);
+  });
+
+  it('writes neither the phone number nor the registration handle to logs', async () => {
+    const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const service = stubAuthService({
+      registerVendor: jest.fn(async () => {
+        throw new AppError({ kind: 'server', message: 'registration failed' });
+      }),
+    });
+    const { fillValid, submit } = await render(service);
+
+    await fillValid();
+    await submit();
+
+    const logged = [...consoleLog.mock.calls, ...consoleError.mock.calls]
+      .flat()
+      .map(entry => JSON.stringify(entry))
+      .join(' ');
+
+    expect(logged).not.toContain(VALID.normalisedPhone);
+    expect(logged).not.toContain(REGISTRATION.registrationId);
+  });
+});

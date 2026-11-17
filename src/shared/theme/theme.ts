@@ -12,14 +12,15 @@
  */
 
 import { animation } from './animation';
-import { breakpoints, gridColumns } from './breakpoints';
+import { borderWidth } from './borderWidth';
+import { breakpoints, gridColumns, maxContentWidth } from './breakpoints';
 import { darkColors, lightColors, type ColorTokens } from './colors';
 import { elevation } from './elevation';
 import { iconSize, icons } from './icons';
 import { opacity } from './opacity';
 import { radius } from './radius';
 import { createShadows, type ShadowTokens } from './shadows';
-import { hitSlop, screenPadding, spacing } from './spacing';
+import { controlHeight, hitSlop, screenPadding, spacing } from './spacing';
 import { typography } from './typography';
 import { zIndex } from './zIndex';
 
@@ -29,9 +30,11 @@ export interface AppTheme {
   mode: ThemeMode;
   colors: ColorTokens;
   shadows: ShadowTokens;
+  borderWidth: typeof borderWidth;
   spacing: typeof spacing;
   screenPadding: typeof screenPadding;
   hitSlop: typeof hitSlop;
+  controlHeight: typeof controlHeight;
   radius: typeof radius;
   typography: typeof typography;
   elevation: typeof elevation;
@@ -40,6 +43,7 @@ export interface AppTheme {
   zIndex: typeof zIndex;
   breakpoints: typeof breakpoints;
   gridColumns: typeof gridColumns;
+  maxContentWidth: typeof maxContentWidth;
   icons: typeof icons;
   iconSize: typeof iconSize;
 }
@@ -50,10 +54,12 @@ function createTheme(mode: ThemeMode): AppTheme {
   return Object.freeze({
     mode,
     colors,
-    shadows: createShadows(colors.shadow),
+    shadows: createShadows(colors.shadow, colors.primary),
+    borderWidth,
     spacing,
     screenPadding,
     hitSlop,
+    controlHeight,
     radius,
     typography,
     elevation,
@@ -62,6 +68,7 @@ function createTheme(mode: ThemeMode): AppTheme {
     zIndex,
     breakpoints,
     gridColumns,
+    maxContentWidth,
     icons,
     iconSize,
   });

@@ -31,6 +31,7 @@ Build a small, excellent Phase 1.
 - [4. Phase Definitions](#4-phase-definitions)
 - [5. Phase 1 — MVP](#5-phase-1--mvp)
 - [6–26. Phase 1 Customer Application](#6-phase-1-customer-application)
+  - [**7A. Authentication Model**](#7a-authentication-model--approved) — customer OTP, vendor code
   - [**18A. Vendor Selection & Dispatch**](#18a-vendor-selection--dispatch) — directed vs open dispatch
 - [27–43. Phase 1 Vendor Application](#27-phase-1-vendor-application)
 - [44–55. Shared Frontend Concerns](#44-shared-frontend-features--phase-1)
@@ -190,7 +191,117 @@ Splash should be simple. **Do not create unnecessary animation.**
 
 ---
 
+# 7A. AUTHENTICATION MODEL — APPROVED
+
+Sections 8, 9 and 28 were written before the authentication mechanism was
+settled, so they describe fields generally ("Email / Phone ... Password, per
+final backend authentication contract"). **This section is the specific,
+approved decision and takes precedence wherever they differ.** Their field lists
+remain useful as the record of what a form may collect once profile capture is
+designed.
+
+## 7A.1 Customer — phone and one-time code
+
+```text
+Phone number → one-time code → verification → authenticated customer session
+```
+
+**The delivery channel is a backend concern.** The code travels over WhatsApp
+today; it could be SMS or anything else tomorrow. The frontend depends on
+exactly two operations and knows nothing about how the code arrives:
+
+```text
+requestCustomerOtp(phone)
+verifyCustomerOtp(phone, code)
+```
+
+> **No WhatsApp or SMS SDK may be added to the React Native application.**
+> Naming a provider anywhere in the app makes switching provider a mobile
+> release.
+
+## 7A.2 Vendor — registration, phone verification, permanent auth code
+
+> **Supersedes the earlier admin-approval model.** There is **no manual
+> administrator approval** in vendor onboarding. Do not show "waiting for
+> approval", "pending review", or "admin approval required" anywhere in the
+> normal registration flow.
+
+```text
+Vendor registration (business details)
+        ↓
+Submit → one-time code sent to the registered phone
+        ↓
+Vendor enters code → verified
+        ↓
+Backend automatically activates the vendor
+        ↓
+Backend generates the permanent auth code
+        ↓
+Auth code displayed once — vendor copies and saves it
+        ↓
+Vendor enters the auth code to confirm they saved it
+        ↓
+Auth code verified → authenticated session → Vendor Dashboard
+```
+
+**Verifying the phone does not sign the vendor in.** The session is created only
+when the vendor confirms the auth code. Copying the code must never authenticate
+them, and the app must never route to the dashboard merely because a code was
+generated.
+
+**Regeneration.** From the confirmation step the vendor may request a new code.
+The previous one is revoked immediately and stops working.
+
+**Code format and returning vendors — amended 21/10/2026 (owner).** The
+permanent auth code is **6 digits** (a string; leading zeros allowed). The
+backend assigns it automatically; an administrator can change it, after which
+the old code stops working. On a device where the vendor has signed in before,
+the app **remembers the phone number** (never the code), so a returning vendor
+types only the 6-digit code; "Use a different number" forgets the remembered
+phone. The code itself is still never stored, logged or sent anywhere but the
+sign-in request (below).
+
+**Returning vendors** sign in with phone + permanent auth code. No one-time code
+is required on subsequent logins unless a future product decision changes it.
+
+**The frontend never generates the production auth code.** The backend owns
+generation; the mock produces a development stand-in for simulation only.
+
+**The vendor code is a standing credential.** It never expires, so a leak is
+permanent until an administrator reissues it. It must never be:
+
+- written to a log
+- included in an error message, user-facing or developer-facing
+- persisted anywhere beyond the request that uses it
+- attached to analytics events
+- included in crash reports
+
+`AppConfig.logging.redactedKeys` already masks `vendorCode`, `otp`, `authCode`,
+`password` and `token` at any depth, so `Logger` enforces the first of these
+automatically.
+
+## 7A.3 Roles
+
+The session identifies **CUSTOMER** or **VENDOR**, and nothing else.
+
+- There is **no Admin role in the mobile application.** Admin is a separate
+  future web application.
+- There is **no team-member authentication** in the MVP. Team members are
+  records a vendor manages (section 39), not accounts that sign in.
+
+## 7A.4 The backend decides
+
+The frontend never determines whether an account exists, whether a code is
+valid, whether a vendor is approved, whether a session is still good, or what a
+user is allowed to do. It asks and it renders the answer. The mock simulates
+those answers so the UI can be built; simulation never becomes the rule.
+
+---
+
 # 8. CUSTOMER LOGIN
+
+> **Mechanism superseded by section 7A:** customers sign in with a phone number
+> and a one-time code. There is no customer password.
 
 **Screen:** Login
 
@@ -206,7 +317,13 @@ Splash should be simple. **Do not create unnecessary animation.**
 
 # 9. CUSTOMER SIGNUP
 
-**Screen:** Create Account
+> **Removed by section 7A.** There is no customer signup screen. Verifying a
+> phone number for the first time is what creates the account, so signing up and
+> signing in are the same three taps. The field list below is retained only as
+> the record of what a profile screen may later collect — it is not a screen to
+> build, and the `Signup` route has been deleted.
+
+**Screen:** ~~Create Account~~ (removed)
 
 Fields depend on the finalized backend contract. Minimum expected:
 
@@ -220,7 +337,9 @@ Fields depend on the finalized backend contract. Minimum expected:
 **Actions:** Create Account, Back to Login
 
 ```text
-Signup → Account Created → Login / Auto Login → Customer Home
+~~Signup → Account Created → Login / Auto Login → Customer Home~~
+
+Login (phone) → One-time code → Account created if new → Customer Home
 ```
 
 ---
@@ -600,6 +719,10 @@ Vendor focuses on: Requests, Work, Team, Profile, Reports.
 
 # 28. VENDOR AUTHENTICATION
 
+> **Mechanism superseded by section 7A:** vendors sign in with a phone number
+> and the permanent code issued by an administrator after approval. There is no
+> vendor password.
+
 **Screens:** Vendor Login, Vendor Signup
 
 Vendor registration may require: Personal Information, Business Name, Phone, Email, Service Categories, Shop Information, Documents, Shop Images.
@@ -608,17 +731,27 @@ The exact required fields must follow the **backend contract**.
 
 ---
 
-# 29. VENDOR APPROVAL
+# 29. VENDOR APPROVAL — SUPERSEDED
 
-```text
-Signup → Pending Approval → Admin Review → Approved / Rejected
-```
+> ⚠️ **This section is obsolete.** Vendor onboarding no longer involves manual
+> administrator approval. **Section 7A.2 is authoritative:** verifying the
+> one-time code activates the vendor automatically, and the session is created
+> when they confirm their permanent auth code.
+>
+> Retained only as the record of the earlier decision. Nothing here should be
+> implemented. `VendorApprovalScreen`, built against this model, has been
+> removed, and `AuthUser` no longer carries an approval status.
 
-If pending, show: *Your account is under verification.*
+~~`Signup → Pending Approval → Admin Review → Approved / Rejected`~~
 
-Vendor should **not** receive normal service requests until approved.
+~~If pending, show: *Your account is under verification.*~~
 
-If rejected, show appropriate status and message.
+~~If rejected, show appropriate status and message.~~
+
+**The one rule that survives:** a vendor must be active before receiving service
+requests. Under the new flow that is guaranteed structurally rather than by a
+check — activation happens during onboarding, so any vendor holding a session is
+already active.
 
 ---
 
@@ -630,6 +763,14 @@ Vendor's main screen. Shows: Today's Requests, Pending Requests, Accepted Reques
 
 Dashboard should prioritize **active work**. Do not overload it with unnecessary analytics during Phase 1.
 
+**Today's Requests and Rating — amended 21/10/2026 (owner).** The dashboard
+shows Today's Requests and the vendor's Rating (the average and the number of
+reviews, or "No reviews yet"); the Rating opens the vendor's reviews. Accepted
+and In Progress are shown as separate counts only once the backend reports them
+separately — until then they stay together as active work, and the app does not
+work them out itself. The dashboard reads itself again, quietly, whenever the
+vendor comes back to it.
+
 ---
 
 # 31. VENDOR REQUEST LIST
@@ -639,6 +780,13 @@ Dashboard should prioritize **active work**. Do not overload it with unnecessary
 Each request card: Request ID, Service, Customer, Priority, Date, Status.
 
 **Emergency/high-priority requests should be visually distinguishable.**
+
+**The customer on a card — amended 21/10/2026 (owner).** Cards follow the
+privacy rule in §32. Until the vendor holds the work (a request still waiting
+for their answer, or one they rejected), a card shows the **area** where the
+customer's name would be, never the name. Once they hold it (accepted, in
+progress, completed, closed), the card shows the customer's name. The list
+reads itself again, quietly, whenever the vendor comes back to it.
 
 ## 31.1 The "New" tab contains two kinds of request
 
@@ -666,6 +814,18 @@ it first. This is normal, not an error.
 Vendor sees: Request ID, Customer Information, Service, Sub Service, Priority, Description, Images, Notes, Address, Preferred Date/Time, Current Status.
 
 Actions depend on current state.
+
+**What the vendor sees depends on whether they hold the work — amended
+21/10/2026 (owner).** Before the vendor holds the work — a request still waiting
+for their answer, or one they rejected — they see the Service, Sub Service,
+Priority, Description/Notes, Images, Preferred Date/Time and the **area only**.
+No customer name, no phone number, no full address. Once they hold it —
+Accepted, In Progress, Completed, Closed — they also see the full Address and
+the Customer Information (name and phone). The backend must leave the withheld
+fields off records the vendor does not hold, and the app must not show them in
+those states even if they arrive. Description and Notes are the customer's one
+free-text answer, shown once. Phase 1 shows the phone as text, written for
+reading; it does not dial it, and there is no full-screen photo viewer.
 
 ---
 
@@ -765,6 +925,13 @@ The frontend should clearly distinguish:
 
 Fixora does not process online payment during Phase 1.
 
+**Recording a payment later — amended 21/10/2026 (owner).** A vendor may change
+a finished request's recorded payment from **Not paid yet** to **Paid**, once,
+choosing the method from the backend's list and confirming before it is sent.
+Only that direction; once Paid it is final. Nothing else in the completion
+record changes — the final amount, currency and completion notes stay as
+recorded. This is still a record, not a payment: Fixora processes nothing.
+
 ---
 
 # 38. VENDOR PROFILE
@@ -772,6 +939,12 @@ Fixora does not process online payment during Phase 1.
 Includes: Business Name, Owner Name, Profile Image, Shop Images, Description, Phone, Email, Service Categories, Working Areas, Working Hours, Availability, Rating.
 
 **Actions:** Edit Profile, Upload Shop Images, Manage Availability, Manage Team
+
+**Rating on the profile — amended 21/10/2026 (owner).** The vendor profile
+shows the Rating (the average and the number of reviews, or "No reviews yet")
+with the way into the vendor's reviews. Phone numbers are shown formatted for
+reading (for example "+91 98765 43210"), here and everywhere a stored number is
+displayed; what is stored and sent is unchanged.
 
 ---
 
@@ -810,6 +983,10 @@ Shows: Average Rating, Total Reviews, Rating Breakdown, Review List.
 ```
 
 **Vendor cannot edit customer reviews.**
+
+**The reviewer's name — amended 21/10/2026 (owner).** A review shows the
+customer's first name and the initial of their last name ("Priya S."), never the
+full surname. A review without a name shows none.
 
 ---
 
@@ -1023,8 +1200,7 @@ If these workflows work reliably, **Phase 1 has achieved its goal**.
 # 57. PHASE 1 LAUNCH CHECKLIST
 
 **Customer**
-- [ ] Signup
-- [ ] Login
+- [ ] Login (phone + one-time code; creates the account on first verification)
 - [ ] Profile
 - [ ] Categories
 - [ ] Sub Categories
@@ -1038,9 +1214,9 @@ If these workflows work reliably, **Phase 1 has achieved its goal**.
 - [ ] Review
 
 **Vendor**
-- [ ] Signup
-- [ ] Login
-- [ ] Approval Status
+- [ ] Registration
+- [ ] Login (phone + permanent auth code)
+- [ ] Auth Code display, copy and confirmation (§7A.2)
 - [ ] Dashboard
 - [ ] Profile
 - [ ] Shop Images
@@ -1213,7 +1389,7 @@ Vendor   → Receive Leads → Manage Jobs → Manage Team → Complete Jobs
 | Customer Signup | ✅ | Improve |
 | Customer Login | ✅ | Improve |
 | Vendor Signup | ✅ | Improve |
-| Vendor Approval | ✅ | Improve |
+| Vendor auto-activation on phone verification | ✅ | Improve |
 | Categories | ✅ | Search/Recommendation |
 | Sub Categories | ✅ | Improve |
 | Request Creation | ✅ | Advanced |

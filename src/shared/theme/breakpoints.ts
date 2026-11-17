@@ -30,6 +30,15 @@ export function resolveBreakpoint(width: number): Breakpoint {
   return ORDERED.find(key => width >= breakpoints[key]) ?? 'xs';
 }
 
+/**
+ * Widest a single column of content should grow.
+ *
+ * Centred screens — sign in, verification, empty states — become hard to read
+ * when a form or a paragraph stretches the full width of a tablet. Capping the
+ * column keeps line length comfortable without any screen owning a magic number.
+ */
+export const maxContentWidth = 480;
+
 /** Number of grid columns per breakpoint, used by category and vendor grids. */
 export const gridColumns: Readonly<Record<Breakpoint, number>> = Object.freeze({
   xs: 2,

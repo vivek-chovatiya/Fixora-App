@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Native colours, light mode. values-night/colors.xml holds the dark ones.
+
+  window_background is what Android draws before React Native has rendered
+  anything: the Android 12+ system splash (which uses the window background
+  when it is a single colour) and the window behind the first frame. It is the
+  JS theme's `background` token (lightColors.background, gray50, in
+  src/shared/theme/colors.ts), so the system splash hands over to the app's own
+  splash screen without a change of colour.
+
+  Before this the theme's default was used: AppCompat's #303030 grey in dark
+  mode, which showed as a grey frame between the system splash and the
+  near-black JS splash.
+
+  ⚠️ A copy, not a reference: native resources cannot read the JS theme. If the
+  `background` token changes, change it here and in values-night as well.
+-->
+<resources>
+    <color name="window_background">#F9FAFB</color>
+</resources>

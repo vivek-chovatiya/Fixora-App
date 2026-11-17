@@ -32,6 +32,9 @@ local.properties
 *.hprof
 .cxx/
 *.keystore
+# The upload key in either format keytool writes (docs/RELEASE.md); never in the repo.
+*.p12
+*.jks
 !debug.keystore
 .kotlin/
 
@@ -74,5 +77,15 @@ yarn-error.log
 !.yarn/sdks
 !.yarn/versions
 
+# Web build (Vite)
 dist/
 .vite/
+
+# Python (brand asset generator)
+__pycache__/
+*.pyc
+
+# Claude Code — personal settings stay on each machine; the shared ones
+# (.claude/settings.json, agents/, skills/) are committed.
+.claude/settings.local.json
+CLAUDE.local.md

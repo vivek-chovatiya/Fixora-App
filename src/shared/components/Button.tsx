@@ -1,0 +1,254 @@
+/**
+ * Button
+ *
+ * The only pressable action primitive in the application.
+ *
+ * One implementation with a `variant`, plus the named exports the naming
+ * convention calls for (CLAUDE.md section 15). Named wrappers keep call sites
+ * predictable without duplicating behaviour — pressed states, disabled styling,
+ * the loading lock and accessibility live in exactly one place.
+ *
+ * While `isLoading` is true the button is disabled. That is not cosmetic: it is
+ * what prevents a double submit, which PROJECT_BIBLE.md section 33.1 requires for
+ * vendor accept, where two taps could enter a race the backend must arbitrate.
+ *
+ * ⚠️ Two reds, for two weights of the same warning (Phase 3G-4, 21/10/2026).
+ * `danger` — filled, white words — is for the act that ends something: Log out,
+ * and every `ConfirmDialog`'s final yes. `dangerSecondary` — a red tint, red
+ * words — is for a way *towards* such an act that still has a dialog behind
+ * it: a team member's Disable, a customer's Cancel request. A filled red there
+ * shouted at a control whose dialog was already the protection. Do not move a
+ * dialog's confirm to the tonal variant: the last step is the loud one.
+ */
+
+import React, { memo, useCallback } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  View,
+  type PressableStateCallbackType,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
+
+import { Icon } from '@/shared/components/Icon';
+import { Text } from '@/shared/components/Text';
+import { useTheme, type ColorTokens, type IconName, type SpacingToken } from '@/shared/theme';
+
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'dangerSecondary';
+
+export interface ButtonProps {
+  label: string;
+  onPress: () => void;
+  variant?: ButtonVariant;
+  isLoading?: boolean;
+  disabled?: boolean;
+  /** Stretches to the container width. Default is intrinsic width. */
+  fullWidth?: boolean;
+  icon?: IconName;
+  /**
+   * Which side of the label the icon sits on.
+   *
+   * Leading is the default and is right for an icon that names the action. A
+   * trailing icon is a direction rather than a name — an arrow that says this
+   * button moves you on — so it reads after the words, not before them.
+   */
+  iconPosition?: 'leading' | 'trailing';
+  /**
+   * Spoken name, when the label alone does not identify the action.
+   *
+   * ⚠️ For a button repeated down a list — "Edit" beside each of five saved
+   * addresses — where the visible word is enough for somebody who can see which
+   * row it is in and says nothing to somebody who cannot. Defaults to `label`,
+   * which is right everywhere else, and must always still contain the label so
+   * that voice control can reach it by the word on screen.
+   */
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  style?: StyleProp<ViewStyle>;
+}
+
+interface VariantColors {
+  background: keyof ColorTokens;
+  backgroundPressed: keyof ColorTokens;
+  label: keyof ColorTokens;
+  border?: keyof ColorTokens;
+}
+
+const VARIANTS: Readonly<Record<ButtonVariant, VariantColors>> = {
+  primary: {
+    background: 'primary',
+    backgroundPressed: 'primaryPressed',
+    label: 'onPrimary',
+  },
+  /**
+   * Filled, not outlined.
+   *
+   * It used to be a white plate with a border, which on a white card was a
+   * rectangle drawn around some words — the outline was doing all the work of
+   * saying "this is a control", and doing it faintly. A tonal fill says it
+   * without a line, and reads as quieter than the primary button rather than as
+   * a different kind of thing.
+   *
+   * Pressed goes to `borderStrong` rather than a step of the surface scale: in
+   * dark mode `border` and `surfaceAlt` are the same value, so a press would
+   * have shown nothing at all.
+   */
+  secondary: {
+    background: 'surfaceAlt',
+    backgroundPressed: 'borderStrong',
+    label: 'textPrimary',
+  },
+  /**
+   * ⚠️ The label is `onDanger`, never `textInverse`. `danger` is the same red in
+   * both themes, but `textInverse` flips to near-black in dark mode — 4.2:1 on
+   * that red, under the 4.5:1 a label needs. White is 4.8:1 in both (owner's
+   * decision, 21/10/2026). The icon and the busy spinner take the label's
+   * colour, so all three move together.
+   *
+   * Pressed is `dangerPressed`, a step darker. It used to be `danger` itself,
+   * so a press on Log out showed nothing at all (3G-2's open item).
+   */
+  danger: {
+    background: 'danger',
+    backgroundPressed: 'dangerPressed',
+    label: 'onDanger',
+  },
+  /**
+   * The secondary button's shape in the danger's colours: a tint, not a fill.
+   *
+   * ⚠️ The words are `onDangerSubtle`, never `danger`: the base red on its own
+   * tint is 3.9:1 in light and 3.3:1 in dark. `onDangerSubtle` goes darker in
+   * light and lighter in dark, and clears 4.5:1 on both the tint and its
+   * pressed step in both themes.
+   */
+  dangerSecondary: {
+    background: 'dangerSubtle',
+    backgroundPressed: 'dangerSubtlePressed',
+    label: 'onDangerSubtle',
+  },
+};
+
+/**
+ * The capsule's padding either side of its label, as a spacing token.
+ *
+ * Exported for one reader: `ConfirmDialog` works out whether its two answers'
+ * labels fit side by side, and the room a label has is its button's width less
+ * this on both sides. A copy of the number there would let the two drift apart
+ * — and a dialog that thought it had more room than it does cuts a label off.
+ */
+export const BUTTON_LABEL_INSET: SpacingToken = 'xxl';
+
+function ButtonComponent({
+  label,
+  onPress,
+  variant = 'primary',
+  isLoading = false,
+  disabled = false,
+  fullWidth = false,
+  icon,
+  iconPosition = 'leading',
+  accessibilityLabel,
+  accessibilityHint,
+  style,
+}: ButtonProps) {
+  const theme = useTheme();
+  const palette = VARIANTS[variant];
+
+  const isInactive = disabled || isLoading;
+
+  const handlePress = useCallback(() => {
+    if (isInactive) {
+      return;
+    }
+    onPress();
+  }, [isInactive, onPress]);
+
+  const resolveStyle = useCallback(
+    ({ pressed }: PressableStateCallbackType): StyleProp<ViewStyle> => [
+      styles.base,
+      {
+        backgroundColor:
+          theme.colors[pressed && !isInactive ? palette.backgroundPressed : palette.background],
+        // A capsule, matched to the fields above it. 12dp was already a shape
+        // rather than a rectangle with the corners knocked off, but a 12dp
+        // button under a capsule field is the mismatch that made a form read as
+        // parts — and at a 52dp control height the two radii are far enough
+        // apart to see side by side.
+        borderRadius: theme.radius.full,
+        paddingVertical: theme.spacing.sm,
+        // Wider than a rectangle needs, for the same reason the field is: a
+        // capsule curves away from its own label.
+        paddingHorizontal: theme.spacing[BUTTON_LABEL_INSET],
+        // The shared control height, not the accessibility floor. Both clear
+        // the floor; this one also matches the field above it.
+        minHeight: theme.controlHeight,
+        borderWidth: palette.border ? theme.borderWidth.thin : 0,
+        borderColor: palette.border ? theme.colors[palette.border] : undefined,
+        opacity: isInactive ? theme.opacity.disabled : 1,
+      },
+      fullWidth && styles.fullWidth,
+      style,
+    ],
+    [theme, palette, isInactive, fullWidth, style],
+  );
+
+  return (
+    <Pressable
+      onPress={handlePress}
+      disabled={isInactive}
+      style={resolveStyle}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: isInactive, busy: isLoading }}>
+      {isLoading ? (
+        <ActivityIndicator size="small" color={theme.colors[palette.label]} />
+      ) : (
+        <View style={[styles.content, { gap: theme.spacing.sm }]}>
+          {icon && iconPosition === 'leading' ? (
+            <Icon name={icon} size="md" color={palette.label} />
+          ) : null}
+
+          <Text variant="button" color={palette.label} numberOfLines={1}>
+            {label}
+          </Text>
+
+          {icon && iconPosition === 'trailing' ? (
+            <Icon name={icon} size="md" color={palette.label} />
+          ) : null}
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  base: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  fullWidth: {
+    alignSelf: 'stretch',
+  },
+});
+
+export const Button = memo(ButtonComponent);
+
+export const PrimaryButton = memo((props: Omit<ButtonProps, 'variant'>) => (
+  <Button {...props} variant="primary" />
+));
+
+export const SecondaryButton = memo((props: Omit<ButtonProps, 'variant'>) => (
+  <Button {...props} variant="secondary" />
+));
+
+export const DangerButton = memo((props: Omit<ButtonProps, 'variant'>) => (
+  <Button {...props} variant="danger" />
+));

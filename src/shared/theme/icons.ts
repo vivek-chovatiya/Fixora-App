@@ -20,6 +20,14 @@ export const icons = Object.freeze({
   forward: 'chevron-right',
   up: 'chevron-up',
   down: 'chevron-down',
+  /**
+   * Movement, where `forward` is position.
+   *
+   * A chevron points at what is next to it — the end of a row, the edge of a
+   * card. An arrow says the thing it sits on takes you somewhere, which is what
+   * a submit button does and what a chevron on one reads as slightly wrong.
+   */
+  arrowForward: 'arrow-right',
   close: 'close',
   menu: 'menu',
   more: 'dots-vertical',
@@ -33,6 +41,22 @@ export const icons = Object.freeze({
   team: 'account-group-outline',
   reports: 'chart-bar',
 
+  /*
+   * Tabs — selected.
+   *
+   * A filled counterpart for every glyph the tab bars actually use, so the
+   * selected tab differs in shape and not only in colour. Colour alone fails
+   * PROJECT_BIBLE.md section 46: it is invisible to a monochrome display, to
+   * most colour-vision deficiencies, and in bright sunlight.
+   *
+   * Only the four real tabs have one. The rest of the group above appears in
+   * headers and buttons, where nothing is ever "selected".
+   */
+  homeSelected: 'home',
+  requestsSelected: 'clipboard-text',
+  profileSelected: 'account-circle',
+  teamSelected: 'account-group',
+
   // Actions
   search: 'magnify',
   filter: 'filter-variant',
@@ -40,16 +64,56 @@ export const icons = Object.freeze({
   edit: 'pencil-outline',
   remove: 'delete-outline',
   retry: 'refresh',
+  /**
+   * Marking every notification as read. Two ticks rather than `selected`'s one:
+   * it acts on the whole list, and choosing one item is a different gesture.
+   */
+  markAllRead: 'check-all',
+  /**
+   * Putting something on the clipboard.
+   *
+   * Distinct from `document`, which is a file. The copy action borrowed that one
+   * and read as "open the paperwork" rather than "take a copy of this" — seen on
+   * the request-sent screen, where the control sits beside a reference number.
+   */
+  copy: 'content-copy',
   send: 'send-outline',
   call: 'phone-outline',
   logout: 'logout',
   settings: 'cog-outline',
+  /** Password reveal toggle. */
+  visibilityOn: 'eye-outline',
+  visibilityOff: 'eye-off-outline',
 
   // Media
   camera: 'camera-outline',
   gallery: 'image-multiple-outline',
   image: 'image-outline',
   upload: 'tray-arrow-up',
+
+  /**
+   * A chosen item in a multi-select. Distinct from `success`, which reports
+   * that an operation completed — selecting something completes nothing.
+   */
+  selected: 'check',
+
+  /**
+   * Answering a request (PROJECT_BIBLE.md section 33). Their own names, not
+   * `selected` and `close`: taking a job is not choosing an option, and
+   * declining one is not dismissing a sheet — and the glyphs can change apart.
+   */
+  accept: 'check',
+  reject: 'close-circle-outline',
+  /**
+   * A request called off (section 42's "Cancelled Requests"). Not `reject`:
+   * the vendor declining and the job being cancelled are different outcomes,
+   * and on the report they sit side by side, so they differ in shape too.
+   */
+  cancelled: 'cancel',
+
+  /** Moving accepted work along (sections 35 and 36). */
+  startWork: 'play-circle-outline',
+  completeWork: 'check-circle-outline',
 
   // Status and feedback
   success: 'check-circle-outline',
@@ -63,6 +127,10 @@ export const icons = Object.freeze({
   verified: 'shield-check-outline',
 
   // Domain-neutral
+  /** A person using the app to request services. */
+  customer: 'account-circle-outline',
+  /** A business offering them. Not a category — categories come from the backend. */
+  business: 'storefront-outline',
   location: 'map-marker-outline',
   calendar: 'calendar-outline',
   star: 'star',

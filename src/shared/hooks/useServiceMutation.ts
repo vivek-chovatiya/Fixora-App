@@ -18,6 +18,7 @@ const log = createLogger('useServiceMutation');
 export interface UseServiceMutationResult<TArgs extends unknown[], TResult> {
   /** Resolves with the result, or `null` when the mutation failed. */
   mutate: (...args: TArgs) => Promise<TResult | null>;
+  /** The last result. Always undefined when `retainResult` is false. */
   data: TResult | undefined;
   error: AppError | null;
   isSubmitting: boolean;
@@ -25,9 +26,23 @@ export interface UseServiceMutationResult<TArgs extends unknown[], TResult> {
   reset: () => void;
 }
 
+export interface UseServiceMutationOptions {
+  /**
+   * Whether the last result is kept in hook state. Defaults to true.
+   *
+   * Set false when the result is a credential. `mutate` still resolves with it,
+   * so the caller decides where it lives and for how long — but the hook stops
+   * being a second place it is held, which is the difference between one owner
+   * and two for something like the vendor auth code.
+   */
+  retainResult?: boolean;
+}
+
 export function useServiceMutation<TArgs extends unknown[], TResult>(
   mutator: (...args: TArgs) => Promise<TResult>,
+  options: UseServiceMutationOptions = {},
 ): UseServiceMutationResult<TArgs, TResult> {
+  const { retainResult = true } = options;
   const [data, setData] = useState<TResult | undefined>(undefined);
   const [error, setError] = useState<AppError | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -35,6 +50,9 @@ export function useServiceMutation<TArgs extends unknown[], TResult>(
   const mountedRef = useRef(true);
   const mutatorRef = useRef(mutator);
   mutatorRef.current = mutator;
+
+  const retainRef = useRef(retainResult);
+  retainRef.current = retainResult;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -49,7 +67,8 @@ export function useServiceMutation<TArgs extends unknown[], TResult>(
 
     try {
       const result = await mutatorRef.current(...args);
-      if (mountedRef.current) {
+      // Returned either way; only retention is optional.
+      if (mountedRef.current && retainRef.current) {
         setData(result);
       }
       return result;

@@ -39,6 +39,17 @@ const config = {
   resolver: {
     blockList,
   },
+  /**
+   * Fixora's own Metro port. 8081-8084 are taken by the SumoEats and Sumo
+   * Ordering apps that run on this same machine, and two Metros cannot share a
+   * port. `npx react-native start` reads this when no `--port` is given.
+   *
+   * ⚠️ The app side must match: `reactNativeDevServerPort` in
+   * android/gradle.properties bakes the same number into debug builds.
+   */
+  server: {
+    port: 8085,
+  },
 };
 
 module.exports = mergeConfig(getDefaultConfig(__dirname), config);

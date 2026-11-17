@@ -1,0 +1,5 @@
+{
+  // Keep the heading row of long tables on screen while scrolling the Markdown
+  // preview (PROJECT_BIBLE.md, docs/BRANCHING.md, docs/WORKING_NOTES.md).
+  "markdown.styles": [".vscode/markdown-preview.css"]
+}

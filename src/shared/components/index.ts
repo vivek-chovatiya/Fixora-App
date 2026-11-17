@@ -1,0 +1,87 @@
+/**
+ * Shared component barrel
+ *
+ * The single import path for the shared UI library:
+ *
+ *   import { Screen, Card, EmptyState } from '@/shared/components';
+ *
+ * Both role applications import from here. Duplicating any of these inside a
+ * feature module is what CLAUDE.md section 8 forbids — search this barrel before
+ * building anything new.
+ */
+
+export { Text, type TextProps } from './Text';
+export { Icon, DynamicIcon, type IconProps, type DynamicIconProps } from './Icon';
+export { Loader, type LoaderProps } from './Loader';
+
+export {
+  Button,
+  PrimaryButton,
+  SecondaryButton,
+  DangerButton,
+  type ButtonProps,
+  type ButtonVariant,
+} from './Button';
+
+export {
+  Input,
+  EmailInput,
+  PhoneInput,
+  PasswordInput,
+  SearchInput,
+  type InputProps,
+  type EmailInputProps,
+  type PhoneInputProps,
+  type PasswordInputProps,
+  type SearchInputProps,
+} from './Input';
+
+export { ControlledInput, type ControlledInputProps } from './ControlledInput';
+
+export { FieldLabel, type FieldLabelProps } from './FieldLabel';
+
+export { BackButton, type BackButtonProps } from './BackButton';
+
+export { Screen, type ScreenProps } from './Screen';
+export { Card, type CardProps } from './Card';
+export { EmptyState, type EmptyStateProps } from './EmptyState';
+export { ConfirmDialog, type ConfirmDialogProps } from './ConfirmDialog';
+export { useDialogBackdropPadding, type DialogBackdropPadding } from './dialogBackdrop';
+export { ErrorState, type ErrorStateProps } from './ErrorState';
+export { ERROR_PRESENTATION, type ErrorPresentation } from './errorPresentation';
+export {
+  AppErrorBoundary,
+  APP_ERROR_FALLBACK_COPY,
+  type AppErrorBoundaryProps,
+} from './AppErrorBoundary';
+
+export { Toast, type ToastProps } from './Toast';
+export {
+  ToastProvider,
+  useToast,
+  type ToastOptions,
+  type ToastContextValue,
+} from './ToastProvider';
+export { useErrorToast } from './useErrorToast';
+
+export { StatusBadge, type StatusBadgeProps, type StatusTone } from './StatusBadge';
+export { Avatar, getInitials, type AvatarProps, type AvatarSize } from './Avatar';
+export {
+  ServiceCategoryField,
+  type ServiceCategoryFieldProps,
+} from './ServiceCategoryField';
+export { Skeleton, type SkeletonProps } from './Skeleton';
+export { SelectionChip, type SelectionChipProps } from './SelectionChip';
+export { StarRating, type StarRatingProps } from './StarRating';
+export { ContentSection, type ContentSectionProps } from './ContentSection';
+export { StaleNotice, type StaleNoticeProps } from './StaleNotice';
+export {
+  RequestPhotoStrip,
+  type RequestPhotoStripCopy,
+  type RequestPhotoStripProps,
+} from './RequestPhotoStrip';
+export { PhotoUploadProgress, type PhotoUploadProgressProps } from './PhotoUploadProgress';
+export { ProgressBar, progressPercent, type ProgressBarProps } from './ProgressBar';
+export { BrandMark, type BrandMarkProps, type BrandMarkSize } from './BrandMark';
+export { OfflineBanner, OFFLINE_BANNER_COPY, type OfflineBannerProps } from './OfflineBanner';
+export { WindowOffsetContext, useWindowOffset } from './windowOffset';

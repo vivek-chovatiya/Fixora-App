@@ -1,0 +1,272 @@
+/**
+ * Authentication copy
+ *
+ * Every user-facing string in the auth screens, in one place.
+ *
+ * Screens read from here rather than inlining text so that copy can be revised
+ * without touching component logic, and so that introducing multi-language
+ * support later means translating this file rather than hunting through JSX
+ * (PROJECT_BIBLE.md section 18, future compatibility).
+ *
+ * Validation messages are deliberately absent — they live with their schemas in
+ * `../validation`, next to the rule that produces them. Failure messages from
+ * the service are absent too: those come from `AppError.userMessage`, which is
+ * the only copy the backend is allowed to influence.
+ *
+ * Nothing here is a secret. No one-time code, auth code or phone number is
+ * stored in this file.
+ */
+
+export const AUTH_COPY = Object.freeze({
+  brand: Object.freeze({
+    /**
+     * The product name as it is written in the interface. Kept here rather than
+     * read from AppConfig.app.name, which is the bundle's identity and not
+     * necessarily what a user should be shown.
+     */
+    wordmark: 'Fixora',
+    /** Temporary product copy. Replace when marketing copy is agreed. */
+    tagline: 'Local services, requested in a few taps.',
+  }),
+
+  /** Shared by more than one auth screen, so it is not owned by any of them. */
+  common: Object.freeze({
+    back: 'Back',
+    backHint: 'Returns to the previous screen',
+    /**
+     * Reassurance, not a claim about security controls.
+     *
+     * Deliberately says nothing about encryption, storage or compliance: the
+     * app has no way to know what the backend does, and a promise made in the
+     * interface is one the product then has to keep.
+     *
+     * Shared rather than repeated: role selection and sign in both say it, and
+     * two copies of a sentence are two sentences to keep in step.
+     */
+    safetyNote: 'Your information is safe with us.',
+
+    /**
+     * A count of seconds, written short.
+     *
+     * Its own fragment because the countdown is drawn in two inks — the value in
+     * the accent, the sentence around it in the quiet colour — and a unit left
+     * in the sentence would be the one character of the number rendered in the
+     * wrong one. Keeping it here rather than in the component also keeps it
+     * translatable, for a language that abbreviates seconds differently.
+     */
+    secondsShort: '{seconds}s',
+  }),
+
+  authEntry: Object.freeze({
+    /**
+     * The heading is written as two parts because the second is the brand.
+     *
+     * `brand.wordmark` supplies "Fixora", which is not a word to be translated
+     * and is the one string on the screen that must never change. Splitting it
+     * out also lets the product name carry the accent colour without slicing a
+     * translated sentence at a fixed index.
+     */
+    title: 'Welcome to',
+    tagline: 'Connect. Book. Get things done.',
+    subtitle: 'Choose how you want to continue.',
+
+    customerTitle: 'Customer',
+    customerDescription: 'Find trusted local services and request help easily.',
+    /** The outcome, not the action — the card title already names the role. */
+    customerBadge: 'Get things done',
+    customerHint: 'Continue as a customer',
+
+    vendorTitle: 'Vendor',
+    vendorDescription: 'Manage your service business and grow with Fixora.',
+    vendorBadge: 'Grow your business',
+    vendorHint: 'Continue as a vendor',
+
+    /** Paired with `common.safetyNote`, which sign in also shows. */
+    trustTitle: 'Safe. Reliable. Local.',
+
+    /**
+     * Points a new vendor at the one path to registration rather than adding a
+     * second entry point to this screen. Registration is still reachable only
+     * from vendor sign in; what is tappable here goes to sign in itself, which
+     * the vendor card above already offers.
+     */
+    registerNote: 'New vendors can register from',
+    registerLink: 'vendor sign in',
+    registerLinkHint: 'Opens vendor sign in, where you can register a business',
+  }),
+
+  customerLogin: Object.freeze({
+    title: 'Sign in',
+    subtitle: 'Enter your phone number and we will send you a verification code.',
+    phoneLabel: 'Phone number',
+    phonePlaceholder: 'Your phone number',
+    submit: 'Send code',
+    submitHint: 'Sends a verification code to the number you entered',
+  }),
+
+  customerOtp: Object.freeze({
+    title: 'Verify your number',
+    /**
+     * `{destination}` is replaced with the masked number the backend reports.
+     *
+     * "Verify your number" on its own never said which number, on a screen
+     * reached by typing one — so a typo could only be found by giving up and
+     * going back. The value has always been in the challenge; nothing rendered
+     * it.
+     */
+    sentTo: 'We sent a code to {destination}',
+    codeLabel: 'Verification code',
+    /**
+     * Says what the missing button used to say by existing. Sighted users infer
+     * it from the code completing and the animation starting; this is the same
+     * information for anyone who cannot see either.
+     */
+    codeHint: 'Signs you in automatically once you have entered every digit',
+    resend: 'Resend code',
+    /** `{seconds}` is replaced with `common.secondsShort`, which carries the unit. */
+    resendIn: 'Resend code in {seconds}',
+    changeAction: 'Change phone number',
+  }),
+
+  vendorLogin: Object.freeze({
+    title: 'Vendor sign in',
+    subtitle: 'Sign in with your phone number and your authentication code.',
+    phoneLabel: 'Phone number',
+    phonePlaceholder: 'Your registered phone number',
+    codeLabel: 'Authentication code',
+    codePlaceholder: 'Your authentication code',
+    /**
+     * States where the code came from, and — now that its shape is fixed
+     * (21/10/2026) — how long it is, without offering a recovery route the
+     * backend does not yet support. `{length}` is
+     * `AppConfig.vendorAuthCode.length`.
+     */
+    codeHelper: 'The {length}-digit code you saved when you registered your business.',
+    /** Names what the reveal control acts on, rather than leaving it "button". */
+    codeReveal: 'Show authentication code',
+    codeHide: 'Hide authentication code',
+    submit: 'Sign in',
+    submitHint: 'Signs you in to your vendor account',
+    registerPrompt: 'New to Fixora?',
+    registerAction: 'Register your business',
+
+    /**
+     * A returning vendor on the device they last signed in on: the number is
+     * remembered, so only the code is asked for.
+     */
+    welcomeTitle: 'Welcome back',
+    welcomeSubtitle: 'Enter your authentication code to sign in.',
+    /**
+     * Spoken in place of the masked number. `{digits}` is the last four, spelt
+     * one at a time — the bullets mean nothing read aloud, and "zero zero zero
+     * one" is recognisable where "one" is not.
+     */
+    rememberedPhoneSpoken: 'Phone number ending {digits}',
+    useDifferentNumber: 'Use a different number',
+    useDifferentNumberHint: 'Forgets this number on this device so you can enter another',
+
+    /**
+     * What a refused sign in says. Chosen by the app rather than taken from the
+     * service, because a refusal is `unauthorized` and that kind's default copy
+     * is "your session has expired" — about a session nobody has yet.
+     *
+     * Both allow for a code an administrator has changed, and neither repeats
+     * the code or says which half was wrong: the backend refuses an unknown
+     * number and a wrong code alike, and the copy must not undo that.
+     */
+    codeRefused: "That code didn't work. Check it, or if your code was changed, use the new one.",
+    detailsRefused:
+      "That number and code didn't work. Check them, or if your code was changed, use the new one.",
+  }),
+
+  vendorRegistration: Object.freeze({
+    title: 'Register your business',
+    subtitle: 'Tell us about your business. We will send a code to verify your number.',
+
+    businessSection: 'Business',
+    businessNameLabel: 'Business name',
+    businessNamePlaceholder: 'Your business name',
+
+    contactSection: 'Contact',
+    firstNameLabel: 'First name',
+    firstNamePlaceholder: 'Owner first name',
+    lastNameLabel: 'Last name',
+    lastNamePlaceholder: 'Owner last name',
+    phoneLabel: 'Phone number',
+    phonePlaceholder: 'Business phone number',
+    phoneHelper: 'We will send your verification code to this number.',
+    emailLabel: 'Email',
+    emailPlaceholder: 'Business email',
+    emailHelper: 'Optional.',
+
+    servicesSection: 'Services',
+    categoriesLabel: 'Services you offer',
+
+    submit: 'Continue',
+    submitHint: 'Registers your business and sends a verification code',
+
+  }),
+
+  vendorOtp: Object.freeze({
+    title: 'Verify your business number',
+    /** `{destination}` is replaced with the masked number the backend reports. */
+    sentTo: 'We sent a code to {destination}',
+    codeLabel: 'Verification code',
+    /**
+     * Deliberately does not promise a sign in. Verifying the number activates
+     * the business and issues an auth code; the session comes later, once that
+     * code is confirmed (PROJECT_BIBLE.md section 7A.2).
+     */
+    codeHint: 'Checks the code automatically once you have entered every digit',
+    resend: 'Resend code',
+    /** `{seconds}` is replaced with `common.secondsShort`, which carries the unit. */
+    resendIn: 'Resend code in {seconds}',
+    changeAction: 'Change registration details',
+  }),
+
+  /**
+   * The auth code steps.
+   *
+   * The wording avoids "approved" throughout. Nothing was reviewed and nobody
+   * approved anything — the number was verified and the business activated
+   * automatically (PROJECT_BIBLE.md section 7A.2). It also avoids implying the
+   * vendor is signed in, because they are not until the code is confirmed.
+   */
+  vendorAuthCode: Object.freeze({
+    displayTitle: 'Phone verified',
+    displayBody:
+      'Your business is active. This is your authentication code — you will need it every time you sign in.',
+    displayWarning: 'Save it somewhere safe. It is shown here once, and it does not expire.',
+    codeLabel: 'Your authentication code',
+    copy: 'Copy code',
+    copied: 'Copied',
+    copyHint: 'Copies your authentication code to the clipboard',
+    copyFailed: 'We could not copy the code. Please write it down instead.',
+    continueAction: 'I have saved it',
+    continueHint: 'Continues to confirm the code you just saved',
+
+    confirmTitle: 'Confirm your code',
+    /** `{length}` is `AppConfig.vendorAuthCode.length`. */
+    confirmBody: 'Enter the {length}-digit authentication code you just saved.',
+    confirmLabel: 'Authentication code',
+    confirmPlaceholder: 'Enter your code',
+    confirmAction: 'Continue',
+    confirmHint: 'Confirms your code and signs you in',
+    regenerate: 'Regenerate code',
+    regenerateHint: 'Replaces your code with a new one. The current code stops working.',
+    back: 'Show my code again',
+  }),
+});
+
+/**
+ * Fills `{name}` placeholders in a copy string.
+ *
+ * A deliberately small helper rather than a formatting library: it exists so
+ * that a sentence stays one translatable unit instead of being concatenated in
+ * a component, which is what makes it translatable later.
+ */
+export function formatCopy(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
+    key in values ? String(values[key]) : match,
+  );
+}

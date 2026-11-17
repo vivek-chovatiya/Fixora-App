@@ -28,11 +28,21 @@ export interface AppNotification {
   deepLink?: string;
 }
 
+/**
+ * Scoped by the session: no call takes an account, and whose notifications
+ * they are is whoever is signed in, of either role. With nobody signed in every
+ * call is `unauthorized`; an id that is not in this account's inbox is
+ * `notFound` — whether or not somebody else has it — so another inbox can be
+ * neither changed nor discovered.
+ */
 export interface NotificationService {
+  /** Newest first. The order is the service's; the app does not re-sort. */
   list(request: PageRequest): Promise<Page<AppNotification>>;
   getUnreadCount(): Promise<number>;
+  /** Marking one that is already read succeeds and changes nothing. */
   markAsRead(id: string): Promise<void>;
   markAllAsRead(): Promise<void>;
+  /** On the contract; nothing in Phase 1 offers it (the inbox only reads and marks). */
   remove(id: string): Promise<void>;
 
   /** Future push surface. Not implemented during the UI-first phase. */
