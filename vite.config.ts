@@ -60,11 +60,20 @@ export default defineConfig({
     alias: [
       { find: /^react-native$/, replacement: shimPath },
       { find: /^react-native-web$/, replacement: shimPath },
+      // The theme's easing curves come from Reanimated on the phone; the web
+      // gets the same curves from react-native-web's Easing.
+      {
+        find: /^react-native-reanimated$/,
+        replacement: path.resolve(__dirname, './src/shared/components/ReanimatedWebShim.ts'),
+      },
       { find: '@react-native/new-app-screen', replacement: path.resolve(__dirname, './src/shared/components/NewAppScreenStub.tsx') },
       { find: 'react-native-vector-icons/MaterialCommunityIcons', replacement: 'react-native-vector-icons/dist/MaterialCommunityIcons' },
       { find: '@', replacement: path.resolve(__dirname, './src') },
     ],
     extensions: ['.web.tsx', '.web.ts', '.web.js', '.tsx', '.ts', '.js'],
+    // One React for the page and for the packages served unbundled (the
+    // excluded react-native-* packages): two copies break every hook.
+    dedupe: ['react', 'react-dom'],
   },
   server: {
     port: 3000,
