@@ -24,9 +24,13 @@ export const NOTIFICATIONS_COPY = Object.freeze({
      * limit, not something to read out.
      */
     unreadSpoken: (count: number) => `Notifications, ${count} unread`,
+    /** When the inbox was too long to count whole: a floor, never a figure that may be wrong. */
+    unreadAtLeastSpoken: (count: number) => `Notifications, at least ${count} unread`,
     hint: 'Opens your notifications',
     /** Drawn instead of a number above nine, so the badge never outgrows the bell. */
     overflow: '9+',
+    /** A floor drawn as one: "3+" is at least three. */
+    atLeast: (count: number) => `${count}+`,
   }),
 
   inbox: Object.freeze({
@@ -56,6 +60,8 @@ export const NOTIFICATIONS_COPY = Object.freeze({
     markAllHint: 'Marks every notification as read',
     /** After the service confirmed it. */
     markedAll: 'All notifications marked as read.',
+    /** When only the newest could be marked; the list is read again to show which. */
+    markedSome: 'Your newest notifications were marked as read. Some older ones may still be unread.',
     /** Said before the failure's own message; nothing was marked. */
     markAllFailed: 'Your notifications were not marked as read.',
     /** Said before the failure's own message; the notification is unread again. */

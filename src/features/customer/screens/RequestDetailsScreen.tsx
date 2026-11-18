@@ -164,7 +164,8 @@ function StatusSummary({
 }) {
   const theme = useTheme();
 
-  const reference = request.id.trim();
+  // The backend's quotable reference, or nothing — never the database id.
+  const reference = request.reference?.trim() ?? '';
 
   return (
     <Card

@@ -625,6 +625,32 @@ describe('RequestConfirmationScreen — sending', () => {
     expect(resetRoutes()).not.toContain('CreateRequest');
   });
 
+  it('records no reference when the backend gave none — never the id in its place — and the id that opens it', async () => {
+    const { press, drafts } = await render();
+
+    await press(COPY.submit);
+
+    expect(drafts.current?.submitted?.reference).toBe('');
+    expect(drafts.current?.submitted?.requestId).toBe('REQ-9001');
+  });
+
+  it('records the backend’s quotable reference, and the id that opens it', async () => {
+    // The real backend: `REQ-…` for people, its database id for calls (Phase 4A).
+    const { press, drafts } = await render({
+      createRequest: async () => ({
+        id: '6afc3ea3c2951ec40c9a177a',
+        reference: 'REQ-0031002405',
+        status: 'PENDING_VENDOR',
+        createdAt: '2026-09-01T09:00:00.000Z',
+      }),
+    });
+
+    await press(COPY.submit);
+
+    expect(drafts.current?.submitted?.reference).toBe('REQ-0031002405');
+    expect(drafts.current?.submitted?.requestId).toBe('6afc3ea3c2951ec40c9a177a');
+  });
+
   it('carries only identifiers to the success screen', async () => {
     const { press, reset } = await render();
 

@@ -734,6 +734,24 @@ describe('Notifications — mark all as read', () => {
     expect(screen.isUnread(ASHA_ACCEPTED)).toBe(false);
   });
 
+  it('claims neither "all" nor "none" when only the newest could be marked, and reads the list again', async () => {
+    const list = jest.spyOn(notifications, 'list');
+    // The mock always finishes; the Api service answers this for a long inbox.
+    jest.spyOn(notifications, 'markAllAsRead').mockResolvedValueOnce({ complete: false } as never);
+    const screen = await render(ASHA);
+    const readsBefore = list.mock.calls.length;
+
+    await screen.press(COPY.markAll);
+    await screen.flush();
+
+    expect(screen.said(COPY.markedSome).length).toBeGreaterThan(0);
+    expect(screen.said(COPY.markedAll)).toHaveLength(0);
+    expect(screen.said(COPY.markAllFailed)).toHaveLength(0);
+    // What is shown is the service's answer, never assumed read.
+    expect(list.mock.calls.length).toBeGreaterThan(readsBefore);
+    expect(screen.isUnread(ASHA_ACCEPTED)).toBe(true);
+  });
+
   it('changes nothing and says so when it fails, and can be pressed again', async () => {
     jest.spyOn(notifications, 'markAllAsRead').mockRejectedValueOnce(offline());
     const screen = await render(ASHA);

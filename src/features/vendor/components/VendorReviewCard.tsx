@@ -64,13 +64,15 @@ function VendorReviewCardComponent({ review, testID }: VendorReviewCardProps) {
             ) : null}
           </View>
 
-          <Text
-            variant="caption"
-            color="textSecondary"
-            numberOfLines={2}
-            testID={testID ? `${testID}-context` : undefined}>
-            {shown.context}
-          </Text>
+          {shown.context ? (
+            <Text
+              variant="caption"
+              color="textSecondary"
+              numberOfLines={2}
+              testID={testID ? `${testID}-context` : undefined}>
+              {shown.context}
+            </Text>
+          ) : null}
 
           {shown.comment ? (
             <Text variant="body" testID={testID ? `${testID}-comment` : undefined}>

@@ -227,14 +227,31 @@ export async function confirmVendorAuthCode(
   return session;
 }
 
+/** The sign out running now, which a second request for one joins. */
+let signOutInFlight: Promise<void> | null = null;
+
 /**
  * Ends the session.
  *
  * A failed server call must not strand the user in a signed-in shell: the local
  * session is cleared regardless. The reverse order would let a network blip
  * silently keep them signed in after they asked to leave.
+ *
+ * Single-flight (Phase 4A): a sign out asked for while one is running joins it.
+ * Several requests can be refused at once when a session dies, each one telling
+ * the unauthorized handler, and the person may tap "Log out" in the same
+ * moment; one session ends once, with one call to the server.
  */
-export async function signOut(dispatch: Dispatch): Promise<void> {
+export function signOut(dispatch: Dispatch): Promise<void> {
+  if (!signOutInFlight) {
+    signOutInFlight = endSession(dispatch).finally(() => {
+      signOutInFlight = null;
+    });
+  }
+  return signOutInFlight;
+}
+
+async function endSession(dispatch: Dispatch): Promise<void> {
   try {
     await getService('auth').signOut();
   } catch (caught) {

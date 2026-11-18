@@ -401,6 +401,20 @@ describe('RequestSubmittedScreen — opening the request', () => {
     expect(openings(replace)).toEqual([['RequestDetails', { requestId: 'REQ-24083' }]]);
   });
 
+  it('opens it by its id when the backend quotes a different reference', async () => {
+    // The real backend: `REQ-…` for people, its database id for calls (Phase 4A).
+    const { press, replace, text } = await render({
+      outcome: { ...SUBMITTED, reference: 'REQ-0031002405', requestId: '6afc3ea3c2951ec40c9a177a' },
+    });
+
+    expect(text()).toContain('REQ-0031002405');
+    expect(text()).not.toContain('6afc3ea3c2951ec40c9a177a');
+
+    await press(COPY.viewRequest);
+
+    expect(openings(replace)).toEqual([['RequestDetails', { requestId: '6afc3ea3c2951ec40c9a177a' }]]);
+  });
+
   it('hands over the reference and nothing else', async () => {
     const { press, replace } = await render({
       outcome: { ...SUBMITTED, vendor: { kind: 'vendor', vendorId: 'ven_zenith' } },

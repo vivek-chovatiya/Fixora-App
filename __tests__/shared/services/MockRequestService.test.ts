@@ -47,6 +47,7 @@ const SUMMARY_FIELDS = [
   'id',
   'preferredVendor',
   'priority',
+  'reference',
   'serviceName',
   'status',
   'vendorName',
@@ -65,6 +66,8 @@ describe('MockRequestService — reading back what was sent', () => {
 
     expect(record).toEqual({
       id: created.id,
+      // The mock's id is its reference.
+      reference: created.id,
       status: created.status,
       createdAt: created.createdAt,
       categoryId: INPUT.categoryId,
@@ -115,6 +118,7 @@ describe('MockRequestService — reading back what was sent', () => {
       'createdAt',
       'id',
       'priority',
+      'reference',
       'serviceName',
       'status',
       'subCategoryId',

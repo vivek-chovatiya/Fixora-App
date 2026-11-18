@@ -60,6 +60,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { PaymentMethodField } from '@/features/vendor/components/PaymentMethodField';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import { useRecordPayment } from '@/features/vendor/hooks/useRecordPayment';
+import { useRequestReference } from '@/features/vendor/hooks/useRequestReference';
 import {
   buildPaymentInput,
   recordPaymentFormValues,
@@ -80,6 +81,8 @@ export function RecordPaymentScreen({ navigation, route }: Props) {
   const { requestId } = route.params;
   const { methods, isLoadingMethods, methodsError, retryMethods, record, isRecording } =
     useRecordPayment(requestId);
+  // The quotable reference once read, or no line (ids travel, display data does not).
+  const reference = useRequestReference(requestId);
 
   const {
     control,
@@ -202,9 +205,11 @@ export function RecordPaymentScreen({ navigation, route }: Props) {
         <Text variant="hero" accessibilityRole="header" testID="record-payment-heading">
           {COPY.title}
         </Text>
-        <Text variant="caption" color="textSecondary" testID="record-payment-reference">
-          {`${VENDOR_COPY.job.referencePrefix} ${requestId}`}
-        </Text>
+        {reference ? (
+          <Text variant="caption" color="textSecondary" testID="record-payment-reference">
+            {`${VENDOR_COPY.job.referencePrefix} ${reference}`}
+          </Text>
+        ) : null}
         <Text variant="subtitle" color="textSecondary" testID="record-payment-subtitle">
           {COPY.subtitle}
         </Text>

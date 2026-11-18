@@ -240,6 +240,38 @@ adb shell am start -n com.fixora/.MainActivity
 If Metro serves 500s, it was started from the wrong directory: stop the Fixora
 Metro on 8085 and restart it from the repo root.
 
+**Connecting to the backend (Phase 4A, 17/11/2026).** The phone app talks to
+the real backend (`D:\kano\Fixora-Backend`, Express + MongoDB, port 5000) for
+the services named in `AppConfig.services.live` — all thirteen backend services
+since 18/11/2026 (section 9, "Phase 4A") — and to mocks for anything not named
+there. `AppConfig.api.baseUrl` is
+`http://localhost:5000/api/v1`; `localhost` on the phone is the phone, so
+forward the port exactly as Metro's is, after every reinstall or emulator boot:
+
+```bash
+adb reverse tcp:5000 tcp:5000                 # the backend, beside tcp:8085 for Metro
+curl -s http://127.0.0.1:5000/api/v1/health   # on this machine: must print "success":true
+```
+
+Plain HTTP is allowed in debug builds only — the React Native Gradle plugin sets
+`usesCleartextTraffic` true for debug and false for release, so nothing in
+`android/` needed changing. A release build cannot reach this backend at all
+(cleartext, and there is no deployed address yet). Flipping a service live or
+back is one edit to `AppConfig.services.live`; the groups that must move
+together are in that file's docblock (`auth` + `category`; `category`,
+`vendor`, `request` + `review`; `vendorRequests` + `vendorDashboard`).
+
+Starting the backend for a device run (MongoDB runs as a Windows service):
+
+```bash
+cd /d/kano/Fixora-Backend && node index.js    # "Server running in development mode on port 5000"
+```
+
+`.env` must say `NODE_ENV=development` for `OTP_STATIC_CODE=123456` to apply —
+anywhere else the backend ignores it and issues random codes (nothing sends
+SMS yet, so sign-in then cannot be completed). Demo sign-ins: customer
+`9876543210` with code `123456`; vendor `9000000001` with auth code `482913`.
+
 **Metro can stop on its own.** It did twice on 21/10/2026 — once after the
 NetInfo install, once while the machine slept — and the app then shows "Unable
 to load script" or a blank reload. Restart it from the repo root (the
@@ -4228,9 +4260,73 @@ less than the 132dp the average and five stars take on one line, so the stars
 wrap under the average there by rule (B measured the same). Record payment's
 method chips wrap; Disable member, Cancel request and the dialogs are full width.
 
+### Phase 4A — the app on the real backend (17–18/11/2026)
+
+Branch `development` in both repos (app: from `feature/FIX-003-merge-app-into-vivek-web`;
+backend: from `master`). The contracts both sides were built to are phone + code
+sign-in (customer one-time code, static `123456` in development; vendor
+register → one-time code → permanent 6-digit auth code → confirm; vendor sign-in
+with a 5-failure lockout) and the request, privacy and safety rules (ownership
+answers 404, atomic accept with `REQUEST_ALREADY_TAKEN` / `REQUEST_NOT_PENDING`,
+per-vendor decline, customer cancel until accepted, area-only view until a
+vendor holds the job, no placeholder addresses, rate limits, token versions,
+no JWT fallback secret). Every backend failure carries a `code` the app maps to
+its own copy (`src/shared/types/error.ts`).
+
+Live (`AppConfig.services.live`): auth, category, vendor, request, review,
+profile, notification, addressBook, vendorRequests, vendorDashboard,
+vendorTeam, vendorProfile, vendorReports. What the backend has no endpoint for
+is refused clearly in the app, never faked: period reports (the dashboard's
+Today's requests is counted from the vendor's own list), recording a payment
+and payment methods, working hours, photo uploads, clearing an email, deleting
+notifications.
+
+**Gates, 18/11/2026:** tsc 0 · eslint 201 problems = the 30 `no-void` baseline
+plus Vivek's web views (6 errors, 165 warnings, untouched) · jest 3868/3869 —
+the one failure is `importBoundaries` on Vivek's `FixoraApiClient.ts` importing
+axios directly (web views, untouched) · release bundle OK (from `D:\`) ·
+assembleDebug exit 0 · backend `npm test` 179/179.
+
+**Device pass, 18/11/2026, 1080×2400 Dark, against the real backend:** customer
+sign-in with `123456` → Home with the backend's six categories → Electrical →
+Switch & Socket Repair → typed address → any professional → Submit
+(`REQ-7852213911`) → detail reads back. Vendor sign-in (Ravi) → dashboard
+"Today's requests 1", Pending 1 → request detail shows no customer name, phone
+or address before accepting ("shared once you accept") → Accept → name, phone,
+full address appear → Start work → Complete (Paid refused: "Recording a payment
+is not available in the app yet"; Not paid yet completes; backend holds
+`amount: 450`) → dashboard 0/0/1. Customer: My Requests → Completed with the
+full timeline → review 5 stars saved → four backend notifications, tap opens the
+request, Mark all as read clears them → a second request cancelled before
+acceptance. Sign-out ends the token on the server (`/auth/logout`). The typed
+address was stored on the request only (`addressId: null`, no address-book
+entry).
+
 ---
 
 ## 10. Open items
+
+**Phase 4A (18/11/2026), for the owner and Vivek:**
+
+- No endpoints yet for period reports, payment records / payment methods,
+  working hours, photo uploads, clearing an email, deleting notifications —
+  the app refuses each clearly.
+- An unpaid job's amount is stored by the backend (`amount`) but the app shows
+  payment details only when the backend says PAID, so the vendor does not see
+  the amount they typed on an unpaid job.
+- The vendor's service area is mapped to the backend's `address` field.
+- Notification text comes from the backend as written there — emoji and
+  "Technician has arrived on site" when the vendor only tapped Start work. It
+  does not match the app's plain copy and claims more than happened.
+- Debug builds: `HttpClient` logs every non-success answer at error level, so an
+  expected answer (`/reviews/detail` 404 "no review yet") raises the red dev
+  toast over the tab bar. Debug-only; release builds show nothing.
+- A customer who signed up with email/password loses that login on first phone
+  sign-in (accepted); the per-phone sign-in lockout can be triggered by anyone
+  who knows the number (noted).
+- Vivek's web views: 32 behaviour changes they will notice are listed in the
+  backend notes; their client still logs in with demo accounts and falls back
+  to fake data.
 
 Carried forward, all raised with the owner and none yet decided:
 

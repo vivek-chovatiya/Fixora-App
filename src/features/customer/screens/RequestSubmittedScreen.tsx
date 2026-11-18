@@ -135,13 +135,16 @@ export function RequestSubmittedScreen({ navigation, route }: Props) {
     from the service, so it shows the request the backend has rather than the
     one this screen remembers.
   */
+  // The id opens it; a record from before `requestId` existed was opened by its reference.
+  const openId = submitted?.requestId ?? submitted?.reference ?? '';
+
   const viewRequest = useCallback(() => {
-    if (!submitted?.reference) {
+    if (!openId) {
       return;
     }
 
-    navigation.replace('RequestDetails', { requestId: submitted.reference });
-  }, [submitted, navigation]);
+    navigation.replace('RequestDetails', { requestId: openId });
+  }, [openId, navigation]);
 
   /*
     Home, and the stack ends here.
@@ -289,7 +292,7 @@ export function RequestSubmittedScreen({ navigation, route }: Props) {
           just sent is the natural next thing; without a reference there is
           nothing to look up, so Home is the only action and takes the lead.
         */}
-        {submitted.reference ? (
+        {openId ? (
           <PrimaryButton
             label={COPY.viewRequest}
             onPress={viewRequest}
@@ -300,7 +303,7 @@ export function RequestSubmittedScreen({ navigation, route }: Props) {
 
         <Button
           label={COPY.home}
-          variant={submitted.reference ? 'secondary' : 'primary'}
+          variant={openId ? 'secondary' : 'primary'}
           onPress={goHome}
           fullWidth
           accessibilityHint={COPY.homeHint}

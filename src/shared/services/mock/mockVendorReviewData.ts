@@ -149,6 +149,8 @@ export function buildMockVendorReviews(
 
     return {
       requestId: seed.requestId,
+      // The mock's request ids are its references (`mockVendorDashboardData`).
+      reference: seed.requestId,
       rating: seed.rating,
       ...(seed.comment === undefined ? {} : { comment: seed.comment }),
       submittedAt: new Date(nowMs - seed.submittedMinutesAgo * MS_PER_MINUTE).toISOString(),

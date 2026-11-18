@@ -366,6 +366,8 @@ function byNewest(a: StoredRequest, b: StoredRequest): number {
 function toSummary({ record }: StoredRequest): CustomerRequest {
   return {
     id: record.id,
+    // The mock's id is its reference; the real backend keeps the two apart.
+    reference: record.reference ?? record.id,
     serviceName: record.serviceName,
     ...(record.vendorName !== undefined ? { vendorName: record.vendorName } : {}),
     status: record.status,
@@ -373,6 +375,15 @@ function toSummary({ record }: StoredRequest): CustomerRequest {
     createdAt: record.createdAt,
     ...(record.preferredVendor ? { preferredVendor: { ...record.preferredVendor } } : {}),
   };
+}
+
+/**
+ * A record as a caller receives it: with its reference, which in this mock is
+ * its id (the real backend keeps the two apart). Added on the way out, never
+ * stored, so a record saved on the device is exactly what was sent.
+ */
+function toOutgoing(record: CustomerRequestDetails): CustomerRequestDetails {
+  return { ...copyDetails(record), reference: record.reference ?? record.id };
 }
 
 /**
@@ -715,7 +726,7 @@ export class MockRequestService implements RequestService {
       // it has no more business in a log line than the address it leads to.
       log.info('Mock request read', { found: stored !== undefined });
 
-      return stored ? copyDetails(stored.record) : null;
+      return stored ? toOutgoing(stored.record) : null;
     });
   }
 
@@ -843,7 +854,7 @@ export class MockRequestService implements RequestService {
         dispatch: input.vendorId === undefined ? 'open' : 'directed',
       });
 
-      return { ...created };
+      return { ...created, reference: created.id };
     });
   }
 
@@ -895,7 +906,7 @@ export class MockRequestService implements RequestService {
       // Nothing changed, so nothing is saved again.
       if (status === CANCELLED_STATUS) {
         log.info('Mock request already cancelled');
-        return { outcome: 'cancelled', request: copyDetails(stored.record) };
+        return { outcome: 'cancelled', request: toOutgoing(stored.record) };
       }
 
       /*
@@ -933,7 +944,7 @@ export class MockRequestService implements RequestService {
       // Never the reference: it leads straight back to an address.
       log.info('Mock request cancelled', { from: status });
 
-      return { outcome: 'cancelled', request: copyDetails(cancelled) };
+      return { outcome: 'cancelled', request: toOutgoing(cancelled) };
     });
   }
 }

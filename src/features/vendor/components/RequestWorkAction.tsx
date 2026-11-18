@@ -31,7 +31,7 @@ import type {
 const COPY = VENDOR_COPY.work;
 
 export interface RequestWorkActionProps {
-  job: Pick<VendorJobSummary, 'id' | 'serviceName'>;
+  job: Pick<VendorJobSummary, 'id' | 'reference' | 'serviceName'>;
   step: VendorWorkStep;
   /** The action being sent for this job, if one is: the button shows progress for its own step. */
   answering: VendorRequestAction | null;
@@ -45,7 +45,8 @@ export interface RequestWorkActionProps {
 }
 
 function RequestWorkActionComponent({ job, step, answering, disabled, onStep }: RequestWorkActionProps) {
-  const reference = `${VENDOR_COPY.job.referencePrefix} ${job.id}`;
+  // Said only when the backend gave one — never the database id in its place.
+  const reference = job.reference ? `${VENDOR_COPY.job.referencePrefix} ${job.reference}` : undefined;
   const press = useCallback(() => onStep(job.id, step), [job.id, onStep, step]);
 
   return step === 'start' ? (

@@ -30,7 +30,8 @@ const COPY = VENDOR_COPY.dashboard;
 interface TileProps {
   label: string;
   spokenLabel: string;
-  count: number;
+  /** The count as drawn — "4", or "400+" when it is only a lower bound. */
+  count: string;
   icon: IconName;
   /**
    * The glyph disc's tint. The glyph takes that tint's own ink from
@@ -66,7 +67,7 @@ function StatTile({ label, spokenLabel, count, icon, tint, testID }: TileProps) 
 
         <View>
           <Text variant="h1" numberOfLines={1} testID={testID ? `${testID}-count` : undefined}>
-            {String(count)}
+            {count}
           </Text>
           <Text variant="caption" color="textSecondary" numberOfLines={1}>
             {label}
@@ -85,28 +86,33 @@ export interface DashboardOverviewProps {
 function DashboardOverviewComponent({ counts, testID }: DashboardOverviewProps) {
   const theme = useTheme();
 
+  // Past the read ceiling every count is "at least": drawn and said so, never as exact.
+  const atLeast = counts.isLowerBound === true;
+  const drawn = (count: number) => (atLeast ? COPY.countAtLeast(count) : String(count));
+  const said = (spoken: string) => (atLeast ? COPY.atLeastSpoken(spoken) : spoken);
+
   return (
     <View style={[styles.row, { gap: theme.spacing.sm }]} testID={testID}>
       <StatTile
         label={COPY.pendingLabel}
-        spokenLabel={COPY.pendingSpoken(counts.pending)}
-        count={counts.pending}
+        spokenLabel={said(COPY.pendingSpoken(counts.pending))}
+        count={drawn(counts.pending)}
         icon="pending"
         tint="warningSubtle"
         testID="dashboard-stat-pending"
       />
       <StatTile
         label={COPY.activeLabel}
-        spokenLabel={COPY.activeSpoken(counts.active)}
-        count={counts.active}
+        spokenLabel={said(COPY.activeSpoken(counts.active))}
+        count={drawn(counts.active)}
         icon="requests"
         tint="infoSubtle"
         testID="dashboard-stat-active"
       />
       <StatTile
         label={COPY.completedLabel}
-        spokenLabel={COPY.completedSpoken(counts.completed)}
-        count={counts.completed}
+        spokenLabel={said(COPY.completedSpoken(counts.completed))}
+        count={drawn(counts.completed)}
         icon="success"
         tint="successSubtle"
         testID="dashboard-stat-completed"

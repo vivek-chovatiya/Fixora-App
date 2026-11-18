@@ -61,7 +61,8 @@ function RecentRequestCardComponent({ request, onPress, testID }: RecentRequestC
   const priority = presentPriority(request.priority);
   const raised = formatRequestDate(request.createdAt);
   const vendor = request.vendorName ?? COPY.vendorPending;
-  const reference = `${COPY.referencePrefix} ${request.id}`;
+  // Only the backend's quotable reference — never the database id, which is for calls.
+  const reference = request.reference?.trim() ? `${COPY.referencePrefix} ${request.reference}` : '';
 
   const spokenLabel = useMemo(
     () =>
@@ -149,9 +150,11 @@ function RecentRequestCardComponent({ request, onPress, testID }: RecentRequestC
         </View>
 
         <View style={[styles.footer, { gap: theme.spacing.sm }]}>
-          <Text variant="caption" color="textTertiary">
-            {reference}
-          </Text>
+          {reference ? (
+            <Text variant="caption" color="textTertiary">
+              {reference}
+            </Text>
+          ) : null}
           {/* Affordance only; the card is the target. */}
           <Icon name="forward" size="sm" color="textTertiary" />
         </View>

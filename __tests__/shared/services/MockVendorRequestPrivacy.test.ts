@@ -100,6 +100,8 @@ describe('Before the vendor holds the work', () => {
         'locality',
         'preferredDate',
         'priority',
+        // The reference people quote: the job's, never the customer's (code review, 17/11/2026).
+        'reference',
         'serviceName',
         'status',
       ].sort(),

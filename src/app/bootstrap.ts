@@ -44,6 +44,11 @@ export function bootstrapApp(): void {
   // A 401 means the session is dead server-side. Clearing it locally flips the
   // root navigator back to the auth flow — there is no imperative navigation
   // here, and no screen has to handle expiry itself.
+  //
+  // ⚠️ HttpClient only calls this for a 401 on a request that carried the token
+  // signed in now, so a late answer for an account that has already left cannot
+  // sign out the next one; and `signOut` is single-flight, so a burst of 401s
+  // from one dying session ends it once.
   setUnauthorizedHandler(() => {
     if (store.getState().auth.status !== 'authenticated') {
       return;

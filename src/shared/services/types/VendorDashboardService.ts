@@ -51,8 +51,21 @@ export type VendorJobDispatch = 'directed' | 'broadcast';
  * in public and its records are logged and cached more freely.
  */
 export interface VendorJobSummary {
-  /** Backend reference, the one the customer quotes too. */
+  /**
+   * Backend identifier: what every call and every route carries. Never shown —
+   * the real backend's is a database id, which nobody can quote.
+   */
   id: string;
+  /**
+   * The reference people quote — the same one the customer sees.
+   *
+   * The real backend's `requestNumber` (`REQ-…`; Phase 4A, 17/11/2026); the
+   * mock's ids are already references, so it sets this to the id. ⚠️ Absent
+   * when the backend sends none, and then no reference is shown at all —
+   * never the id in its place (code review, 17/11/2026). Shown, never sent
+   * back: routes and calls use `id`.
+   */
+  reference?: string;
   /** Rendered, never matched against a known list (section 11). */
   serviceName: string;
   /**
@@ -97,6 +110,13 @@ export interface VendorDashboardCounts {
   /** Taken, and not finished. */
   active: number;
   completed: number;
+  /**
+   * True when the backend held more work than the app reads in one go
+   * (`AppConfig.api.fullListMaxPages` pages): each count is then "at least" that
+   * many, and a screen shows it capped ("999+"), never as exact. Absent when the
+   * counts are whole (code review, 17/11/2026).
+   */
+  isLowerBound?: boolean;
 }
 
 export interface VendorDashboard {

@@ -68,8 +68,20 @@ export type RequestStatus = KnownRequestStatus | (string & Record<never, never>)
  * them, and branches on nothing except the presence of `vendorName`.
  */
 export interface CustomerRequest {
-  /** Backend identifier, shown as the reference a customer can quote. */
+  /**
+   * Backend identifier: what every call and every route carries. Never shown —
+   * the real backend's is a database id, not a number anybody quotes.
+   */
   id: string;
+
+  /**
+   * The reference a customer quotes (PROJECT_BIBLE.md section 19): the real
+   * backend's `requestNumber` (`REQ-…`, Phase 4A, 17/11/2026); the mock's own
+   * reference. Shown, copied and quoted — never sent back: routes and calls use
+   * `id`. ⚠️ Absent means no reference is shown at all; a screen never falls
+   * back to `id`.
+   */
+  reference?: string;
 
   /** The service asked for. Rendered, never matched against a known list. */
   serviceName: string;
@@ -315,8 +327,13 @@ export interface CreateRequestInput {
  * know at the moment of creation.
  */
 export interface CreatedRequest {
-  /** The reference a customer can quote (PROJECT_BIBLE.md section 19). */
+  /** The request's identifier, which request details is opened with. Never shown. */
   id: string;
+  /**
+   * The reference a customer quotes (PROJECT_BIBLE.md section 19) — see
+   * `CustomerRequest.reference`. Absent means none is shown.
+   */
+  reference?: string;
   /**
    * The state the backend put it in. Read, never assumed: section 21 lists
    * `CREATED` first, but which state a new request lands in is the backend's
@@ -366,8 +383,12 @@ export interface RequestedVendor {
 export interface CustomerRequestDetails extends CustomerRequest {
   /** The category the service was chosen from. Never shown. */
   categoryId: string;
-  /** The service itself. Never shown. */
-  subCategoryId: string;
+  /**
+   * The service itself. Never shown. Absent when the backend's record names no
+   * service inside the category — its `subCategoryId` is optional — and such a
+   * request must still open (code review, 17/11/2026).
+   */
+  subCategoryId?: string;
 
   /** The category, named by the backend. */
   categoryName: string;

@@ -20,17 +20,60 @@ const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 const environment: AppEnvironment = isDev ? 'development' : 'production';
 
 /**
- * UI-first phase: every service resolves to its Mock implementation.
- * Flipping this to `false` once ApiService implementations exist is the
- * single switch that moves the app onto real HTTP.
+ * The backend services that talk to the real API (Phase 4A, 17/11/2026). Every
+ * backend service not named here runs on its mock, so the phone app keeps
+ * working while services are connected one at a time.
  *
- * ⚠️ Kept `true` on purpose when the web views were merged in (17/11/2026).
- * No service has an Api implementation yet, so `false` registers nothing and
- * every phone screen fails on its first read. The web views (`App.web.tsx`)
- * do not read this switch: they call `FixoraApiClient` directly, against
- * `api.baseUrl` below.
+ * This replaced the single all-or-nothing `useMockServices` switch. Flipping a
+ * service is adding or removing its key here and nothing else: `ServiceRegistry`
+ * registers the Api implementation for a named key and the mock for the rest,
+ * and refuses at startup a key that has no Api implementation yet — failing
+ * loudly beats a build that believes it is live quietly running a mock. A typo
+ * is a type error there, not a silent mock.
+ *
+ * ⚠️ `auth` and `category` move together. Vendor registration sends the ids of
+ * the categories it listed, and the real backend accepts only ids it issued; a
+ * live `auth` beside a mock `category` would register every vendor with ids the
+ * server rejects.
+ *
+ * ⚠️ `category`, `vendor`, `request` and `review` move together too. The
+ * request mock names a request from the mock catalogue and the vendor mock is
+ * keyed by mock service ids, so both refuse the backend's ids; the review mock
+ * reviews the request mock's table, so it would review requests the backend
+ * never had.
+ *
+ * `addressBook` saves to the backend since `state` became optional there; an
+ * address with no town or PIN code is still refused, never filled in
+ * (`ApiAddressBookService`).
+ *
+ * ⚠️ `vendorRequests` and `vendorDashboard` move together: both read the
+ * vendor's `/requests/list` through `vendorWork.ts`, and their mocks share one
+ * book of answers — one of each would count work the other does not show.
+ * `vendorProfile` and `vendorTeam` stand alone. `vendorReports` goes with
+ * the backend too, but there is no report on it: its period reports refuse
+ * and the Reports screen says reports are not available yet, while the
+ * dashboard's Today's requests is counted from the vendor's own request list
+ * (`ApiVendorReportService`, code review 17/11/2026). Off, it is the mock's
+ * fixture figures — which a real vendor must never see beside live work.
+ *
+ * ⚠️ The web views (`App.web.tsx`) do not read this: they call `FixoraApiClient`
+ * directly, against `api.baseUrl` below.
  */
-const useMockServices = true;
+const liveServices = Object.freeze([
+  'auth',
+  'category',
+  'vendor',
+  'request',
+  'review',
+  'profile',
+  'notification',
+  'addressBook',
+  'vendorRequests',
+  'vendorDashboard',
+  'vendorTeam',
+  'vendorProfile',
+  'vendorReports',
+] as const);
 
 export const AppConfig = Object.freeze({
   environment,
@@ -45,16 +88,40 @@ export const AppConfig = Object.freeze({
   }),
 
   api: Object.freeze({
-    /** Backend API endpoint */
+    /**
+     * Backend API endpoint.
+     *
+     * `localhost` on the phone is the phone, so a device or emulator reaches the
+     * development backend on this machine through `adb reverse tcp:5000
+     * tcp:5000` (WORKING_NOTES section 5) — the same way it reaches Metro.
+     * Plain HTTP is allowed in debug builds only: the React Native Gradle plugin
+     * sets `usesCleartextTraffic` true for debug and false for release.
+     *
+     * ⚠️ There is no deployed backend yet, so a release build points here too
+     * and cannot reach it (release builds refuse cleartext as well). The production
+     * address belongs here, per environment, the day one exists.
+     */
     baseUrl: 'http://localhost:5000/api/v1',
     /** Milliseconds before an in-flight request is aborted. */
     timeoutMs: 30000,
     /** Retry attempts for idempotent requests that fail on transport errors. */
     maxRetries: 2,
+    /**
+     * Page size for reading a whole short list in one go — the service
+     * catalogue. The backend's own ceiling for one page (`getPagination` caps
+     * `limit` at 100), so a catalogue normally arrives in a single request.
+     */
+    fullListPageSize: 100,
+    /**
+     * Most pages one such read will follow before it stops and shows what it
+     * has. A guard against a server that always says there is more, not an
+     * expected limit: ten pages is a thousand categories.
+     */
+    fullListMaxPages: 10,
   }),
 
-  features: Object.freeze({
-    useMockServices,
+  services: Object.freeze({
+    live: liveServices,
   }),
 
   storage: Object.freeze({

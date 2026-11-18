@@ -32,6 +32,7 @@ import {
   type VendorReport,
   type VendorReportPeriod,
   type VendorReportService,
+  type VendorTodayRequests,
 } from '@/shared/services/types/VendorReportService';
 import { AppError } from '@/shared/types/error';
 
@@ -75,6 +76,12 @@ export class MockVendorReportService implements VendorReportService {
       log.info('Mock report read', { period });
       return report;
     }, this.latency);
+  }
+
+  /** The `today` report's own total, so the dashboard and the Reports screen agree. */
+  async getTodayRequests(): Promise<VendorTodayRequests> {
+    const report = await this.getReport('today');
+    return { totalRequests: report.totalRequests };
   }
 
   /** What an authenticated vendor endpoint does to anybody else. */

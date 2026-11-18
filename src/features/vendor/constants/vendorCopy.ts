@@ -138,6 +138,12 @@ export const VENDOR_COPY = Object.freeze({
       count === 1 ? '1 job under way' : `${count} jobs under way`,
     completedSpoken: (count: number) =>
       count === 1 ? '1 job completed' : `${count} jobs completed`,
+    /**
+     * A count the app could not read to the end (`VendorDashboardCounts.isLowerBound`,
+     * code review 17/11/2026): "400+" drawn, "at least 400 …" said — never an exact-looking number.
+     */
+    countAtLeast: (count: number) => `${count}+`,
+    atLeastSpoken: (spoken: string) => `at least ${spoken}`,
 
     loading: 'Loading your dashboard',
     failedTitle: 'We could not load your dashboard',
@@ -285,8 +291,11 @@ export const VENDOR_COPY = Object.freeze({
      * request it takes. Always starts with the word on the button, so voice
      * control still finds it.
      */
-    acceptSpoken: (service: string, reference: string) => `Accept ${service}, ${reference}`,
-    rejectSpoken: (service: string, reference: string) => `Reject ${service}, ${reference}`,
+    /** The reference is left out when the backend gave none — never the database id in its place. */
+    acceptSpoken: (service: string, reference?: string) =>
+      reference ? `Accept ${service}, ${reference}` : `Accept ${service}`,
+    rejectSpoken: (service: string, reference?: string) =>
+      reference ? `Reject ${service}, ${reference}` : `Reject ${service}`,
     acceptHint: 'Takes this job',
     rejectHint: 'Asks before declining this request',
 
@@ -332,9 +341,11 @@ export const VENDOR_COPY = Object.freeze({
      * Spoken, naming the job. Each starts with the words on the button, so voice
      * control still finds it by what it can see.
      */
-    startSpoken: (service: string, reference: string) => `Start work on ${service}, ${reference}`,
-    completeSpoken: (service: string, reference: string) =>
-      `Mark completed: ${service}, ${reference}`,
+    /** As `answer.acceptSpoken`: no reference, none said. */
+    startSpoken: (service: string, reference?: string) =>
+      reference ? `Start work on ${service}, ${reference}` : `Start work on ${service}`,
+    completeSpoken: (service: string, reference?: string) =>
+      reference ? `Mark completed: ${service}, ${reference}` : `Mark completed: ${service}`,
     startHint: 'Marks this job as in progress',
     /** It opens the completion form now; nothing is completed by this press. */
     completeHint: 'Opens the form to record the final amount and payment',
@@ -679,6 +690,12 @@ export const VENDOR_COPY = Object.freeze({
 
     loading: 'Loading your report',
     failedTitle: 'We could not load your report',
+    /**
+     * Reports with no report behind them (code review, 17/11/2026): said calmly,
+     * as an answer rather than a fault, with no figures and nothing to retry.
+     */
+    unavailableTitle: 'Reports aren’t available yet',
+    unavailableMessage: 'Your request list and rating are up to date on the dashboard.',
 
     /** A pull that failed over figures that are still on screen (as on the request list). */
     staleTitle: 'Could not refresh',

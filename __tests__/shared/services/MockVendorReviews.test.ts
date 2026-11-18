@@ -219,6 +219,7 @@ describe('MockReviewService — a vendor with reviews', () => {
     expect(Object.keys(starsOnly ?? {}).sort()).toEqual([
       'customerName',
       'rating',
+      'reference',
       'requestId',
       'serviceName',
       'submittedAt',
@@ -278,7 +279,7 @@ describe('MockReviewService — one review', () => {
       await service({ reviewScenarios: { [MEENA.id]: 'single' } }).getVendorReviews()
     ).reviews;
 
-    expect(Object.keys(review).sort()).toEqual(['comment', 'rating', 'requestId', 'submittedAt']);
+    expect(Object.keys(review).sort()).toEqual(['comment', 'rating', 'reference', 'requestId', 'submittedAt']);
   });
 });
 

@@ -36,7 +36,7 @@ import { useTheme } from '@/shared/theme';
 const COPY = VENDOR_COPY.answer;
 
 export interface RequestAnswerActionsProps {
-  job: Pick<VendorJobSummary, 'id' | 'serviceName'>;
+  job: Pick<VendorJobSummary, 'id' | 'reference' | 'serviceName'>;
   /** The action being sent for this request, if one is: an Accept or Reject in the air shows progress. */
   answering: VendorRequestAction | null;
   /** An answer is in the air — for this request or another — so neither can be pressed. */
@@ -56,7 +56,8 @@ function RequestAnswerActionsComponent({
   testID,
 }: RequestAnswerActionsProps) {
   const theme = useTheme();
-  const reference = `${VENDOR_COPY.job.referencePrefix} ${job.id}`;
+  // Said only when the backend gave one — never the database id in its place.
+  const reference = job.reference ? `${VENDOR_COPY.job.referencePrefix} ${job.reference}` : undefined;
 
   const accept = useCallback(() => onAccept(job.id), [job.id, onAccept]);
   const reject = useCallback(() => onReject(job.id), [job.id, onReject]);

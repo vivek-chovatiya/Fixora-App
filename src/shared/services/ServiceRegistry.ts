@@ -3,17 +3,39 @@
  *
  * The single place that decides which implementation backs each service.
  *
- * Going live is one edit per service in `configureServices` plus flipping
- * `AppConfig.features.useMockServices`. Screens, hooks, components and
- * navigation are unaffected, because they resolve services through this
- * registry and depend only on the interfaces.
+ * Each backend service is switched on its own (Phase 4A, 17/11/2026): the Api
+ * implementation when `AppConfig.services.live` names it, the mock otherwise.
+ * Taking a service live is writing its Api implementation, adding it to
+ * `API_SERVICES` below and naming its key in `AppConfig.services.live`.
+ * Screens, hooks, components and navigation are unaffected, because they
+ * resolve services through this registry and depend only on the interfaces.
  *
  * Add a new service by extending `ServiceMap` and registering it below.
+ *
+ * ⚠️ Some mocks read each other's tables, as a backend joins its own: the
+ * review mock reads the request mock's, the vendor dashboard and request mocks
+ * share one book of answers, and the request mock names a request from the
+ * mock catalogue. When one side of such a pair goes live, the other must be
+ * checked — a mock joining against a table the real backend no longer shares
+ * refuses what the backend would accept.
  */
 
 import { AppConfig } from '@/core/config/AppConfig';
 import { createLogger } from '@/core/logger/Logger';
 import { getSessionStorage } from '@/core/storage/SessionStorage';
+import { ApiAuthService } from '@/shared/services/api/ApiAuthService';
+import { ApiAddressBookService } from '@/shared/services/api/ApiAddressBookService';
+import { ApiCategoryService } from '@/shared/services/api/ApiCategoryService';
+import { ApiNotificationService } from '@/shared/services/api/ApiNotificationService';
+import { ApiProfileService } from '@/shared/services/api/ApiProfileService';
+import { ApiRequestService } from '@/shared/services/api/ApiRequestService';
+import { ApiReviewService } from '@/shared/services/api/ApiReviewService';
+import { ApiVendorService } from '@/shared/services/api/ApiVendorService';
+import { ApiVendorDashboardService } from '@/shared/services/api/ApiVendorDashboardService';
+import { ApiVendorProfileService } from '@/shared/services/api/ApiVendorProfileService';
+import { ApiVendorReportService } from '@/shared/services/api/ApiVendorReportService';
+import { ApiVendorRequestService } from '@/shared/services/api/ApiVendorRequestService';
+import { ApiVendorTeamService } from '@/shared/services/api/ApiVendorTeamService';
 import { DeviceNetworkStatusService } from '@/shared/services/device/DeviceNetworkStatusService';
 import { DevicePermissionService } from '@/shared/services/device/DevicePermissionService';
 import { MockAddressService } from '@/shared/services/mock/MockAddressService';
@@ -150,8 +172,8 @@ export interface ServiceMap {
   /**
    * The device's own position.
    *
-   * ⚠️ Registered in the mock branch below rather than beside `permission`,
-   * unlike the device capability it looks like. Permissions have a real
+   * ⚠️ Registered as a mock below, outside the live switch, rather than beside
+   * `permission` — unlike the device capability it looks like. Permissions have a real
    * implementation because `react-native-permissions` is a dependency; there is
    * no geolocation library in this project, so there is nothing real to register
    * yet. It moves up beside `permission` on the day one is approved.
@@ -163,8 +185,8 @@ export interface ServiceMap {
    * do nothing when it is missing, where `getService` would throw into the
    * sign in that was being counted.
    *
-   * ⚠️ Registered in the mock branch below for the reason `location` is: there
-   * is no analytics provider in this project, so nothing real to register yet.
+   * ⚠️ Registered as a mock below for the reason `location` is: there is no
+   * analytics provider in this project, so nothing real to register yet.
    * It is a provider rather than the backend, so it moves up beside
    * `permission` on the day one is approved — going live with the API does not
    * change where events go.
@@ -178,7 +200,7 @@ export interface ServiceMap {
   crashReporter: CrashReporter;
   /**
    * Device capability rather than a backend one, which is why it is registered
-   * outside the mock/live switch below. A camera permission does not become
+   * outside the live switch below. A camera permission does not become
    * real when the API does.
    */
   permission: PermissionService;
@@ -191,6 +213,45 @@ export interface ServiceMap {
 }
 
 export type ServiceKey = keyof ServiceMap;
+
+/**
+ * The services the backend answers, and so the ones `AppConfig.services.live`
+ * may name. The rest are the device's (`permission`, `networkStatus`) or a
+ * provider's (`location`, `analytics`, `crashReporter`): going live with the
+ * API changes none of their answers.
+ */
+export type BackendServiceKey = Exclude<
+  ServiceKey,
+  'permission' | 'networkStatus' | 'location' | 'analytics' | 'crashReporter'
+>;
+
+/**
+ * Every Api implementation that exists. A live key missing here stops startup
+ * rather than falling back to its mock.
+ */
+const API_SERVICES: { readonly [K in BackendServiceKey]?: () => ServiceMap[K] } = {
+  auth: () => new ApiAuthService(),
+  category: () => new ApiCategoryService(),
+  // The customer's side (17/11/2026). Each asks the session who is signed in,
+  // as the mocks did, to send only that account's own id and to refuse a record
+  // the backend hands back for somebody else.
+  vendor: () => new ApiVendorService(),
+  request: () => new ApiRequestService({ currentCustomerId: signedInCustomerId }),
+  review: () => new ApiReviewService({ currentUser: signedInUser }),
+  profile: () => new ApiProfileService({ currentUser: signedInUser }),
+  notification: () => new ApiNotificationService(),
+  // Saves only what the app holds: no state, and no made-up town or PIN code.
+  addressBook: () => new ApiAddressBookService(),
+  // The vendor's side (17/11/2026). Each asks the session who is signed in and
+  // refuses anybody but a vendor; the request list and the dashboard read the
+  // same `/requests/list` through `vendorWork.ts`, so they move together.
+  vendorRequests: () => new ApiVendorRequestService({ currentUser: signedInUser }),
+  vendorDashboard: () => new ApiVendorDashboardService({ currentUser: signedInUser }),
+  vendorTeam: () => new ApiVendorTeamService({ currentUser: signedInUser }),
+  vendorProfile: () => new ApiVendorProfileService({ currentUser: signedInUser }),
+  // No report endpoint: period reports refuse; today's requests is counted from the list.
+  vendorReports: () => new ApiVendorReportService({ currentUser: signedInUser }),
+};
 
 const registry = new Map<ServiceKey, ServiceMap[ServiceKey]>();
 
@@ -213,110 +274,143 @@ export function getService<K extends ServiceKey>(key: K): ServiceMap[K] {
   return implementation as ServiceMap[K];
 }
 
+export interface ConfigureServicesOptions {
+  /**
+   * The backend services to register live. `AppConfig.services.live` when
+   * absent, which is what the app always uses; a test passes its own.
+   */
+  live?: readonly BackendServiceKey[];
+}
+
 /**
  * Wires every service. Called once from the app root before render.
  */
-export function configureServices(): void {
+export function configureServices(options: ConfigureServicesOptions = {}): void {
   registry.clear();
 
-  // Registered in both branches on purpose. Everything below this line is a
-  // backend service and follows `useMockServices`; permissions are the device's
-  // answer either way, and a mock one would prompt nobody.
+  const live: ReadonlySet<BackendServiceKey> = new Set(options.live ?? AppConfig.services.live);
+
+  /** The Api implementation when the key is live, the mock otherwise. */
+  function registerBackend<K extends BackendServiceKey>(key: K, mock: () => ServiceMap[K]): void {
+    if (!live.has(key)) {
+      registerService(key, mock());
+      return;
+    }
+
+    const api = API_SERVICES[key];
+    if (!api) {
+      // Failing loudly beats a build that believes it is live quietly running a mock.
+      throw new Error(
+        `AppConfig.services.live names "${key}", which has no Api implementation yet.`,
+      );
+    }
+    registerService(key, api());
+  }
+
+  // Outside the switch on purpose. Everything registered through
+  // `registerBackend` is a backend service and follows `AppConfig.services.live`;
+  // permissions are the device's answer either way, and a mock one would prompt
+  // nobody.
   registerService('permission', new DevicePermissionService());
   // Connectivity is the device's answer too: a mock backend still runs on a
   // phone that can lose its signal.
   registerService('networkStatus', new DeviceNetworkStatusService());
 
-  if (AppConfig.features.useMockServices) {
-    registerService('auth', new MockAuthService());
-    registerService('category', new MockCategoryService());
-    // Each account's own inbox, by whoever is signed in — either role has one.
-    registerService(
-      'notification',
-      new MockNotificationService({ latency: AppConfig.mock, currentUser: signedInUser }),
-    );
-    registerService('image', new MockImageService());
-    const requests = new MockRequestService({
-      history: new AsyncStorageMockRequestHistory(),
-      currentCustomerId: signedInCustomerId,
-    });
-    registerService('request', requests);
-    // Reads the same request table, as a backend checks a review against its own.
-    // The vendor's side asks who is signed in and refuses anybody but a vendor.
-    registerService(
-      'review',
+  registerBackend('auth', () => new MockAuthService());
+  registerBackend('category', () => new MockCategoryService());
+  // Each account's own inbox, by whoever is signed in — either role has one.
+  registerBackend(
+    'notification',
+    () => new MockNotificationService({ latency: AppConfig.mock, currentUser: signedInUser }),
+  );
+  registerBackend('image', () => new MockImageService());
+  const requests = new MockRequestService({
+    history: new AsyncStorageMockRequestHistory(),
+    currentCustomerId: signedInCustomerId,
+  });
+  // ⚠️ Names each new request from the mock catalogue (`findMockServiceNames`),
+  // so it refuses the backend's ids: with `category` live, `request` must be
+  // live too (WORKING_NOTES section 5, "Connecting to the backend").
+  registerBackend('request', () => requests);
+  // Reads the same request table, as a backend checks a review against its own.
+  // The vendor's side asks who is signed in and refuses anybody but a vendor.
+  // ⚠️ Goes live with `request`, or it reviews requests the backend never had.
+  registerBackend(
+    'review',
+    () =>
       new MockReviewService({
         requests,
         storage: new AsyncStorageMockReviewStorage(),
         currentCustomerId: signedInCustomerId,
         currentUser: signedInUser,
       }),
-    );
-    registerService('vendor', new MockVendorService());
-    registerService(
-      'vendorProfile',
+  );
+  registerBackend('vendor', () => new MockVendorService());
+  registerBackend(
+    'vendorProfile',
+    () =>
       new MockVendorProfileService({
         latency: AppConfig.mock,
         storage: new AsyncStorageMockVendorProfiles(),
         currentUser: signedInUser,
       }),
-    );
-    // One record of who answered what, so the dashboard counts what the list changed.
-    const vendorAnswers = new MockVendorRequestBook();
-    registerService(
-      'vendorDashboard',
+  );
+  // One record of who answered what, so the dashboard counts what the list changed.
+  const vendorAnswers = new MockVendorRequestBook();
+  registerBackend(
+    'vendorDashboard',
+    () =>
       new MockVendorDashboardService({
         latency: AppConfig.mock,
         currentUser: signedInUser,
         book: vendorAnswers,
       }),
-    );
-    registerService(
-      'vendorRequests',
+  );
+  registerBackend(
+    'vendorRequests',
+    () =>
       new MockVendorRequestService({
         latency: AppConfig.mock,
         currentUser: signedInUser,
         book: vendorAnswers,
       }),
-    );
-    registerService(
-      'vendorTeam',
+  );
+  registerBackend(
+    'vendorTeam',
+    () =>
       new MockVendorTeamService({
         latency: AppConfig.mock,
         storage: new AsyncStorageMockVendorTeam(),
         currentUser: signedInUser,
       }),
-    );
-    // A fixture table per vendor and period: it counts nothing the other mocks hold.
-    registerService(
-      'vendorReports',
+  );
+  // A fixture table per vendor and period: it counts nothing the other mocks hold.
+  registerBackend(
+    'vendorReports',
+    () =>
       new MockVendorReportService({
         latency: AppConfig.mock,
         currentUser: signedInUser,
       }),
-    );
-    registerService('profile', new MockProfileService({ latency: AppConfig.mock }));
-    registerService('address', new MockAddressService());
-    registerService(
-      'addressBook',
+  );
+  registerBackend('profile', () => new MockProfileService({ latency: AppConfig.mock }));
+  registerBackend('address', () => new MockAddressService());
+  registerBackend(
+    'addressBook',
+    () =>
       new MockAddressBookService({
         storage: new AsyncStorageMockSavedAddresses(),
         currentCustomerId: signedInCustomerId,
       }),
-    );
-    registerService('location', new MockLocationService());
-    registerService('analytics', new MockAnalyticsService());
-    registerService('crashReporter', new MockCrashReporter());
-    log.info('Services configured', { mode: 'mock', count: registry.size });
-    return;
-  }
-
-  // ApiService implementations land alongside the backend contracts. Until then
-  // this branch is unreachable, and failing loudly beats silently using mocks
-  // in a build that believes it is talking to a real API.
-  throw new Error(
-    'AppConfig.features.useMockServices is false but no ApiService implementations are registered.',
   );
+
+  // Not backend services, so outside the switch: nothing real exists for any of
+  // them yet, and the API going live changes none of their answers.
+  registerService('location', new MockLocationService());
+  registerService('analytics', new MockAnalyticsService());
+  registerService('crashReporter', new MockCrashReporter());
+
+  log.info('Services configured', { live: [...live], count: registry.size });
 }
 
 /** Test helper. Allows a suite to substitute a stub for any service. */

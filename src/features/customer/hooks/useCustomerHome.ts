@@ -140,6 +140,8 @@ export interface CustomerHome {
   resume: ResumableRequest | null;
   /** The bell's unread count; null while unknown, which draws no badge. */
   unreadNotifications: number | null;
+  /** The count is a floor (the inbox was too long to count whole). */
+  unreadIsLowerBound: boolean;
   /**
    * Pull-to-refresh. Refreshes both sections and the bell's count, because the
    * gesture is the page's.
@@ -253,6 +255,7 @@ export function useCustomerHome(): CustomerHome {
     staleError: categories.staleError ?? recentStale.staleError,
     resume,
     unreadNotifications: unread.count,
+    unreadIsLowerBound: unread.isLowerBound,
     refresh,
     isRefreshing: categories.isRefreshing || requests.isRefreshing,
   };

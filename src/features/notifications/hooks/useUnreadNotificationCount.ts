@@ -40,10 +40,16 @@ import { onNotificationsRead } from '@/features/notifications/state/notification
 import { useNavigationEvent } from '@/shared/hooks/useNavigationEvent';
 import { useServiceQuery } from '@/shared/hooks/useServiceQuery';
 import { getService } from '@/shared/services/ServiceRegistry';
+import type { UnreadLowerBound } from '@/shared/services/types/NotificationService';
 
 export interface UnreadNotifications {
   /** The unread count, or null while it is unknown — before the first answer, or after a failure. */
   count: number | null;
+  /**
+   * The count is a floor: the inbox was too long to count whole
+   * (`UnreadLowerBound`). The bell then says "at least".
+   */
+  isLowerBound: boolean;
   /**
    * Reads it again, for the page's own pull. The badge keeps what it showed
    * until the answer; a failure is no badge, never an error, as on any read.
@@ -53,7 +59,7 @@ export interface UnreadNotifications {
 
 /** The unread count, and the way for the page around the bell to read it again. */
 export function useUnreadNotifications(): UnreadNotifications {
-  const query = useServiceQuery<number>(
+  const query = useServiceQuery<number | UnreadLowerBound>(
     useCallback(() => getService('notification').getUnreadCount(), []),
     [],
   );
@@ -65,6 +71,8 @@ export function useUnreadNotifications(): UnreadNotifications {
   // Whether or not this screen is in front: it is under the inbox that said so.
   useEffect(() => onNotificationsRead(refresh), [refresh]);
 
-  const count = query.error !== null || query.data === undefined ? null : query.data;
-  return { count, refresh };
+  const answer = query.error !== null || query.data === undefined ? null : query.data;
+  const count = answer === null ? null : typeof answer === 'number' ? answer : answer.atLeast;
+  const isLowerBound = answer !== null && typeof answer !== 'number';
+  return { count, isLowerBound, refresh };
 }

@@ -6,7 +6,7 @@
  * device from services that already exist — nothing new is asked of the
  * backend:
  *
- *   Dashboard → useVendorDashboard → useDashboardFigures → VendorReportService.getReport('today')
+ *   Dashboard → useVendorDashboard → useDashboardFigures → VendorReportService.getTodayRequests()
  *                                                        → useVendorRating
  *   Profile   →                      useVendorRating     → ReviewService.getVendorReviews()
  *
@@ -22,8 +22,9 @@
  * waits for anything else.
  *
  * ⚠️ The figures are the services' and are shown as given. Today's requests is
- * the `today` report's `totalRequests` — where "today" begins is the server's
- * (`VendorReportService`). The rating is the reviews' own average and count;
+ * `VendorReportService.getTodayRequests` — the `today` report's total on the
+ * mock, and on the live backend, which has no report, a count of the vendor's
+ * own request list that the service documents exactly (`ApiVendorReportService`). The rating is the reviews' own average and count;
  * nothing here averages the list it comes with. Accepted and In Progress as
  * separate counts are not here: no existing answer carries them, and the
  * dashboard's own counts put both in `active` (see WORKING_NOTES open items).
@@ -43,7 +44,7 @@ import { useSingleFlightQuery } from '@/shared/hooks/useSingleFlightQuery';
 import { useStaleState } from '@/shared/hooks/useStaleState';
 import { getService } from '@/shared/services/ServiceRegistry';
 import type { VendorReviews } from '@/shared/services/types/ReviewService';
-import type { VendorReport } from '@/shared/services/types/VendorReportService';
+import type { VendorTodayRequests } from '@/shared/services/types/VendorReportService';
 import type { AppError } from '@/shared/types/error';
 
 /** One figure's read, as a screen draws it. */
@@ -73,8 +74,12 @@ export interface VendorFigureState<T> {
 }
 
 export interface DashboardFiguresState {
-  /** Today's figures, of which the dashboard draws the requests (section 30). */
-  today: VendorFigureState<VendorReport>;
+  /**
+   * Today's requests (section 30), on their own (`getTodayRequests`): the mock's
+   * `today` report total, or — live — counted from the vendor's own request list,
+   * since the backend has no report (code review, 17/11/2026).
+   */
+  today: VendorFigureState<VendorTodayRequests>;
   /** The vendor's average and count (section 30's Rating; section 41's figures). */
   rating: VendorFigureState<VendorReviews>;
 }
@@ -108,8 +113,8 @@ export function useVendorRating(): VendorFigureState<VendorReviews> {
 
 /** Section 30's two figures for the dashboard, each its own read. */
 export function useDashboardFigures(): DashboardFiguresState {
-  const today = useFigure<VendorReport>(
-    useCallback(() => getService('vendorReports').getReport('today'), []),
+  const today = useFigure<VendorTodayRequests>(
+    useCallback(() => getService('vendorReports').getTodayRequests(), []),
   );
   const rating = useVendorRating();
 

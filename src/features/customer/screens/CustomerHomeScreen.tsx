@@ -84,6 +84,7 @@ export function CustomerHomeScreen({ navigation }: Props) {
     requests,
     resume,
     unreadNotifications,
+    unreadIsLowerBound,
     refresh,
     isRefreshing,
     isStale,
@@ -210,6 +211,7 @@ export function CustomerHomeScreen({ navigation }: Props) {
         trailing={
           <NotificationBell
             unreadCount={unreadNotifications}
+            isLowerBound={unreadIsLowerBound}
             onPress={openNotifications}
             testID="home-notifications"
           />

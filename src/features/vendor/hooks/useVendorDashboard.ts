@@ -65,7 +65,7 @@ import { getService } from '@/shared/services/ServiceRegistry';
 import type { VendorReviews } from '@/shared/services/types/ReviewService';
 import type { VendorDashboard } from '@/shared/services/types/VendorDashboardService';
 import type { VendorProfile } from '@/shared/services/types/VendorProfileService';
-import type { VendorReport } from '@/shared/services/types/VendorReportService';
+import type { VendorTodayRequests } from '@/shared/services/types/VendorReportService';
 import type { AppError } from '@/shared/types/error';
 
 const COPY = VENDOR_COPY.dashboard;
@@ -109,11 +109,13 @@ export interface VendorDashboardState {
   retry: () => void;
 
   /** Section 30's Today's Requests: today's report, read on its own. */
-  today: VendorFigureState<VendorReport>;
+  today: VendorFigureState<VendorTodayRequests>;
   /** Section 30's Rating: the reviews' average and count, read on its own. */
   rating: VendorFigureState<VendorReviews>;
   /** The bell's unread count, or null while it is unknown. A failure is no badge. */
   unreadNotifications: number | null;
+  /** The count is a floor (the inbox was too long to count whole): the bell says "9+" / "at least". */
+  unreadIsLowerBound: boolean;
 
   /** Pull-to-refresh: the page's gesture, so it re-reads everything on it — the badge too. */
   refresh: () => void;
@@ -169,7 +171,11 @@ export function useVendorDashboard(): VendorDashboardState {
   }, [refreshQuery, revision]);
 
   const { today, rating } = useDashboardFigures();
-  const { count: unreadNotifications, refresh: refreshUnread } = useUnreadNotifications();
+  const {
+    count: unreadNotifications,
+    isLowerBound: unreadIsLowerBound,
+    refresh: refreshUnread,
+  } = useUnreadNotifications();
 
   const { retry: retryCategories, error: categoriesError } = categories;
   const { refresh: refreshToday, refreshQuietly: refreshTodayQuietly } = today;
@@ -220,6 +226,7 @@ export function useVendorDashboard(): VendorDashboardState {
     today,
     rating,
     unreadNotifications,
+    unreadIsLowerBound,
     refresh,
     // The pull's spinner stays while any of the page's reads it started is out.
     isRefreshing: query.isRefreshing || today.isRefreshing || rating.isRefreshing,

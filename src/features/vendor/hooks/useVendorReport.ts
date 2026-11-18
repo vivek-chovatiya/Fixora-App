@@ -48,6 +48,9 @@ import type { AppError } from '@/shared/types/error';
 /** The period a report opens on — section 42 lists Today first. */
 export const DEFAULT_REPORT_PERIOD: VendorReportPeriod = 'today';
 
+/** The code a service answers with when it has no reports at all (`ApiVendorReportService`). */
+const REPORTS_NOT_SUPPORTED = 'REPORTS_NOT_SUPPORTED';
+
 /** An answer, labelled with the period the read asked for. */
 interface PeriodAnswer {
   period: VendorReportPeriod;
@@ -66,6 +69,11 @@ export interface VendorReportState {
   isLoading: boolean;
   /** The chosen period's read failed and there is nothing of it to show. */
   error: AppError | null;
+  /**
+   * The service has no reports to give (`REPORTS_NOT_SUPPORTED`): an answer, not
+   * a fault — the screen says so calmly, and `error` is null.
+   */
+  isUnavailable: boolean;
   /** Reads the chosen period again, showing the loading state. For the error's Try again. */
   retry: () => void;
 
@@ -107,12 +115,16 @@ export function useVendorReport(): VendorReportState {
     isRefreshing: query.isRefreshing,
   });
 
+  // No report behind the screen at all: said as an answer, never drawn as a failure.
+  const isUnavailable = stale.error?.code === REPORTS_NOT_SUPPORTED;
+
   return {
     period,
     selectPeriod: setPeriod,
     report,
     isLoading: !caughtUp || query.isLoading,
-    error: stale.error,
+    error: isUnavailable ? null : stale.error,
+    isUnavailable,
     retry: query.retry,
     refresh: query.refresh,
     isRefreshing: query.isRefreshing,

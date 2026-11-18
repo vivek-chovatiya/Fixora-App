@@ -102,7 +102,7 @@ beforeEach(() => {
   resetServices();
   renders = [];
   getReport = jest.fn(async (period: VendorReportPeriod) => reportFor(period, 7));
-  registerService('vendorReports', { getReport } as VendorReportService);
+  registerService('vendorReports', { getReport } as unknown as VendorReportService);
 });
 
 afterEach(async () => {

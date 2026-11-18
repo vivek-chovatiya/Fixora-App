@@ -136,7 +136,7 @@ export function useNotifications(): NotificationsState {
     };
   }, []);
 
-  const { items } = query;
+  const { items, refresh: refreshList } = query;
   const notifications = useMemo(
     () =>
       items.map(notification => {
@@ -203,7 +203,15 @@ export function useNotifications(): NotificationsState {
     }, null);
 
     try {
-      await getService('notification').markAllAsRead();
+      const outcome = await getService('notification').markAllAsRead();
+      if (outcome && outcome.complete === false) {
+        // Only the newest were marked: read the list again to show which, and
+        // claim neither "all" nor "none".
+        notificationsRead();
+        refreshList();
+        showToast({ message: COPY.markedSome, tone: 'info', icon: 'info' });
+        return 'marked';
+      }
       if (mountedRef.current) {
         // By id as well as by age, so a row whose timestamp cannot be read is marked too.
         setConfirmedIds(previous => {
@@ -230,7 +238,7 @@ export function useNotifications(): NotificationsState {
         setIsMarkingAll(false);
       }
     }
-  }, [showToast]);
+  }, [showToast, refreshList]);
 
   /*
     Anything unread on screen, or pages not yet loaded that may hold some —

@@ -50,6 +50,7 @@ Remove-Item Env:\NoDefaultCurrentDirectoryInExePath -ErrorAction SilentlyContinu
 ```bash
 cd /d/kano/Fixora
 adb reverse tcp:8085 tcp:8085
+adb reverse tcp:5000 tcp:5000   # the backend (sign in and categories are live); see WORKING_NOTES section 5
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.fixora/.MainActivity
 ```
@@ -63,5 +64,10 @@ MSYS_NO_PATHCONV=1 adb shell screencap -p /sdcard/fixora.png && MSYS_NO_PATHCONV
 
 Look at the screenshot: a real Fixora screen, not a red error box and not "Unable to load script" (that means
 the app is looking for Metro on the wrong port — check `adb reverse` and that Metro is on 8085).
+
+Sign in and the category lists need the backend: `curl -s http://127.0.0.1:5000/api/v1/health` on this machine
+must print `"success":true`, and `adb reverse --list` must show `tcp:5000`. If sign in or the categories answer
+"No internet connection", one of the two is missing. Never start, stop or edit the backend unless asked — it is
+another person's code (`D:\kano\Fixora-Backend`).
 
 Tell the user which windows are open: "Metro - Fixora" (keep it open), and the emulator screen if interactive.

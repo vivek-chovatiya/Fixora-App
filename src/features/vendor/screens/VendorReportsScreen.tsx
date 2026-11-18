@@ -52,6 +52,7 @@ import { useVendorReport } from '@/features/vendor/hooks/useVendorReport';
 import type { VendorStackParamList } from '@/navigation/types';
 import {
   BackButton,
+  EmptyState,
   ErrorState,
   Screen,
   SelectionChip,
@@ -94,6 +95,7 @@ export function VendorReportsScreen({ navigation }: Props) {
     report,
     isLoading,
     error,
+    isUnavailable,
     retry,
     refresh,
     isRefreshing,
@@ -173,6 +175,17 @@ export function VendorReportsScreen({ navigation }: Props) {
         ) : null}
       </View>
     );
+  } else if (isUnavailable) {
+    // No report behind the screen (code review, 17/11/2026): an answer, said calmly — no figures, no retry.
+    body = (
+      <EmptyState
+        icon="info"
+        title={COPY.unavailableTitle}
+        message={COPY.unavailableMessage}
+        fullScreen={false}
+        testID="vendor-reports-unavailable"
+      />
+    );
   } else if (error) {
     body = (
       <ErrorState
@@ -208,23 +221,26 @@ export function VendorReportsScreen({ navigation }: Props) {
         One of three, said as one of three. Wrapped rather than scrolled
         sideways, so all three are always visible at 360dp. Never disabled:
         choosing again while a read is out is allowed, and the newer choice wins.
+        Not drawn at all when there are no reports to choose between.
       */}
-      <View
-        accessibilityRole="radiogroup"
-        accessibilityLabel={COPY.periodsLabel}
-        style={[styles.periods, { gap: theme.spacing.sm }]}
-        testID="vendor-reports-periods">
-        {VENDOR_REPORT_PERIOD_OPTIONS.map(option => (
-          <SelectionChip
-            key={option.value}
-            label={option.label}
-            selected={period === option.value}
-            onPress={() => selectPeriod(option.value)}
-            accessibilityHint={COPY.periodHint}
-            testID={`vendor-reports-period-${option.value}`}
-          />
-        ))}
-      </View>
+      {isUnavailable ? null : (
+        <View
+          accessibilityRole="radiogroup"
+          accessibilityLabel={COPY.periodsLabel}
+          style={[styles.periods, { gap: theme.spacing.sm }]}
+          testID="vendor-reports-periods">
+          {VENDOR_REPORT_PERIOD_OPTIONS.map(option => (
+            <SelectionChip
+              key={option.value}
+              label={option.label}
+              selected={period === option.value}
+              onPress={() => selectPeriod(option.value)}
+              accessibilityHint={COPY.periodHint}
+              testID={`vendor-reports-period-${option.value}`}
+            />
+          ))}
+        </View>
+      )}
 
       {isStale && shown ? (
         <StaleNotice

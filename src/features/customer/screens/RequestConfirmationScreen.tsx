@@ -251,7 +251,10 @@ export function RequestConfirmationScreen({ navigation, route }: Props) {
         arrive.
       */
       recordSubmission({
-        reference: created.id,
+        // The reference is what the customer quotes — none is shown when the
+        // backend gave none — and the id is what opens it.
+        reference: created.reference ?? '',
+        requestId: created.id,
         categoryId,
         subCategoryId,
         address,

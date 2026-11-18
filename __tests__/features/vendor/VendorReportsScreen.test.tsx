@@ -163,6 +163,7 @@ beforeEach(async () => {
   truth = new MockVendorReportService({ latency: NO_LATENCY, currentUser });
   registerService('vendorReports', {
     getReport: period => (reportsOnScreen() ? reports : truth).getReport(period),
+    getTodayRequests: () => truth.getTodayRequests(),
   });
 
   setSessionStorage({
@@ -685,6 +686,28 @@ describe('Vendor reports — a failed read', () => {
 
     expect(screen.has('vendor-reports-error')).toBe(true);
     expect(screen.has('vendor-reports-figures')).toBe(false);
+  });
+});
+
+describe('Vendor reports — no reports to give (code review, 17/11/2026)', () => {
+  /** What the live service answers: the backend has no report endpoint. */
+  const notAvailable = () =>
+    new AppError({ kind: 'forbidden', code: 'REPORTS_NOT_SUPPORTED', message: 'no report endpoint' });
+
+  it('says calmly that reports are not available yet — no figures, no fault, no retry, no periods', async () => {
+    jest.spyOn(reports, 'getReport').mockRejectedValue(notAvailable());
+    const screen = await render();
+
+    expect(screen.has('vendor-reports-unavailable')).toBe(true);
+    expect(screen.text('vendor-reports-unavailable')).toContain(COPY.unavailableTitle);
+    expect(screen.text('vendor-reports-unavailable')).toContain(COPY.unavailableMessage);
+    expect(screen.has('vendor-reports-error')).toBe(false);
+    expect(screen.has('vendor-reports-figures')).toBe(false);
+    expect(screen.has('vendor-reports-periods')).toBe(false);
+    expect(screen.pressable('Try again')).toHaveLength(0);
+    expect(screen.pullControl()).toBeUndefined();
+    // Still on the screen, with the way back.
+    expect(screen.text('vendor-reports-heading')).toBe(COPY.title);
   });
 });
 

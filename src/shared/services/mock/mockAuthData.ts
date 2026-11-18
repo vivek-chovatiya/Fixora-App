@@ -3,7 +3,7 @@
  *
  * ⚠️ These are fixtures, not credentials. Nothing here is a secret, nothing here
  * grants access to anything real, and none of it may survive into a production
- * build. `AppConfig.features.useMockServices` is the switch that retires it.
+ * build. `auth` in `AppConfig.services.live` is the switch that retires it.
  *
  * Every mock account and the mock code live here rather than in a screen. A
  * screen containing `if (code === '123456')` would have to be edited when the

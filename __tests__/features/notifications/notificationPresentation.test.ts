@@ -59,6 +59,13 @@ describe('presentUnreadBadge', () => {
     expect(presentUnreadBadge(0)).toEqual({ badge: null, spoken: BELL.label });
   });
 
+  it('draws and says a floor as one when the inbox was too long to count whole', () => {
+    expect(presentUnreadBadge(3, true)).toEqual({ badge: '3+', spoken: 'Notifications, at least 3 unread' });
+    expect(presentUnreadBadge(40, true)).toEqual({ badge: '9+', spoken: 'Notifications, at least 40 unread' });
+    // A floor of nothing claims nothing.
+    expect(presentUnreadBadge(0, true)).toEqual({ badge: null, spoken: BELL.label });
+  });
+
   it('draws nothing when the count is unknown — a read that failed is not an error on the bell', () => {
     expect(presentUnreadBadge(null)).toEqual({ badge: null, spoken: 'Notifications' });
     expect(presentUnreadBadge(undefined)).toEqual({ badge: null, spoken: 'Notifications' });

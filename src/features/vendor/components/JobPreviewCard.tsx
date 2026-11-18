@@ -81,7 +81,8 @@ function JobPreviewCardComponent({ job, onPress, actions, testID }: JobPreviewCa
 
   const status = presentJobStatus(job);
   const priority = presentPriority(job.priority);
-  const reference = `${COPY.referencePrefix} ${job.id}`;
+  // The quotable reference, or nothing: the id is a database id nobody can quote.
+  const reference = job.reference ? `${COPY.referencePrefix} ${job.reference}` : undefined;
 
   /*
     Finished work is dated by when it finished, a declined request by when the
@@ -200,9 +201,14 @@ function JobPreviewCardComponent({ job, onPress, actions, testID }: JobPreviewCa
       </View>
 
       <View style={[styles.footer, { gap: theme.spacing.sm }]}>
-        <Text variant="caption" color="textTertiary" numberOfLines={1} style={styles.shrinks}>
-          {reference}
-        </Text>
+        {reference ? (
+          <Text variant="caption" color="textTertiary" numberOfLines={1} style={styles.shrinks}>
+            {reference}
+          </Text>
+        ) : (
+          // Keeps the affordance at the end of the row with no reference beside it.
+          <View style={styles.spacer} />
+        )}
         {/* Affordance only, and only where the card really is the target. */}
         {onPress ? <Icon name="forward" size="sm" color="textTertiary" /> : null}
       </View>
@@ -293,6 +299,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  spacer: {
+    flexGrow: 1,
   },
 });
 

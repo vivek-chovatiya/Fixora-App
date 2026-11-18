@@ -530,11 +530,14 @@ function RequestBody({ request, action, onRecordPayment }: RequestBodyProps) {
         <Text variant="overline" color="textTertiary" accessibilityRole="header">
           {COPY.requestSection}
         </Text>
-        <ProfileDetailRow
-          label={COPY.referenceLabel}
-          value={request.id}
-          testID="vendor-request-reference"
-        />
+        {/* The quotable reference, or no row: the id is a database id nobody can quote. */}
+        {request.reference ? (
+          <ProfileDetailRow
+            label={COPY.referenceLabel}
+            value={request.reference}
+            testID="vendor-request-reference"
+          />
+        ) : null}
         {request.categoryName ? (
           <ProfileDetailRow label={COPY.categoryLabel} value={request.categoryName} />
         ) : null}

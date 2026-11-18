@@ -214,6 +214,8 @@ function stamp(seed: JobSeed, nowMs: number): VendorJobSummary {
 
   return {
     ...job,
+    // This "backend" quotes its requests by their ids, so each id is its reference too.
+    reference: job.id,
     createdAt: new Date(nowMs - raisedMinutesAgo * MS_PER_MINUTE).toISOString(),
     ...(completedMinutesAgo === undefined
       ? {}

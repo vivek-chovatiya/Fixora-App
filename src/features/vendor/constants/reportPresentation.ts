@@ -31,7 +31,11 @@
 import { presentRatingSummary } from '@/features/vendor/constants/reviewPresentation';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import { REVIEW_RATING_MAX } from '@/shared/services/types/ReviewService';
-import type { VendorReport, VendorReportPeriod } from '@/shared/services/types/VendorReportService';
+import type {
+  VendorReport,
+  VendorReportPeriod,
+  VendorTodayRequests,
+} from '@/shared/services/types/VendorReportService';
 
 const COPY = VENDOR_COPY.reports;
 const DASHBOARD = VENDOR_COPY.dashboard;
@@ -121,16 +125,22 @@ export interface TodayRequestsPresentation {
 }
 
 /**
- * The dashboard's Today's Requests: the `today` report's total, as given. The
- * caller asks for `today`; nothing here checks the period or works the figure
- * out from anything else.
+ * The dashboard's Today's Requests: the service's figure, as given — "N+" and
+ * "at least N" when it is only a lower bound (`VendorTodayRequests.isLowerBound`).
+ * Nothing here works the figure out from anything else.
  */
-export function presentTodayRequests(report: Pick<VendorReport, 'totalRequests'>): TodayRequestsPresentation {
+export function presentTodayRequests(
+  report: Pick<VendorTodayRequests, 'totalRequests' | 'isLowerBound'>,
+): TodayRequestsPresentation {
   const value = countText(report.totalRequests);
+  // A count of a list the app could not read to the end: "400+", "at least 400" — like the overview's.
+  const atLeast = value !== null && report.isLowerBound === true;
 
   return {
-    value: value ?? COPY.unavailable,
-    spoken: DASHBOARD.todaySpoken(value ?? COPY.unavailableSpoken),
+    value: value === null ? COPY.unavailable : atLeast ? DASHBOARD.countAtLeast(report.totalRequests) : value,
+    spoken: DASHBOARD.todaySpoken(
+      value === null ? COPY.unavailableSpoken : atLeast ? DASHBOARD.atLeastSpoken(value) : value,
+    ),
   };
 }
 

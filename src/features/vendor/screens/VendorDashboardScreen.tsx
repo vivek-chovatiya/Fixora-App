@@ -95,6 +95,7 @@ export function VendorDashboardScreen({ navigation }: Props) {
     today,
     rating,
     unreadNotifications,
+    unreadIsLowerBound,
     refresh,
     isRefreshing,
     isStale,
@@ -177,6 +178,7 @@ export function VendorDashboardScreen({ navigation }: Props) {
         {/* Beside the greeting, never inside it: the greeting speaks as one heading. */}
         <NotificationBell
           unreadCount={unreadNotifications}
+          isLowerBound={unreadIsLowerBound}
           onPress={openNotifications}
           testID="dashboard-notifications"
         />

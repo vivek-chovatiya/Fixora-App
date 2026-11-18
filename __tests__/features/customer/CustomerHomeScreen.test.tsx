@@ -82,6 +82,7 @@ const CATEGORIES: ServiceCategory[] = [
 const REQUESTS: CustomerRequest[] = [
   {
     id: 'REQ-1',
+    reference: 'REQ-1',
     serviceName: 'Roof Repair',
     vendorName: 'Skyline Roofing',
     status: 'IN_PROGRESS',
@@ -90,6 +91,7 @@ const REQUESTS: CustomerRequest[] = [
   },
   {
     id: 'REQ-2',
+    reference: 'REQ-2',
     serviceName: 'Glazing',
     status: 'PENDING_VENDOR',
     priority: 'LOW',

@@ -54,7 +54,7 @@ import type { MockDashboardScenario } from '@/shared/services/mock/mockVendorDas
 import { NO_LATENCY } from '@/shared/services/mock/mockUtils';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { CategoryService } from '@/shared/services/types/CategoryService';
-import type { NotificationService } from '@/shared/services/types/NotificationService';
+import type { NotificationService, UnreadLowerBound } from '@/shared/services/types/NotificationService';
 import type { RequestService } from '@/shared/services/types/RequestService';
 import type { VendorReviews } from '@/shared/services/types/ReviewService';
 import type { VendorDashboard } from '@/shared/services/types/VendorDashboardService';
@@ -106,7 +106,7 @@ let reports: MockVendorReportService;
 /** And its Rating from here. */
 let reviews: MockReviewService;
 /** The bell's count: a number the suite can count reads of. */
-let unreadCount: jest.Mock<Promise<number>, []>;
+let unreadCount: jest.Mock<Promise<number | UnreadLowerBound>, []>;
 
 /** Unmounted after every test: a tree left loading keeps its placeholders animating. */
 const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
@@ -157,7 +157,7 @@ beforeEach(async () => {
     currentUser: async () => current,
   });
   registerService('review', reviews);
-  unreadCount = jest.fn(async () => 3);
+  unreadCount = jest.fn(async (): Promise<number | UnreadLowerBound> => 3);
   registerService('notification', { getUnreadCount: unreadCount } as unknown as NotificationService);
 
   setSessionStorage({
@@ -925,6 +925,14 @@ describe('Vendor dashboard — pull to refresh (Phase 3E-15)', () => {
     await screen.pull();
 
     expect(screen.labelled(BELL.unreadSpoken(5)).length).toBeGreaterThan(0);
+  });
+
+  it('says "at least" on the bell when the inbox was too long to count whole', async () => {
+    unreadCount.mockResolvedValue({ atLeast: 4 });
+    const screen = await render();
+
+    expect(screen.labelled(BELL.unreadAtLeastSpoken(4)).length).toBeGreaterThan(0);
+    expect(screen.labelled(BELL.unreadSpoken(4))).toHaveLength(0);
   });
 
   it('keeps a figure whose pull failed and says, once, that the page may be out of date', async () => {

@@ -62,6 +62,7 @@ const REVIEW = CUSTOMER_COPY.review;
 
 const DETAILS: CustomerRequestDetails = {
   id: 'REQ-7001',
+  reference: 'REQ-7001',
   categoryId: 'cat_roofing',
   subCategoryId: 'sub_gutter',
   categoryName: 'Roof Repair',
@@ -488,8 +489,21 @@ describe('RequestDetailsScreen — status and reference', () => {
     expect(text()).toContain(REFERENCE.copied);
   });
 
-  it('draws no reference block when the record has none', async () => {
-    const { byTestID, text } = await render({ getRequest: async () => ({ ...DETAILS, id: '' }) });
+  it('shows and copies the backend’s quotable reference, never its database id', async () => {
+    const { labelOf, press, text } = await render({
+      getRequest: async () => ({ ...DETAILS, id: '6afc3ea3c2951ec40c9a177a', reference: 'REQ-0031002405' }),
+    });
+
+    expect(labelOf('request-details-reference')).toBe(`${REFERENCE.referenceLabel}: REQ-0031002405`);
+    expect(text()).not.toContain('6afc3ea3c2951ec40c9a177a');
+
+    await press(REFERENCE.copy);
+
+    expect(copiedValue).toBe('REQ-0031002405');
+  });
+
+  it('draws no reference block when the record has none — never the id in its place', async () => {
+    const { byTestID, text } = await render({ getRequest: async () => ({ ...DETAILS, reference: undefined }) });
 
     expect(byTestID('request-details-reference')).toHaveLength(0);
     expect(text()).not.toContain(REFERENCE.referenceLabel);
@@ -974,9 +988,10 @@ describe('RequestDetailsScreen — customer actions', () => {
 
   it('offers Back alone when the record carries no reference to copy', async () => {
     const { buttons } = await render({
-      getRequest: async () => ({ ...DETAILS, status: 'ACCEPTED', id: '' }),
+      getRequest: async () => ({ ...DETAILS, status: 'ACCEPTED', reference: undefined }),
     });
 
+    // The id is never offered for copying in the reference's place.
     expect(buttons()).toEqual([COPY.back]);
   });
 

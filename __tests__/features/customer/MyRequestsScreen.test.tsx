@@ -54,6 +54,7 @@ const PAGE_SIZE = AppConfig.pagination.defaultPageSize;
 /** One more than a page, so there is always a second one to ask for. */
 const REQUESTS: CustomerRequest[] = Array.from({ length: PAGE_SIZE + 5 }, (_, index) => ({
   id: `REQ-${String(index + 1).padStart(3, '0')}`,
+  reference: `REQ-${String(index + 1).padStart(3, '0')}`,
   serviceName: `Gutter Cleaning ${index + 1}`,
   status: 'IN_PROGRESS',
   priority: 'MEDIUM',
@@ -746,6 +747,20 @@ describe('MyRequestsScreen — opening a request', () => {
     expect(card.props.accessibilityHint).toBe(CUSTOMER_COPY.request.openHint);
     expect(card.props.accessibilityLabel).toContain(REQUESTS[0].serviceName);
     expect(card.props.accessibilityLabel).toContain(`Ref ${REQUESTS[0].id}`);
+  });
+
+  it('names a card by the backend’s quotable reference and opens it by its id', async () => {
+    // The real backend: `REQ-…` for people, its database id for calls (Phase 4A).
+    const live: CustomerRequest = { ...REQUESTS[0], id: '6afc3ea3c2951ec40c9a177a', reference: 'REQ-0031002405' };
+    const { hosts, open, navigate } = await render(pageOf([live]));
+
+    const [card] = hosts(`my-request-${live.id}`);
+    expect(card.props.accessibilityLabel).toContain('Ref REQ-0031002405');
+    expect(card.props.accessibilityLabel).not.toContain(live.id);
+
+    await open(live.id);
+
+    expect(navigate).toHaveBeenCalledWith('RequestDetails', { requestId: live.id });
   });
 
   it('offers nothing on a card but opening it', async () => {

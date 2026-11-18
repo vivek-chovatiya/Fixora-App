@@ -34,17 +34,31 @@ export interface UnreadBadgePresentation {
   spoken: string;
 }
 
-export function presentUnreadBadge(count: number | null | undefined): UnreadBadgePresentation {
+/**
+ * The badge for a count. `isLowerBound` when the inbox was too long to count
+ * whole: then the count is a floor, drawn "3+" and said "at least 3" — never a
+ * figure that may be wrong. A floor of nothing claims nothing, so no badge.
+ */
+export function presentUnreadBadge(
+  count: number | null | undefined,
+  isLowerBound = false,
+): UnreadBadgePresentation {
   const unread = typeof count === 'number' && Number.isFinite(count) ? Math.floor(count) : 0;
 
   if (unread < 1) {
     return { badge: null, spoken: BELL.label };
   }
 
-  return {
-    badge: unread > UNREAD_BADGE_LIMIT ? BELL.overflow : String(unread),
-    spoken: BELL.unreadSpoken(unread),
-  };
+  if (unread > UNREAD_BADGE_LIMIT) {
+    return {
+      badge: BELL.overflow,
+      spoken: isLowerBound ? BELL.unreadAtLeastSpoken(unread) : BELL.unreadSpoken(unread),
+    };
+  }
+
+  return isLowerBound
+    ? { badge: BELL.atLeast(unread), spoken: BELL.unreadAtLeastSpoken(unread) }
+    : { badge: String(unread), spoken: BELL.unreadSpoken(unread) };
 }
 
 export interface NotificationPresentation {

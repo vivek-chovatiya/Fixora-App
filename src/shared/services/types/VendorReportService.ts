@@ -33,7 +33,16 @@
  * customer's. A period with no work is zeros and no rating — an ordinary
  * answer, not an error.
  *
- * A frontend contract: no backend report endpoint exists yet.
+ * A frontend contract: no backend report endpoint exists yet. With the backend
+ * live, `getReport` refuses (`REPORTS_NOT_SUPPORTED`) rather than show figures
+ * nobody counted, and the Reports screen says so calmly (code review,
+ * 17/11/2026).
+ *
+ * ⚠️ `getTodayRequests` is the dashboard's one figure (section 30's Today's
+ * Requests), on its own so it can be answered where `getReport` cannot: the
+ * live service counts it from the vendor's own request list and says exactly
+ * what it counts (`ApiVendorReportService`). The mock answers it from the same
+ * table as its `today` report, so the two cannot disagree there.
  */
 
 /** Section 42's time filters: Today, This Week, This Month. */
@@ -74,6 +83,18 @@ export interface VendorReport {
   ratingCount: number;
 }
 
+/** Section 30's Today's Requests, as the dashboard draws it. */
+export interface VendorTodayRequests {
+  /** Requests that reached this vendor today — see the implementation for exactly which. */
+  totalRequests: number;
+  /**
+   * True when it was counted from a list longer than the app reads in one go
+   * (`AppConfig.api.fullListMaxPages` pages): the figure is then "at least" that
+   * many, drawn "N+" like the dashboard's other counts. Absent when whole.
+   */
+  isLowerBound?: boolean;
+}
+
 export interface VendorReportService {
   /**
    * The signed-in vendor's figures for one period.
@@ -82,4 +103,11 @@ export interface VendorReportService {
    * `validation` for anything that is not one of the three periods.
    */
   getReport(period: VendorReportPeriod): Promise<VendorReport>;
+
+  /**
+   * How many requests reached the signed-in vendor today — the dashboard's
+   * figure. Rejects with `unauthorized` without a vendor session. Zero is an
+   * ordinary answer.
+   */
+  getTodayRequests(): Promise<VendorTodayRequests>;
 }

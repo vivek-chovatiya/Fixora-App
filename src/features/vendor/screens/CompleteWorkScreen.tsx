@@ -67,6 +67,7 @@ import {
 } from '@/features/vendor/constants/paymentPresentation';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import { useCompleteWork } from '@/features/vendor/hooks/useCompleteWork';
+import { useRequestReference } from '@/features/vendor/hooks/useRequestReference';
 import {
   buildCompletionInput,
   completeWorkFormValues,
@@ -103,6 +104,8 @@ export function CompleteWorkScreen({ navigation, route }: Props) {
   const { requestId } = route.params;
   const { methods, isLoadingMethods, methodsError, retryMethods, complete, isCompleting } =
     useCompleteWork(requestId);
+  // The quotable reference once read, or no line (ids travel, display data does not).
+  const reference = useRequestReference(requestId);
 
   const {
     control,
@@ -246,9 +249,11 @@ export function CompleteWorkScreen({ navigation, route }: Props) {
         <Text variant="hero" accessibilityRole="header" testID="complete-work-heading">
           {COPY.title}
         </Text>
-        <Text variant="caption" color="textSecondary" testID="complete-work-reference">
-          {`${VENDOR_COPY.job.referencePrefix} ${requestId}`}
-        </Text>
+        {reference ? (
+          <Text variant="caption" color="textSecondary" testID="complete-work-reference">
+            {`${VENDOR_COPY.job.referencePrefix} ${reference}`}
+          </Text>
+        ) : null}
         <Text variant="subtitle" color="textSecondary">
           {COPY.subtitle}
         </Text>

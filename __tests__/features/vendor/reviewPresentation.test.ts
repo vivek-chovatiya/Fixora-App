@@ -47,6 +47,8 @@ function without(field: 'comment' | 'customerName' | 'serviceName'): VendorRevie
 
 const REVIEW: VendorReview = {
   requestId: 'REQ-30912',
+  // The reference a card names; without it the card names none (code review, 17/11/2026).
+  reference: 'REQ-30912',
   rating: 5,
   comment: 'Arrived on time.',
   submittedAt: '2026-10-07T12:00:00.000Z',

@@ -142,13 +142,13 @@ describe('NotificationBell', () => {
 let readAgain: (() => void) | null = null;
 
 function CountedBell() {
-  const { count, refresh } = useUnreadNotifications();
+  const { count, isLowerBound, refresh } = useUnreadNotifications();
   readAgain = refresh;
-  return <NotificationBell unreadCount={count} onPress={jest.fn()} testID="bell" />;
+  return <NotificationBell unreadCount={count} isLowerBound={isLowerBound} onPress={jest.fn()} testID="bell" />;
 }
 
 describe('useUnreadNotifications', () => {
-  function register(getUnreadCount: () => Promise<number>) {
+  function register(getUnreadCount: () => Promise<number | { atLeast: number }>) {
     const stub = jest.fn(getUnreadCount);
     registerService('notification', {
       getUnreadCount: stub,
@@ -172,6 +172,14 @@ describe('useUnreadNotifications', () => {
 
     expect(count).toHaveBeenCalledTimes(1);
     expect(view.badge()).toBe('4');
+  });
+
+  it('draws and says a floor when the inbox was too long to count whole', async () => {
+    register(async () => ({ atLeast: 3 }));
+    const view = await mount(<CountedBell />);
+
+    expect(view.badge()).toBe('3+');
+    expect(view.button().props.accessibilityLabel).toBe('Notifications, at least 3 unread');
   });
 
   it('is no badge when the read fails, and does not throw', async () => {

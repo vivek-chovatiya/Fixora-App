@@ -72,6 +72,14 @@ export interface RequestReview {
  * reference (`requestId`) is the association; these are never matched on.
  */
 export interface VendorReview extends RequestReview {
+  /**
+   * The reference people quote for the job (`REQ-…`) — the same one the
+   * vendor saw on it (`VendorJobSummary.reference`; request contract,
+   * 17/11/2026). The mock sets its request id, which is its reference. Absent
+   * when the backend sends none, and then the card names no reference — never
+   * `requestId`. Shown, never matched or sent back.
+   */
+  reference?: string;
   /** The service the job was for, as the backend names it. */
   serviceName?: string;
   /**

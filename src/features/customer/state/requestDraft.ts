@@ -131,6 +131,13 @@ export interface SubmittedRequest {
    * has never heard of it.
    */
   reference: string;
+  /**
+   * The identifier request details is opened with (`CreatedRequest.id`). The
+   * reference above is only for quoting — empty when the backend gave none — so
+   * the two are never taken for each other. Absent only on a record written
+   * before this field existed, which was opened by its reference.
+   */
+  requestId?: string;
   categoryId: string;
   subCategoryId: string;
   /** Where it is going. Shown so the customer can see it went to the right place. */

@@ -39,14 +39,21 @@ const COPY = NOTIFICATIONS_COPY.bell;
 export interface NotificationBellProps {
   /** Unread notifications, or null when unknown. Null and zero draw no badge. */
   unreadCount: number | null;
+  /** The count is a floor — the inbox was too long to count whole ("3+", "at least 3"). */
+  isLowerBound?: boolean;
   /** Usually opens the inbox. The bell never navigates itself. */
   onPress: () => void;
   testID?: string;
 }
 
-function NotificationBellComponent({ unreadCount, onPress, testID }: NotificationBellProps) {
+function NotificationBellComponent({
+  unreadCount,
+  isLowerBound = false,
+  onPress,
+  testID,
+}: NotificationBellProps) {
   const theme = useTheme();
-  const { badge, spoken } = presentUnreadBadge(unreadCount);
+  const { badge, spoken } = presentUnreadBadge(unreadCount, isLowerBound);
 
   return (
     <Pressable

@@ -203,8 +203,11 @@ export interface VendorReviewPresentation {
   customerName?: string;
   /** When it was written — "1 day ago", or a date once that stops helping. Empty if unreadable. */
   date: string;
-  /** Which job: "Geyser wiring · Ref REQ-30912", or the reference alone. */
-  context: string;
+  /**
+   * Which job: "Geyser wiring · Ref REQ-30912", or either part alone. Absent
+   * when the backend named neither — never the request's database id.
+   */
+  context?: string;
   /** The customer's words exactly as sent, when there are any. */
   comment?: string;
   /** The whole card as one sentence. */
@@ -223,15 +226,18 @@ export function presentVendorReview(review: VendorReview, now: Date = new Date()
   // Never trimmed for display: the comment is drawn as the customer wrote it.
   const comment = filled(review.comment);
 
-  const reference = `${JOB.referencePrefix} ${review.requestId}`;
-  const context = serviceName ? `${serviceName}${COPY.contextSeparator}${reference}` : reference;
+  // The quotable reference, or none: `requestId` is a database id nobody can quote.
+  const quoted = filled(review.reference)?.trim();
+  const reference = quoted ? `${JOB.referencePrefix} ${quoted}` : undefined;
+  const parts = [serviceName, reference].filter((part): part is string => part !== undefined);
+  const context = parts.length > 0 ? parts.join(COPY.contextSeparator) : undefined;
   const date = formatRequestDate(review.submittedAt, now);
 
   const spoken = [
     customerName ? COPY.fromSpoken(customerName) : COPY.anonymousSpoken,
     describeRating(review.rating),
     date,
-    serviceName ? `${serviceName}, ${reference}` : reference,
+    parts.length > 0 ? parts.join(', ') : undefined,
     comment ? `${COPY.commentSpoken}: ${comment}` : undefined,
   ]
     .filter((part): part is string => part !== undefined && part.length > 0)
@@ -245,7 +251,7 @@ export function presentVendorReview(review: VendorReview, now: Date = new Date()
   return {
     ...(customerName ? { customerName } : {}),
     date,
-    context,
+    ...(context ? { context } : {}),
     ...(comment ? { comment } : {}),
     spoken,
   };
