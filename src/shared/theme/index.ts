@@ -44,6 +44,7 @@ export {
   typographyVariants,
   fontSize,
   fontWeight,
+  fontFor,
   lineHeight,
   type TypographyVariant,
 } from './typography';

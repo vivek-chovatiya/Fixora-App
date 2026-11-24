@@ -68,7 +68,14 @@ export const icons = Object.freeze({
   star: 'star',
   starOutline: 'star-outline',
   priority: 'flag-outline',
+  price: 'tag-outline',
   document: 'file-document-outline',
+  business: 'store-outline',
+  phone: 'phone-outline',
+  email: 'email-outline',
+  hidden: 'eye-off-outline',
+  visible: 'eye-outline',
+  about: 'text-box-outline',
 
   /** Rendered when a backend-supplied icon is missing or unknown. */
   fallback: 'toolbox-outline',

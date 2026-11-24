@@ -55,7 +55,8 @@ export function useServiceMutation<TArgs extends unknown[], TResult>(
       return result;
     } catch (caught) {
       const appError = AppError.from(caught);
-      log.error('mutation failed', { kind: appError.kind, message: appError.message });
+      // Expected business outcomes (validation, conflicts) are warnings; only real faults are errors.
+      (appError.kind === 'server' || appError.kind === 'unknown' ? log.error : log.warn)('mutation failed', { kind: appError.kind, message: appError.message });
       if (mountedRef.current) {
         setError(appError);
       }

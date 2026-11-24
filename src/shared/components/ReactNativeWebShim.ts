@@ -15,6 +15,11 @@ export const DeviceEventEmitter =
     removeAllListeners: () => {},
   };
 export const ViewPropTypes = RNWebAny.ViewPropTypes || { style: () => {} };
+/** Native-only modules (e.g. the image picker's TurboModule) resolve to null on web. */
+export const TurboModuleRegistry = RNWebAny.TurboModuleRegistry || {
+  get: () => null,
+  getEnforcing: () => null,
+};
 
 const Shim = {
   ...RNWebAny,
@@ -22,6 +27,7 @@ const Shim = {
   TouchableNativeFeedback,
   DeviceEventEmitter,
   ViewPropTypes,
+  TurboModuleRegistry,
 };
 
 export default Shim;

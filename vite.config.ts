@@ -32,6 +32,7 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: [
+      'warn-once',
       'react-native-web',
       'inline-style-prefixer',
       '@react-native/normalize-colors',
@@ -53,14 +54,12 @@ export default defineConfig({
       'react-native-safe-area-context',
       'react-native-screens',
       'react-native-worklets',
-      '@react-native/new-app-screen',
     ],
   },
   resolve: {
     alias: [
       { find: /^react-native$/, replacement: shimPath },
       { find: /^react-native-web$/, replacement: shimPath },
-      { find: '@react-native/new-app-screen', replacement: path.resolve(__dirname, './src/shared/components/NewAppScreenStub.tsx') },
       { find: 'react-native-vector-icons/MaterialCommunityIcons', replacement: 'react-native-vector-icons/dist/MaterialCommunityIcons' },
       { find: '@', replacement: path.resolve(__dirname, './src') },
     ],

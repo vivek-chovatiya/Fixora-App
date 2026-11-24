@@ -1,97 +1,57 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Fixora — Mobile App (React Native)
 
-# Getting Started
+Customer and vendor app for the Fixora multi-service marketplace (Phase 1).
+Product scope: [`PROJECT_BIBLE.md`](PROJECT_BIBLE.md). Engineering rules: [`CLAUDE.md`](CLAUDE.md).
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Run it
 
-## Step 1: Start Metro
-
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
-
-To start the Metro dev server, run the following command from the root of your React Native project:
+1. Start the backend (see `../Backend/README.md`): MongoDB running, then `npm run seed` and `npm run dev` in `Backend/`.
+2. In this folder:
 
 ```sh
-# Using npm
-npm start
-
-# OR using Yarn
-yarn start
+npm install
+npm start            # Metro
+npm run android      # Android emulator / device
+npm run web          # browser build on http://localhost:3000 (react-native-web)
 ```
 
-## Step 2: Build and run your app
+The API host is set in [`src/core/config/AppConfig.ts`](src/core/config/AppConfig.ts):
+`10.0.2.2:5000` on the Android emulator, `localhost:5000` on iOS simulator and web.
+For a **physical phone**, change `DEV_API_HOST` to your computer's LAN IP.
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+After adding native dependencies (AsyncStorage, image picker, vector-icon fonts),
+rebuild the native app once with `npm run android`.
 
-### Android
+Demo logins are listed in `../Backend/README.md` (password `Password123!`).
+The login screen has a "Platform admin? Log in here" link for `admin@fixora.com`.
 
-```sh
-# Using npm
-npm run android
+## Structure
 
-# OR using Yarn
-yarn android
+```text
+src/
+  app/            AppRoot + role-based navigation (Auth / Customer / Vendor / Admin)
+  core/           config, HTTP client, logger, session storage
+  features/
+    auth/         AuthProvider (single owner of token/user/role) + login/signup/reset
+    customer/     home, categories, request creation, vendor selection, tracking, review, profile, addresses
+    vendor/       approval gate, dashboard, requests, request detail, complete work, team, profile, reviews, reports
+    admin/        vendor approvals, categories
+    requests/     shared request presentation (status tones, cards, timeline, vendor panel)
+    catalog/      generic category tiles (no service-specific screens)
+    account/      notifications, change password, header bell
+  shared/
+    components/   design-system components (buttons, fields, cards, states, dialogs, toasts, uploader…)
+    hooks/        useServiceQuery, usePaginatedQuery, useServiceMutation, useImageUploads, useAppMeta…
+    services/api/ the only layer that calls the backend
+    theme/        tokens — no hardcoded colours/spacing in screens
 ```
 
-### iOS
+Data flow: **Screen → hook → `shared/services/api` → `core/http/HttpClient` → backend.**
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+## Rules the app follows (from the bible)
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+- Categories, sub-categories, priorities and payment methods come from the backend.
+- Vendor recommendations are rendered exactly in backend order; "Any available vendor" is a first-class choice, and an empty or failed vendor list never blocks submission.
+- Status changes are never optimistic. Valid actions come from the backend's `allowedActions`.
+- Losing an open-dispatch race shows "This request has already been assigned to another vendor." and refreshes the list. It is not shown as an error.
+- Payment is recorded, not processed (no gateway in Phase 1).

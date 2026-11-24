@@ -90,7 +90,8 @@ export function useServiceQuery<T>(
         return;
       }
       const appError = AppError.from(caught);
-      log.error('query failed', { kind: appError.kind, message: appError.message });
+      // Expected business outcomes (validation, conflicts) are warnings; only real faults are errors.
+      (appError.kind === 'server' || appError.kind === 'unknown' ? log.error : log.warn)('query failed', { kind: appError.kind, message: appError.message });
       setError(appError);
     } finally {
       if (mountedRef.current && requestIdRef.current === requestId) {

@@ -102,7 +102,7 @@ export function usePaginatedQuery<T>(
           return;
         }
         const appError = AppError.from(caught);
-        log.error('page load failed', { page: targetPage, kind: appError.kind });
+        (appError.kind === 'server' || appError.kind === 'unknown' ? log.error : log.warn)('page load failed', { page: targetPage, kind: appError.kind });
         setError(appError);
       } finally {
         inFlightRef.current = false;

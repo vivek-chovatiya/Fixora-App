@@ -8,9 +8,6 @@
  * that auth headers, timeouts, logging and error normalisation are applied in
  * exactly one place.
  *
- * The client exists from day one even though the UI-first phase runs entirely on
- * mock services — building ApiService abstractions around its real shape now
- * avoids a migration later.
  */
 
 import axios, {
@@ -71,10 +68,35 @@ function createInstance(): AxiosInstance {
   return instance;
 }
 
+interface ApiErrorBody {
+  message?: string;
+  code?: string;
+  errors?: Array<{ field?: string; message?: string }> | Record<string, string> | null;
+}
+
+function toFieldErrors(errors: ApiErrorBody['errors']): Record<string, string> | undefined {
+  if (!errors) {
+    return undefined;
+  }
+  if (Array.isArray(errors)) {
+    const result: Record<string, string> = {};
+    errors.forEach(entry => {
+      if (entry?.field && entry.message && !result[entry.field]) {
+        result[entry.field] = entry.message;
+      }
+    });
+    return Object.keys(result).length ? result : undefined;
+  }
+  return errors;
+}
+
+/** Client errors carry curated, user-safe copy from our own API; 5xx never does. */
+const SERVER_COPY_STATUSES = new Set([400, 401, 403, 404, 409, 422, 429]);
+
 /**
- * Converts an axios failure into the application's single error type. Response
- * bodies are only trusted for field-level validation detail; the user-facing
- * message always comes from AppError so the backend cannot inject copy.
+ * Converts an axios failure into the application's single error type. Raw axios
+ * and server internals never reach the UI: 5xx and transport failures always use
+ * AppError's own copy, while 4xx use the API's curated business message.
  */
 function normalizeAxiosError(error: AxiosError): AppError {
   if (axios.isCancel(error)) {
@@ -90,21 +112,25 @@ function normalizeAxiosError(error: AxiosError): AppError {
   }
 
   const { status, data } = error.response;
-  const body = (data ?? {}) as { message?: string; errors?: Record<string, string> };
+  const body = (data ?? {}) as ApiErrorBody;
+  const isSessionCall = String(error.config?.url ?? '').startsWith('/auth/login');
 
   const appError = new AppError({
     kind: AppError.kindFromStatus(status),
     message: body.message ?? error.message,
+    userMessage:
+      SERVER_COPY_STATUSES.has(status) && typeof body.message === 'string' ? body.message : undefined,
     statusCode: status,
-    fieldErrors: body.errors,
+    fieldErrors: toFieldErrors(body.errors),
+    code: body.code,
     cause: error,
   });
 
-  if (appError.kind === 'unauthorized') {
+  if (appError.kind === 'unauthorized' && !isSessionCall) {
     onUnauthorized();
   }
 
-  log.error('response failed', { status, url: error.config?.url, kind: appError.kind });
+  log.warn('response failed', { status, url: error.config?.url, code: body.code });
   return appError;
 }
 
@@ -130,6 +156,16 @@ export const Http = {
   },
   async delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
     const response = await httpClient.delete<T>(url, config);
+    return response.data;
+  },
+  /** multipart/form-data upload. The boundary header is set by the platform. */
+  async upload<T>(url: string, form: FormData, config?: AxiosRequestConfig): Promise<T> {
+    const response = await httpClient.post<T>(url, form, {
+      ...config,
+      headers: { 'Content-Type': 'multipart/form-data' },
+      transformRequest: payload => payload,
+      timeout: AppConfig.api.timeoutMs * 2,
+    });
     return response.data;
   },
 };

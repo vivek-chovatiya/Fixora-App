@@ -117,3 +117,6 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+// Bundles MaterialCommunityIcons (and the other vector-icon fonts) into the APK.
+apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
