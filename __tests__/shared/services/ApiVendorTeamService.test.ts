@@ -9,8 +9,8 @@
  * - the phone optional (the request contract's §7): a member added without
  *   one sends none, and an edit without one sends `phone: null`, which clears
  *   it (absent would leave it unchanged);
- * - a new photo refused before anything is sent (there is no upload endpoint,
- *   and the app's image URLs are still placeholders);
+ * - a new photo sent as the URL `ImageService` uploaded it to, and every photo
+ *   read back through `toImageUrl` (Phase 4B, 24/11/2026);
  * - `_id`, `vendorId` and timestamps never leaving the service.
  *
  * The backend is a fake axios adapter on the real HttpClient: no network.
@@ -18,6 +18,7 @@
 
 import { AxiosError, type AxiosAdapter, type AxiosResponse } from 'axios';
 
+import { AppConfig } from '@/core/config/AppConfig';
 import { httpClient } from '@/core/http/HttpClient';
 import type { AuthUser } from '@/features/auth/types';
 import { ApiVendorTeamService } from '@/shared/services/api/ApiVendorTeamService';
@@ -67,6 +68,9 @@ const VENDOR_ID = '6afc3ce87d5e8db042251443';
 const ANITA = '6afc3d0a7d5e8db042251501';
 const SURESH = '6afc3d0a7d5e8db042251502';
 const PHOTO = 'https://cdn.example.com/team/anita.jpg';
+/** A photo the backend stored, and the address this phone loads it from. */
+const STORED_PATH = '/uploads/team/aa11bb22cc33dd44ee55ff6677889900.jpg';
+const STORED_URL = `${AppConfig.api.baseUrl.replace(/\/api\/v1\/?$/, '')}${STORED_PATH}`;
 
 /** A member as `teamMapper` answers. */
 function memberRow(id: string, extra: Record<string, unknown> = {}) {
@@ -155,6 +159,21 @@ describe('listMembers', () => {
     expect(JSON.stringify(team)).not.toMatch(/_id|vendorId|createdAt|updatedAt|designation|profileImage/);
   });
 
+  it('reads a stored photo path as an address this phone can load, and anything else as none', async () => {
+    backend({
+      'GET /team': () =>
+        ok([
+          memberRow(ANITA, { profileImage: STORED_PATH }),
+          memberRow(SURESH, { profileImage: 'anita.jpg', createdAt: '2026-11-12T09:00:00.000Z' }),
+        ]),
+    });
+
+    const [anita, suresh] = await service.listMembers();
+
+    expect(anita.photoUrl).toBe(STORED_URL);
+    expect(suresh).not.toHaveProperty('photoUrl');
+  });
+
   it('passes a status the app does not know through as the backend sent it', async () => {
     backend({ 'GET /team': () => ok([memberRow(ANITA, { status: 'ON_LEAVE' })]) });
 
@@ -204,15 +223,26 @@ describe('addMember', () => {
     expect(sent[0].body).toEqual({ name: 'Anita Rao', designation: 'Senior electrician' });
   });
 
-  it('refuses a new photo — there is nowhere to upload it — before sending anything', async () => {
-    backend({});
+  it('adds a member with the photo it uploaded, sent as it is held', async () => {
+    backend({ 'POST /team': () => ok(memberRow(ANITA, { profileImage: STORED_PATH })), 'GET /team': () => ok(TEAM()) });
 
-    const error = await rejectionOf(service.addMember(input({ photoUrl: PHOTO })));
+    await service.addMember(input({ photoUrl: STORED_URL }));
 
-    expect(error.kind).toBe('forbidden');
-    expect(error.code).toBe('PHOTO_UPLOAD_NOT_SUPPORTED');
-    expect(error.isRetryable).toBe(false);
-    expect(sent).toEqual([]);
+    // The backend takes the full URL back as its own path (contract §2).
+    expect(sent[0].body).toEqual({
+      name: 'Anita Rao',
+      phone: '9000011111',
+      designation: 'Senior electrician',
+      profileImage: STORED_URL,
+    });
+  });
+
+  it('sends no photo key for a member added without one — never an empty one', async () => {
+    backend({ 'POST /team': () => ok(memberRow(ANITA)), 'GET /team': () => ok(TEAM()) });
+
+    await service.addMember(input({ photoUrl: '  ' }));
+
+    expect(sent[0].body).not.toHaveProperty('profileImage');
   });
 
   it('rejects a backend validation failure as validation', async () => {
@@ -238,28 +268,34 @@ describe('updateMember', () => {
     expect(sent[1]).toEqual({ method: 'GET', url: '/team', body: undefined });
   });
 
-  it('keeps the photo the member already has, after reading what is stored', async () => {
-    backend({
-      'POST /team/detail': () => ok(memberRow(ANITA, { profileImage: PHOTO })),
-      'POST /team/update': () => ok(memberRow(ANITA)),
-      'GET /team': () => ok(TEAM()),
-    });
+  it('sends the photo the member already has back unchanged, without reading it first', async () => {
+    backend({ 'POST /team/update': () => ok(memberRow(ANITA, { profileImage: PHOTO })), 'GET /team': () => ok(TEAM()) });
 
     await service.updateMember(ANITA, input({ photoUrl: PHOTO }));
 
-    expect(sent[0]).toEqual({ method: 'POST', url: '/team/detail', body: { id: ANITA } });
-    expect(sent[1].body).toMatchObject({ id: ANITA, profileImage: PHOTO });
+    expect(sent.map(call => call.url)).toEqual(['/team/update', '/team']);
+    expect(sent[0].body).toMatchObject({ id: ANITA, profileImage: PHOTO });
   });
 
-  it('refuses a photo the member does not have yet, and updates nothing', async () => {
-    backend({ 'POST /team/detail': () => ok(memberRow(ANITA)) });
+  it('sends a new photo it uploaded, as it is held', async () => {
+    backend({
+      'POST /team/update': () => ok(memberRow(ANITA, { profileImage: STORED_PATH })),
+      'GET /team': () => ok(TEAM()),
+    });
 
-    const error = await rejectionOf(
-      service.updateMember(ANITA, input({ photoUrl: 'https://picsum.photos/seed/new/800/600' })),
-    );
+    await service.updateMember(ANITA, input({ photoUrl: STORED_URL }));
 
-    expect(error.code).toBe('PHOTO_UPLOAD_NOT_SUPPORTED');
-    expect(sent.map(call => call.url)).toEqual(['/team/detail']);
+    expect(sent[0].body).toMatchObject({ id: ANITA, profileImage: STORED_URL });
+  });
+
+  it('reads a refused photo back as the validation failure it is', async () => {
+    backend({
+      'POST /team/update': () => fail(400, 'Validation Failed', 'VALIDATION_FAILED'),
+    });
+
+    const error = await rejectionOf(service.updateMember(ANITA, input({ photoUrl: 'https://picsum.photos/seed/x/8/6' })));
+
+    expect(error.kind).toBe('validation');
   });
 
   it('clears the phone of an edit without one with `phone: null` — absent would keep the old number', async () => {

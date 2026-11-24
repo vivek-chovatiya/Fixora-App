@@ -520,6 +520,8 @@ describe('CreateRequestScreen — photographs (section 16)', () => {
 
     await press(COPY.photosGallery);
     expect(upload).toHaveBeenCalledTimes(1);
+    // As a request's photo (Phase 4B): the backend attaches it to a request and nothing else.
+    expect(upload).toHaveBeenCalledWith(ASSET, 'request', expect.any(Function));
 
     await fillRequired();
     await press(COPY.submit);
@@ -586,6 +588,66 @@ describe('CreateRequestScreen — photographs (section 16)', () => {
     await press(`${COPY.photoRetry}, ${COPY.photosTitle} 1, ${COPY.photoFailed}`);
     await press(COPY.submit);
 
+    expect(draft().imageUrls).toEqual([REMOTE_URL]);
+  });
+
+  /*
+    Section 16, proved on the control itself: a disabled Continue is what stops a
+    customer reaching Submit with a photo that has not uploaded — not only the
+    handler's own check, which a tap on an enabled button would never reach.
+  */
+  it('keeps Continue disabled while a photo uploads or has failed, and only then enables it', async () => {
+    let finish!: (result: { assetId: string; remoteUrl: string }) => void;
+    let fail!: (error: AppError) => void;
+    const upload = jest
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            fail = reject;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            finish = resolve;
+          }),
+      );
+    const { renderer, press, navigate, fillRequired, draft, text } = await render({
+      image: { upload, retryUpload: upload },
+    });
+    const continueDisabled = () =>
+      renderer.root.findAll(
+        node =>
+          node.props?.accessibilityLabel === COPY.submit &&
+          node.props?.accessibilityState !== undefined,
+      )[0].props.accessibilityState.disabled;
+
+    await fillRequired();
+    expect(continueDisabled()).toBe(false);
+
+    await press(COPY.photosGallery);
+    expect(continueDisabled()).toBe(true);
+    expect(text()).toContain(COPY.photosBusy);
+
+    await act(async () => {
+      fail(new AppError({ kind: 'network', message: 'offline' }));
+    });
+    expect(continueDisabled()).toBe(true);
+    expect(text()).toContain(COPY.photosUnresolved);
+
+    await press(`${COPY.photoRetry}, ${COPY.photosTitle} 1, ${COPY.photoFailed}`);
+    expect(continueDisabled()).toBe(true);
+
+    await act(async () => {
+      finish({ assetId: ASSET.id, remoteUrl: REMOTE_URL });
+    });
+    expect(continueDisabled()).toBe(false);
+    expect(navigate).not.toHaveBeenCalled();
+
+    await press(COPY.submit);
+    expect(navigate).toHaveBeenCalledTimes(1);
+    // Only the photo that finished uploading travels, as its remote url.
     expect(draft().imageUrls).toEqual([REMOTE_URL]);
   });
 

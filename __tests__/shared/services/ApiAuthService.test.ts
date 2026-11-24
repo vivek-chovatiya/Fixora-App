@@ -10,7 +10,9 @@
  * - every error code the contract lists, read as the kind and copy the screens
  *   were built against;
  * - the vendor auth code in no error and no log, and a 401 that refuses it
- *   never mistaken for a dead session.
+ *   never mistaken for a dead session;
+ * - the session's picture read through `toImageUrl` (Phase 4B, 24/11/2026): a
+ *   stored `/uploads/...` path becomes an address this phone can load.
  *
  * The backend is a fake axios adapter on the real HttpClient: no network.
  */
@@ -22,6 +24,7 @@ import {
   type InternalAxiosRequestConfig,
 } from 'axios';
 
+import { AppConfig } from '@/core/config/AppConfig';
 import { httpClient, setTokenProvider, setUnauthorizedHandler } from '@/core/http/HttpClient';
 import { ApiAuthService } from '@/shared/services/api/ApiAuthService';
 import { AppError } from '@/shared/types/error';
@@ -305,6 +308,23 @@ describe('what each method answers with', () => {
     const session = await service.signInVendor('9000000001', AUTH_CODE);
 
     expect(session).toEqual({ token: 'jwt-vendor', user: VENDOR_SESSION.user });
+  });
+
+  it('puts a stored picture path on the API’s own origin', async () => {
+    const path = '/uploads/profile/0123456789abcdef0123456789abcdef.jpg';
+    backendAnswers(succeeds({ ...VENDOR_SESSION, user: { ...VENDOR_SESSION.user, avatarUrl: path } }));
+
+    const session = await service.signInVendor('9000000001', AUTH_CODE);
+
+    expect(session.user.avatarUrl).toBe(`${AppConfig.api.baseUrl.replace(/\/api\/v1\/?$/, '')}${path}`);
+  });
+
+  it('reads a picture that is neither a path nor a URL as none', async () => {
+    backendAnswers(succeeds({ ...VENDOR_SESSION, user: { ...VENDOR_SESSION.user, avatarUrl: 'ravi.jpg' } }));
+
+    const session = await service.signInVendor('9000000001', AUTH_CODE);
+
+    expect(session.user).not.toHaveProperty('avatarUrl');
   });
 
   it('accepts a brand-new customer with no name yet', async () => {

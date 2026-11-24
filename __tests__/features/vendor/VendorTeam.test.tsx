@@ -1693,6 +1693,8 @@ describe('Vendor team — the photo', () => {
 
     expect(pickFromGallery).toHaveBeenCalledTimes(1);
     expect(upload).toHaveBeenCalledTimes(1);
+    // As a team member's photo (Phase 4B): the backend attaches it to nothing else.
+    expect(upload.mock.calls[0][1]).toBe('team');
     // Uploaded, not saved: nothing reaches the team until Save.
     expect(addMember).not.toHaveBeenCalled();
     expect(pictureOf(screen, 'team-member-photo-avatar')).toEqual({ uri: UPLOADED });
@@ -1939,7 +1941,7 @@ describe('Vendor team — the photo', () => {
   const holdUpload = () => {
     const uploading = held<{ assetId: string; remoteUrl: string }>();
     let progress: UploadProgressListener | undefined;
-    upload.mockImplementationOnce((_asset: ImageAsset, onProgress?: UploadProgressListener) => {
+    upload.mockImplementationOnce((_asset: ImageAsset, _purpose: string, onProgress?: UploadProgressListener) => {
       progress = onProgress;
       return uploading.promise;
     });

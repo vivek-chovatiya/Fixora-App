@@ -33,16 +33,14 @@
  * customer's. A period with no work is zeros and no rating — an ordinary
  * answer, not an error.
  *
- * A frontend contract: no backend report endpoint exists yet. With the backend
- * live, `getReport` refuses (`REPORTS_NOT_SUPPORTED`) rather than show figures
- * nobody counted, and the Reports screen says so calmly (code review,
- * 17/11/2026).
+ * The backend's `POST /vendors/report { period }` answers it (Phase 4B
+ * contract §5, 24/11/2026; `ApiVendorReportService`).
  *
  * ⚠️ `getTodayRequests` is the dashboard's one figure (section 30's Today's
- * Requests), on its own so it can be answered where `getReport` cannot: the
- * live service counts it from the vendor's own request list and says exactly
- * what it counts (`ApiVendorReportService`). The mock answers it from the same
- * table as its `today` report, so the two cannot disagree there.
+ * Requests), on its own so the dashboard asks for that figure and nothing
+ * else. It is the `today` report's total on both implementations — the live
+ * service reads the same call, the mock the same table — so the dashboard and
+ * the Reports screen's Today cannot disagree.
  */
 
 /** Section 42's time filters: Today, This Week, This Month. */
@@ -85,12 +83,12 @@ export interface VendorReport {
 
 /** Section 30's Today's Requests, as the dashboard draws it. */
 export interface VendorTodayRequests {
-  /** Requests that reached this vendor today — see the implementation for exactly which. */
+  /** Requests that reached this vendor today: the `today` report's `totalRequests`. */
   totalRequests: number;
   /**
-   * True when it was counted from a list longer than the app reads in one go
-   * (`AppConfig.api.fullListMaxPages` pages): the figure is then "at least" that
-   * many, drawn "N+" like the dashboard's other counts. Absent when whole.
+   * True when the figure is only "at least" that many, drawn "N+" like the
+   * dashboard's other counts. Absent when whole — which both implementations
+   * now always are: the server counts it in one answer (Phase 4B, 24/11/2026).
    */
   isLowerBound?: boolean;
 }

@@ -38,7 +38,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { createLogger } from '@/core/logger/Logger';
 import { getService } from '@/shared/services/ServiceRegistry';
-import type { ImageAsset, ImageSource } from '@/shared/services/types/ImageService';
+import type {
+  ImageAsset,
+  ImageSource,
+  ImageUploadPurpose,
+} from '@/shared/services/types/ImageService';
 import { AppError } from '@/shared/types/error';
 
 const log = createLogger('useImageUpload');
@@ -59,6 +63,12 @@ function asFraction(value: unknown): number | null {
 export type ImageUploadStatus = 'idle' | 'working' | 'failed';
 
 export interface ImageUploadOptions {
+  /**
+   * What the picture is for — an account's own picture (`profile`) or a team
+   * member's (`team`). The backend attaches an upload only to a field of its
+   * own kind, so a picture uploaded under the wrong one is refused on save.
+   */
+  purpose: ImageUploadPurpose;
   /** Keeps the uploaded picture — on an account, in a form. Its failure is the upload's. */
   attach: (remoteUrl: string) => Promise<void> | void;
   /** Forgets the current picture. */
@@ -97,13 +107,15 @@ export interface ImageUpload {
   remove: () => void;
 }
 
-export function useImageUpload({ attach, detach }: ImageUploadOptions): ImageUpload {
+export function useImageUpload({ purpose, attach, detach }: ImageUploadOptions): ImageUpload {
   const [status, setStatus] = useState<ImageUploadStatus>('idle');
   const [pending, setPending] = useState<ImageAsset | null>(null);
   const [error, setError] = useState<AppError | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
 
   // Read at call time, so a caller need not memoise what it passes.
+  const purposeRef = useRef(purpose);
+  purposeRef.current = purpose;
   const attachRef = useRef(attach);
   attachRef.current = attach;
   const detachRef = useRef(detach);
@@ -153,7 +165,7 @@ export function useImageUpload({ attach, detach }: ImageUploadOptions): ImageUpl
 
     const compressed = await images.compress(asset);
     const attempt = attemptRef.current;
-    const { remoteUrl } = await images.upload(compressed, state => {
+    const { remoteUrl } = await images.upload(compressed, purposeRef.current, state => {
       if (!mountedRef.current || attempt !== attemptRef.current) {
         return;
       }

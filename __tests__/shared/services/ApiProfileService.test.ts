@@ -5,8 +5,11 @@
  * - the id sent is the session's own, the body is exactly the editable fields
  *   (never `status`, never `phone`), and an answer for another id is refused;
  * - names trimmed and checked as the mock checks them, before sending;
- * - clearing an email and setting a photo fail clearly, sending nothing —
- *   the backend cannot clear an email and has no upload endpoint;
+ * - clearing an email sends `email: null` — only when there was one — and the
+ *   backend's `EMAIL_REQUIRED_FOR_SIGN_IN` refusal reads with its own copy
+ *   (Phase 4B contract §7, 24/11/2026);
+ * - a new photo is sent as the uploaded URL, and the photo read back goes
+ *   through `toImageUrl` (contract §1–§2);
  * - the record read back into the session's user field by field;
  * - failures as AppErrors (a taken email is a conflict).
  *
@@ -20,6 +23,7 @@ import {
   type InternalAxiosRequestConfig,
 } from 'axios';
 
+import { AppConfig } from '@/core/config/AppConfig';
 import { httpClient } from '@/core/http/HttpClient';
 import type { AuthUser } from '@/features/auth/types';
 import { ApiProfileService } from '@/shared/services/api/ApiProfileService';
@@ -55,6 +59,10 @@ function bodies(): Record<string, unknown>[] {
 }
 
 const CUSTOMER_ID = '6afc3e5d7c2e50812e44de8f';
+
+/** The API's own origin, where a stored `/uploads/...` path is loaded from. */
+const ORIGIN = AppConfig.api.baseUrl.replace(/\/api\/v1\/?$/, '');
+const PHOTO_PATH = '/uploads/profile/4a5b6c7d8e9f00112233445566778899.jpg';
 
 const ASHA: AuthUser = { id: CUSTOMER_ID, firstName: 'Asha', lastName: 'Patel', phone: '9876543210', role: 'customer' };
 
@@ -138,17 +146,36 @@ describe('updateProfile', () => {
     expect(updated.lastName).toBe('');
   });
 
-  it('refuses to clear an email, sending nothing: the backend can only replace one', async () => {
+  it('removes a cleared email by sending email: null, and adopts the record without one', async () => {
     user = { ...ASHA, email: 'asha@example.com' };
     backendAnswers(() => ok(customerRecord()));
 
+    const updated = await service.updateProfile({ firstName: 'Asha', lastName: 'Patel' });
+
+    expect(bodies()[0]).toEqual({ id: CUSTOMER_ID, firstName: 'Asha', lastName: 'Patel', email: null });
+    expect(updated).not.toHaveProperty('email');
+  });
+
+  it('reads EMAIL_REQUIRED_FOR_SIGN_IN with its own words: the email is how they sign in', async () => {
+    user = { ...ASHA, email: 'asha@example.com' };
+    backendAnswers(() => ({
+      status: 400,
+      body: {
+        success: false,
+        message: 'Backend English',
+        code: 'EMAIL_REQUIRED_FOR_SIGN_IN',
+        errors: [{ field: 'email', message: 'x' }],
+        data: null,
+      },
+    }));
+
     const error = await rejectionOf(service.updateProfile({ firstName: 'Asha', lastName: 'Patel' }));
 
-    expect(sent).toHaveLength(0);
-    expect(error.kind).toBe('forbidden');
-    expect(error.code).toBe('EMAIL_REMOVAL_NOT_SUPPORTED');
-    expect(error.userMessage).toBe('Removing your email address is not available in the app yet.');
-    expect(error.isRetryable).toBe(false);
+    expect(bodies()[0].email).toBeNull();
+    expect(error.kind).toBe('validation');
+    expect(error.code).toBe('EMAIL_REQUIRED_FOR_SIGN_IN');
+    expect(error.userMessage).toBe('Your email address can’t be removed: it is how you sign in to this account.');
+    expect(error.fieldErrors).toHaveProperty('email');
   });
 
   it.each([
@@ -199,15 +226,33 @@ describe('updateProfile', () => {
 });
 
 describe('profile photo', () => {
-  it('refuses a new photo clearly, sending nothing: there is no upload endpoint', async () => {
+  it('sets a new photo with exactly the id and the uploaded URL, and reads it back loadable', async () => {
+    backendAnswers(() => ok(customerRecord({ profileImage: PHOTO_PATH })));
+
+    const updated = await service.setProfileImage(`${ORIGIN}${PHOTO_PATH}`);
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].url).toBe('/customers/update');
+    // The URL as `ImageService` handed it over: the backend takes it back as its path.
+    expect(bodies()[0]).toEqual({ id: CUSTOMER_ID, profileImage: `${ORIGIN}${PHOTO_PATH}` });
+    expect(updated.avatarUrl).toBe(`${ORIGIN}${PHOTO_PATH}`);
+  });
+
+  it('refuses a blank photo before sending: blank is the backend’s "clear"', async () => {
     backendAnswers(() => ok(customerRecord()));
 
-    const error = await rejectionOf(service.setProfileImage('file:///data/user/0/com.fixora/cache/me.jpg'));
+    const error = await rejectionOf(service.setProfileImage('  '));
 
+    expect(error.kind).toBe('validation');
     expect(sent).toHaveLength(0);
-    expect(error.kind).toBe('forbidden');
-    expect(error.code).toBe('PROFILE_PHOTO_NOT_SUPPORTED');
-    expect(error.userMessage).toBe('Changing your profile photo is not available in the app yet.');
+  });
+
+  it('reads a photo that is neither a path nor a URL as no photo', async () => {
+    backendAnswers(() => ok(customerRecord({ profileImage: 'uploads/profile/a.jpg' })));
+
+    const updated = await service.updateProfile({ firstName: 'Asha', lastName: 'Patel' });
+
+    expect(updated).not.toHaveProperty('avatarUrl');
   });
 
   it('removes the photo with exactly the id and an empty image', async () => {

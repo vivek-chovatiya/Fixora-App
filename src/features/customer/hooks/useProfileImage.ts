@@ -48,5 +48,5 @@ export function useProfileImage(): ProfileImage {
     await updateSessionUser(dispatch, updated);
   }, [dispatch]);
 
-  return useImageUpload({ attach, detach });
+  return useImageUpload({ purpose: 'profile', attach, detach });
 }

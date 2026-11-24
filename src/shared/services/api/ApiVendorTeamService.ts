@@ -6,7 +6,7 @@
  * to the Team tab or the member form.
  *
  * Endpoints (`Fixora-Backend/src/routes/index.js`), all scoped by the token:
- * `GET /team` (the list), `POST /team` (add), `POST /team/detail { id }`,
+ * `GET /team` (the list), `POST /team` (add),
  * `POST /team/update { id, … }` (details and status), `DELETE /team/delete`
  * with `{ id }` in the body.
  *
@@ -23,12 +23,14 @@
  *   member is added without one, and because an edit replaces every detail,
  *   an edit without one sends `phone: null`, which the contract says clears it
  *   (an absent `phone` would leave the old one in place).
- * - **Photos**: the backend stores a URL, but there is no upload endpoint and
- *   the app's ImageService is still a mock whose URLs are placeholders. A photo
- *   the member already has (the stored URL, sent back unchanged) is kept and a
- *   removed one is cleared (`profileImage: null`); a new one is refused
- *   (`PHOTO_UPLOAD_NOT_SUPPORTED`) rather than writing a placeholder into a
- *   real record. ⚠️ When uploads are real, a new photo is simply sent.
+ * - **Photos** (Phase 4B, 24/11/2026): a new photo is the URL `ImageService`
+ *   uploaded as a `team` photo, sent as it is — the backend takes its own
+ *   `/uploads/...` path back in the full-URL form, and keeps a photo sent back
+ *   unchanged (contract §2). A removed one is cleared (`profileImage: null`).
+ *   Read back through `toImageUrl`, so a stored path becomes an address this
+ *   phone loads. ⚠️ A stored value that is neither a path nor an http(s) URL
+ *   reads as no photo, so an edit that follows clears it: the form can only
+ *   send back the photo it was able to show.
  * - A member id that is not one of the backend's ids cannot be on the team:
  *   `notFound` without asking, as the backend's own 404 answers one that is
  *   somebody else's.
@@ -43,7 +45,7 @@ import {
   requireRecord,
   requireString,
 } from '@/shared/services/api/apiResponse';
-import { notSupported } from '@/shared/services/api/notSupported';
+import { toImageUrl } from '@/shared/services/api/uploadUrls';
 import { isBackendId } from '@/shared/services/api/vendorWork';
 import {
   TEAM_MEMBER_STATUS,
@@ -81,7 +83,7 @@ function toAppStatus(backend: string): string {
 function toMember(row: unknown): TeamMember {
   const record = requireRecord(row, 'teamMember');
   const phone = optionalString(record, 'phone');
-  const photoUrl = optionalString(record, 'profileImage');
+  const photoUrl = toImageUrl(record.profileImage);
 
   return {
     id: requireString(record, 'id', 'teamMember'),
@@ -116,10 +118,6 @@ function phoneOf(input: TeamMemberInput): string | undefined {
   return phone === '' ? undefined : phone;
 }
 
-function photoUploadNotSupported(): AppError {
-  return notSupported('a new team member photo (no upload endpoint)', 'PHOTO_UPLOAD_NOT_SUPPORTED');
-}
-
 export class ApiVendorTeamService extends BaseApiService implements VendorTeamService {
   private readonly currentUser: () => Promise<AuthUser | null>;
 
@@ -136,15 +134,14 @@ export class ApiVendorTeamService extends BaseApiService implements VendorTeamSe
   async addMember(input: TeamMemberInput): Promise<TeamMember[]> {
     await this.requireVendor();
     const phone = phoneOf(input);
-    if (photoOf(input) !== undefined) {
-      throw photoUploadNotSupported();
-    }
+    const photoUrl = photoOf(input);
 
     await this.post<unknown>('', {
       name: input.name,
-      // Absent, never "": a member without a phone has none.
+      // Absent, never "": a member without a phone or photo has none.
       ...(phone ? { phone } : {}),
       designation: input.role,
+      ...(photoUrl ? { profileImage: photoUrl } : {}),
     });
     return this.readTeam();
   }
@@ -154,14 +151,6 @@ export class ApiVendorTeamService extends BaseApiService implements VendorTeamSe
     const id = this.backendId(memberId);
     const phone = phoneOf(input);
     const photoUrl = photoOf(input);
-
-    if (photoUrl !== undefined) {
-      // Kept only if it is the photo the backend already has.
-      const stored = toMember(await this.post<unknown>('/detail', { id }));
-      if (stored.photoUrl !== photoUrl) {
-        throw photoUploadNotSupported();
-      }
-    }
 
     await this.post<unknown>('/update', {
       id,

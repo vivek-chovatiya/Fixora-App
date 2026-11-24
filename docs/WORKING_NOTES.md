@@ -272,6 +272,17 @@ anywhere else the backend ignores it and issues random codes (nothing sends
 SMS yet, so sign-in then cannot be completed). Demo sign-ins: customer
 `9876543210` with code `123456`; vendor `9000000001` with auth code `482913`.
 
+**Local databases (24/11/2026).** Our backend's `.env` points at `fixora_dev`.
+The `fixora` database holds Vivek's own data for his branch — never run our
+backend against it: our start-up migration rewrites his `+91…` phone numbers to
+digits. `npm run seed` wipes and re-creates `fixora_dev` (demo week for Ravi, a
+completed not-paid-yet ₹499 job to record a payment against). Uploaded photos
+land in `Fixora-Backend/uploads/<type>/` (git-ignored). To give the emulator a
+photo to pick: `MSYS_NO_PATHCONV=1 adb push photo.jpg /sdcard/Pictures/` then
+`adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d
+file:///sdcard/Pictures/photo.jpg`; the gallery opens Android's own photo picker,
+so no storage permission is involved.
+
 **Metro can stop on its own.** It did twice on 21/10/2026 — once after the
 NetInfo install, once while the machine slept — and the app then shows "Unable
 to load script" or a blank reload. Restart it from the repo root (the
@@ -4279,7 +4290,7 @@ vendorTeam, vendorProfile, vendorReports. What the backend has no endpoint for
 is refused clearly in the app, never faked: period reports (the dashboard's
 Today's requests is counted from the vendor's own list), recording a payment
 and payment methods, working hours, photo uploads, clearing an email, deleting
-notifications.
+notifications. (All of these were closed in Phase 4B, below.)
 
 **Gates, 18/11/2026:** tsc 0 · eslint 201 problems = the 30 `no-void` baseline
 plus Vivek's web views (6 errors, 165 warnings, untouched) · jest 3868/3869 —
@@ -4302,25 +4313,97 @@ acceptance. Sign-out ends the token on the server (`/auth/logout`). The typed
 address was stored on the request only (`addressId: null`, no address-book
 entry).
 
+### Phase 4B — every backend gap closed (24/11/2026)
+
+Built to one contract (kept beside the earlier two; the summary is here) by four
+agents in parallel — two backend, two app — then reviewed independently. Every
+refusal Phase 4A left in the app is gone (`notSupported.ts` and `scheduledAt.ts`
+deleted, no `*_NOT_SUPPORTED` code left but the generic `NOT_SUPPORTED`):
+
+- **Photos** (bible §16, §25, §38, §39): new dependency `react-native-image-picker`
+  (Android's own photo picker, no storage permission; camera asked through the
+  permission service). `ApiImageService` uploads one file per call as multipart
+  (`Http.postForm`, 120 s `AppConfig.api.uploadTimeoutMs`, everything else stays
+  30 s) to `POST /uploads` with a purpose (`request`/`profile`/`shop`/`team`). The
+  backend (new dependency `sharp`) checks the bytes, re-encodes, shrinks to 1600 px,
+  strips EXIF/GPS, caps decoding at 40 MP, stores a random name and records the
+  owner; a profile, shop, team or request field accepts only the caller's own
+  upload of that purpose, or a value already stored there. Paths come back
+  host-free (`/uploads/…`); `uploadUrls.ts` `toImageUrl` puts the API's host in
+  front. A request is sent only after its photos uploaded (Continue stays
+  disabled while one is uploading or failed). A vendor who does not hold a
+  request sees its photos — §32 lists them — and still no customer details.
+- **Offline payment** (§36, §37 + 21/10 amendment): Complete work sends rupees
+  (paise ÷ 100), INR, Paid / Not paid yet, the method only when paid, and private
+  completion notes. `POST /requests/record-payment` turns Not paid yet into Paid
+  once (second try 409 `PAYMENT_ALREADY_RECORDED`, read by the app as recorded;
+  parallel calls → one wins). Methods come from the backend's list
+  (`/payment-methods/list`: Cash, UPI, Bank transfer, Card, Other). Each request
+  carries a `payment` view: the holder gets amount, status, method, notes, times;
+  the customer gets amount, status and method label only; a vendor not holding it
+  gets `null`. Jobs completed before 4B have no record and cannot get one later.
+- **Reports** (§42): `POST /vendors/report {period}` in India time (week from
+  Monday, month from the 1st); the dashboard's Today's requests is the same call.
+- **Working hours** (seven days, open/close `HH:mm`) and **availability**: turning
+  availability off now really stops new requests reaching the vendor.
+- **Smaller:** a preferred time is kept without a date (`preferredDate` /
+  `preferredTime` stored apart); clearing a vendor's description or area; removing
+  a customer's email when they can still sign in by phone
+  (`EMAIL_REQUIRED_FOR_SIGN_IN` otherwise); `POST /notifications/delete` (service
+  only — no screen offers deleting, and the bible's Phase 1 notifications are
+  "basic"); every backend notification reworded plainly, no emoji ("Work
+  started", not "Technician has arrived on site"); `HttpClient` logs 4xx answers
+  at info, so expected answers no longer raise the red debug toast.
+
+**Gates, 24/11/2026:** tsc 0 · eslint unchanged (201 = the 30 `no-void` baseline
+plus Vivek's web views) · jest 4026/4027 — the one failure is still
+`importBoundaries` on Vivek's `FixoraApiClient.ts` · release bundle OK ·
+assembleDebug exit 0 (with the new native module) · backend `npm test` 285/285.
+The independent review found no security, privacy, race or contract problems;
+its five warnings (shop images the app cannot show were dropped on save, a 30 s
+upload timeout, no decode-size cap, whitespace notes, removing an absent email)
+were fixed or proved harmless with tests. The contracts (`auth-contract.md`,
+`requests-contract.md`, `phase4b-contract.md`) are kept in
+`D:\kano\Fixora-local-backups\contracts\`.
+
+**Device pass, 24/11/2026, 1080×2400 Dark, against the real backend
+(`fixora_dev`):** vendor Ravi — dashboard Today's requests 1 from the report →
+the seeded completed job shows PAYMENT ₹499 · Not paid yet → Record payment
+lists the backend's five methods → UPI → confirm → "Paid · UPI", the button
+gone → Reports Today and This month load → Working hours read the seeded week,
+Saturday closed and saved (backend `SAT: closed`) → Shop images: gallery → the
+system photo picker → upload → "1 of 6 photos", shown back from the server.
+Customer Asha — the paid job shows "₹499 · Paid · UPI · Recorded by your
+professional" → new request with a gallery photo and 9:00 AM with no date
+(backend: one `/uploads/request/…` image, `preferredTime "09:00"`,
+`preferredDate null`) → the new notification reads "Request received. We have
+received your Fan & Light Installation request …". Ravi again — before
+accepting, the photo and preferred time show, no name/phone/address → Accept →
+Start → Complete ₹650, Paid, Cash, notes → "Paid · Cash" with the notes; the
+customer's JSON holds the payment without the notes. Backend log: no errors.
+
 ---
 
 ## 10. Open items
 
-**Phase 4A (18/11/2026), for the owner and Vivek:**
+**Phase 4B (24/11/2026), for the owner:**
 
-- No endpoints yet for period reports, payment records / payment methods,
-  working hours, photo uploads, clearing an email, deleting notifications —
-  the app refuses each clearly.
-- An unpaid job's amount is stored by the backend (`amount`) but the app shows
-  payment details only when the backend says PAID, so the vendor does not see
-  the amount they typed on an unpaid job.
+- Uploaded photos are readable by anyone who has the exact link (long random
+  names); authorised reads later. Unattached uploads are never cleaned up and
+  there is no per-account upload quota yet.
+- No screen offers deleting a notification (the service and endpoint exist).
+- Payment methods are a code constant in the backend, not admin-editable.
+- A job completed before 4B cannot have a payment recorded later.
+- Shop images the app cannot display (old relative values) are kept and sent
+  back on save; if those plus the visible ones exceed 6, the backend refuses.
+- A request draft saved on a phone while photos were mocked may hold placeholder
+  photo addresses the backend refuses (400 on `images.N`) — dev devices only.
+- Real users still need SMS for sign-in codes and a hosted server (release builds
+  cannot reach this machine).
+
+**Phase 4A (18/11/2026), for the owner and Vivek — still open:**
+
 - The vendor's service area is mapped to the backend's `address` field.
-- Notification text comes from the backend as written there — emoji and
-  "Technician has arrived on site" when the vendor only tapped Start work. It
-  does not match the app's plain copy and claims more than happened.
-- Debug builds: `HttpClient` logs every non-success answer at error level, so an
-  expected answer (`/reviews/detail` 404 "no review yet") raises the red dev
-  toast over the tab bar. Debug-only; release builds show nothing.
 - A customer who signed up with email/password loses that login on first phone
   sign-in (accepted); the per-phone sign-in lockout can be triggered by anyone
   who knows the number (noted).

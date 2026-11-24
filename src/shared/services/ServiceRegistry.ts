@@ -26,6 +26,7 @@ import { getSessionStorage } from '@/core/storage/SessionStorage';
 import { ApiAuthService } from '@/shared/services/api/ApiAuthService';
 import { ApiAddressBookService } from '@/shared/services/api/ApiAddressBookService';
 import { ApiCategoryService } from '@/shared/services/api/ApiCategoryService';
+import { ApiImageService } from '@/shared/services/api/ApiImageService';
 import { ApiNotificationService } from '@/shared/services/api/ApiNotificationService';
 import { ApiProfileService } from '@/shared/services/api/ApiProfileService';
 import { ApiRequestService } from '@/shared/services/api/ApiRequestService';
@@ -251,6 +252,9 @@ const API_SERVICES: { readonly [K in BackendServiceKey]?: () => ServiceMap[K] } 
   vendorProfile: () => new ApiVendorProfileService({ currentUser: signedInUser }),
   // No report endpoint: period reports refuse; today's requests is counted from the list.
   vendorReports: () => new ApiVendorReportService({ currentUser: signedInUser }),
+  // The phone's camera and library, and `/uploads` (Phase 4B). The camera is
+  // asked for through the device's permissions, read when it is wanted.
+  image: () => new ApiImageService({ permissions: () => getService('permission') }),
 };
 
 const registry = new Map<ServiceKey, ServiceMap[ServiceKey]>();

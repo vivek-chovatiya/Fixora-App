@@ -4,9 +4,13 @@
  * ImageService implementation for the UI-first phase.
  *
  * Validation is real — it enforces the AppConfig.image rules exactly as the
- * production implementation will. Capture, compression and upload are
- * simulated, so image flows can be built and reviewed before the picker library
- * or upload endpoint exist.
+ * production implementation does (`shared/validation/image.ts`, shared with
+ * `ApiImageService`). Capture, compression and upload are simulated, so image
+ * flows can be built and reviewed without a camera or the backend.
+ *
+ * ⚠️ Its URLs are placeholders the backend never issued, so the live services
+ * refuse them (Phase 4B contract §2): with `request`, `profile`,
+ * `vendorProfile` or `vendorTeam` live, `image` must be live too.
  */
 
 import { AppConfig } from '@/core/config/AppConfig';
@@ -15,12 +19,14 @@ import type {
   ImageAsset,
   ImagePickOptions,
   ImageService,
+  ImageUploadPurpose,
   ImageUploadResult,
   ImageValidationResult,
   UploadProgressListener,
 } from '@/shared/services/types/ImageService';
 import { delay, mockId, simulateNetwork } from '@/shared/services/mock/mockUtils';
 import { AppError } from '@/shared/types/error';
+import { validateImageAsset } from '@/shared/validation/image';
 
 const log = createLogger('MockImageService');
 
@@ -84,35 +90,14 @@ export class MockImageService implements ImageService {
     return asset.uri;
   }
 
-  /**
-   * Real validation logic — size and MIME type both checked against AppConfig.
-   * Synchronous by design so forms can validate without a loading state.
-   */
+  /** The real rules — size and MIME type against AppConfig — shared with the Api service. */
   validate(asset: ImageAsset): ImageValidationResult {
-    const allowed = AppConfig.image.allowedMimeTypes as readonly string[];
-
-    if (!allowed.includes(asset.mimeType)) {
-      return {
-        valid: false,
-        reason: 'type',
-        message: 'Only JPG, PNG and WebP images are supported.',
-      };
-    }
-
-    if (asset.sizeBytes > AppConfig.image.maxSizeBytes) {
-      const maxMb = Math.round(AppConfig.image.maxSizeBytes / (1024 * 1024));
-      return {
-        valid: false,
-        reason: 'size',
-        message: `Images must be smaller than ${maxMb} MB.`,
-      };
-    }
-
-    return { valid: true };
+    return validateImageAsset(asset);
   }
 
   async upload(
     asset: ImageAsset,
+    _purpose: ImageUploadPurpose,
     onProgress?: UploadProgressListener,
   ): Promise<ImageUploadResult> {
     const validation = this.validate(asset);
@@ -141,10 +126,11 @@ export class MockImageService implements ImageService {
 
   async retryUpload(
     asset: ImageAsset,
+    purpose: ImageUploadPurpose,
     onProgress?: UploadProgressListener,
   ): Promise<ImageUploadResult> {
-    log.debug('retrying upload', { assetId: asset.id });
-    return this.upload(asset, onProgress);
+    log.debug('retrying upload', { assetId: asset.id, purpose });
+    return this.upload(asset, purpose, onProgress);
   }
 
   async remove(assetId: string): Promise<void> {

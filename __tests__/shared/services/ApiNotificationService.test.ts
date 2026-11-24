@@ -13,7 +13,9 @@
  *   skipped (no bulk endpoint), and saying nothing false: incomplete when the
  *   inbox was cut short or it stopped after marking some, a rejection only when
  *   nothing was marked;
- * - `remove` refusing clearly, push registration inert;
+ * - `remove` as the backend's delete by id, and anything not in this inbox
+ *   (404 `NOTIFICATION_NOT_FOUND`, Phase 4B contract §8) as not found; push
+ *   registration inert;
  * - that `userId`, `userRole`, `referenceId` and `_id` never leave.
  *
  * The backend is a fake axios adapter on the real HttpClient: no network.
@@ -318,18 +320,38 @@ describe('markAllAsRead', () => {
   });
 });
 
-describe('what the backend cannot do', () => {
-  it('refuses to remove one clearly, sending nothing', async () => {
+describe('remove', () => {
+  it('deletes one by its id, and sends nothing else', async () => {
     backendAnswers(() => ok(null));
+
+    await expect(service.remove(n(1))).resolves.toBeUndefined();
+
+    expect(sent.map(config => [config.method?.toUpperCase(), config.url])).toEqual([['POST', '/notifications/delete']]);
+    expect(bodies()).toEqual([{ id: n(1) }]);
+  });
+
+  it('rejects one not in this inbox — another account’s, the other role’s, already removed — as not found', async () => {
+    backendAnswers(() => failure(404, 'NOTIFICATION_NOT_FOUND'));
 
     const error = await rejectionOf(service.remove(n(1)));
 
-    expect(sent).toHaveLength(0);
-    expect(error.kind).toBe('forbidden');
-    expect(error.code).toBe('NOT_SUPPORTED');
-    expect(error.isRetryable).toBe(false);
+    expect(error.kind).toBe('notFound');
+    expect(error.code).toBe('NOTIFICATION_NOT_FOUND');
+    // The app's own words, never the backend's English.
+    expect(error.userMessage).toBe('This notification is no longer available.');
   });
 
+  it.each([
+    ['a malformed id', failure(400, 'VALIDATION_FAILED'), 'validation'],
+    ['a dropped connection', 'network' as const, 'network'],
+  ])('rejects %s as its own kind', async (_name, reply, kind) => {
+    backendAnswers(() => reply);
+
+    expect((await rejectionOf(service.remove(n(1)))).kind).toBe(kind);
+  });
+});
+
+describe('push', () => {
   it('keeps push registration inert, as Phase 2 leaves it', async () => {
     backendAnswers(() => ok(null));
 

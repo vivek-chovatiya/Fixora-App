@@ -10,7 +10,12 @@
  * - a 401 ends the session through the handler — except a refused credential,
  *   and a call that asked not to;
  * - nothing the request carried — a code, the token — reaches the error or the
- *   log.
+ *   log;
+ * - a 4xx is the backend answering and is logged below error level, so an
+ *   expected "no review yet" raises no red debug toast; a 5xx is a server
+ *   failing and stays an error (Phase 4B, 24/11/2026);
+ * - a multipart upload goes as the form it was given, under its own header,
+ *   with the platform's progress as a 0–1 fraction (Phase 4B).
  *
  * The backend is a fake axios adapter on the real client: the interceptors, the
  * envelope reader and the wrappers all run, and nothing touches a network.
@@ -19,6 +24,7 @@
 import {
   AxiosError,
   type AxiosAdapter,
+  type AxiosProgressEvent,
   type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from 'axios';
@@ -29,6 +35,7 @@ import {
   setTokenProvider,
   setUnauthorizedHandler,
 } from '@/core/http/HttpClient';
+import { AppConfig } from '@/core/config/AppConfig';
 import { AppError } from '@/shared/types/error';
 
 type Reply =
@@ -558,5 +565,155 @@ describe('what an error may carry', () => {
     expect(logged).toContain('AUTH_CODE_INVALID');
     expect(logged).not.toContain(AUTH_CODE);
     expect(logged).not.toContain(TOKEN);
+  });
+});
+
+describe('how a failure is logged', () => {
+  /** What was printed at error level — the level that raises the red debug toast. */
+  const errorLogs = () => jest.mocked(console.error).mock.calls;
+
+  it('logs an expected answer such as "no review yet" below error level', async () => {
+    backendAnswers({ status: 404, body: failure('REVIEW_NOT_FOUND') });
+
+    await rejectionOf(Http.post('/reviews/detail', { requestId: 'r1' }));
+
+    expect(errorLogs()).toHaveLength(0);
+    expect(jest.mocked(console.warn).mock.calls).toHaveLength(0);
+    // Still logged, for whoever is reading Metro — just not as a fault.
+    const info = JSON.stringify(jest.mocked(console.log).mock.calls);
+    expect(info).toContain('REVIEW_NOT_FOUND');
+    expect(info).toContain('[INFO]');
+  });
+
+  it.each([400, 401, 403, 404, 409, 413, 422, 429])(
+    'logs a %i — the backend answering — below error level',
+    async status => {
+      backendAnswers({ status, body: failure('SOMETHING_REFUSED') });
+
+      await rejectionOf(Http.post('/things', {}));
+
+      expect(errorLogs()).toHaveLength(0);
+    },
+  );
+
+  it.each([500, 502, 503])('logs a %i — the server failing — as an error', async status => {
+    backendAnswers({ status, body: failure('INTERNAL_ERROR') });
+
+    await rejectionOf(Http.post('/things', {}));
+
+    expect(errorLogs()).toHaveLength(1);
+    expect(JSON.stringify(errorLogs())).toContain('INTERNAL_ERROR');
+  });
+
+  it('still logs a 2xx that is not an envelope as an error', async () => {
+    backendAnswers({ status: 200, body: '<html>proxy page</html>' });
+
+    await rejectionOf(Http.get('/things'));
+
+    expect(errorLogs()).toHaveLength(1);
+  });
+});
+
+/** React Native's FormData, as far as the client sees it: a form, recording its parts. */
+class RecordingFormData {
+  readonly parts: [string, unknown][] = [];
+
+  append(name: string, value: unknown): void {
+    this.parts.push([name, value]);
+  }
+
+  // What axios recognises a form by when it is not the platform's own class.
+  get [Symbol.toStringTag](): string {
+    return 'FormData';
+  }
+}
+
+describe('a multipart upload (postForm)', () => {
+  /** Answers like `backendAnswers`, first reporting `progress` as the platform would. */
+  function uploadAnswers(progress: Partial<AxiosProgressEvent>[], body: unknown = { success: true, data: { ok: 1 } }) {
+    httpClient.defaults.adapter = async config => {
+      sent.push(config);
+      for (const event of progress) {
+        config.onUploadProgress?.({ loaded: 0, bytes: 0, upload: true, ...event } as AxiosProgressEvent);
+      }
+      return { data: body, status: 201, statusText: '', headers: {}, config };
+    };
+  }
+
+  function form(): FormData {
+    const recording = new RecordingFormData();
+    recording.append('type', 'request');
+    recording.append('files', { uri: 'file:///cache/a.jpg', name: 'photo.jpg', type: 'image/jpeg' });
+    return recording as unknown as FormData;
+  }
+
+  it('posts the form untouched under multipart/form-data, and resolves with the data', async () => {
+    uploadAnswers([]);
+    const sentForm = form();
+
+    await expect(Http.postForm('/uploads', sentForm)).resolves.toEqual({ ok: 1 });
+
+    expect(sent[0].method).toBe('post');
+    expect(sent[0].url).toBe('/uploads');
+    // Under the instance's JSON default, axios would have turned the form into text.
+    expect(sent[0].data).toBe(sentForm);
+    expect(String(sent[0].headers['Content-Type'])).toContain('multipart/form-data');
+  });
+
+  it('waits the upload timeout, while every other call keeps the ordinary one', async () => {
+    uploadAnswers([]);
+
+    await Http.postForm('/uploads', form());
+    await Http.post('/things', { id: 'a1' });
+    await Http.get('/things');
+
+    // A 5 MB photo on slow mobile data outlasts 30 s; nothing else is given longer.
+    expect(AppConfig.api.uploadTimeoutMs).toBeGreaterThan(AppConfig.api.timeoutMs);
+    expect(sent.map(config => config.timeout)).toEqual([
+      AppConfig.api.uploadTimeoutMs,
+      AppConfig.api.timeoutMs,
+      AppConfig.api.timeoutMs,
+    ]);
+  });
+
+  it('adds the bearer token, as every call does', async () => {
+    setTokenProvider(() => 'session-token');
+    uploadAnswers([]);
+
+    await Http.postForm('/uploads', form());
+
+    expect(sent[0].headers.Authorization).toBe('Bearer session-token');
+  });
+
+  it('reports progress as a 0–1 fraction, held to its ends', async () => {
+    uploadAnswers([
+      { loaded: 30, total: 120 },
+      { loaded: 60, total: 120, progress: 0.5 },
+      { loaded: 130, total: 120 },
+    ]);
+    const onProgress = jest.fn();
+
+    await Http.postForm('/uploads', form(), { onProgress });
+
+    expect(onProgress.mock.calls.map(([fraction]) => fraction)).toEqual([0.25, 0.5, 1]);
+  });
+
+  it('reports nothing while the size is unknown — a guess would make the bar jump', async () => {
+    uploadAnswers([{ loaded: 30 }, { loaded: 30, total: 0 }]);
+    const onProgress = jest.fn();
+
+    await Http.postForm('/uploads', form(), { onProgress });
+
+    expect(onProgress).not.toHaveBeenCalled();
+  });
+
+  it('fails as every call does: one AppError with the app’s copy', async () => {
+    backendAnswers({ status: 413, body: failure('FILE_TOO_LARGE') });
+
+    const error = await rejectionOf(Http.postForm('/uploads', form()));
+
+    expect(error.code).toBe('FILE_TOO_LARGE');
+    expect(error.userMessage).toBe('This photo is too large to upload. Please choose a smaller one.');
+    expect(error.userMessage).not.toContain('English');
   });
 });

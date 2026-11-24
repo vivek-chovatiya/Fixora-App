@@ -418,6 +418,8 @@ describe('Vendor profile setup — the photo', () => {
     await screen.press(saveSetup);
 
     expect(save.mock.calls[0][0].imageUrl).toBe(UPLOADED);
+    // Both attempts as the account's own picture (Phase 4B), the retry included.
+    expect(upload.mock.calls.map(call => call[1])).toEqual(['profile', 'profile']);
   });
 
   it('forgets a failed photo when it is discarded', async () => {
@@ -484,7 +486,7 @@ describe('Vendor profile setup — the photo', () => {
   it('says it is uploading once, then shows the upload’s own figure as a bar (3G-4)', async () => {
     let land!: (uploaded: { assetId: string; remoteUrl: string }) => void;
     let progress: UploadProgressListener | undefined;
-    upload.mockImplementationOnce((_asset: ImageAsset, onProgress?: UploadProgressListener) => {
+    upload.mockImplementationOnce((_asset: ImageAsset, _purpose: string, onProgress?: UploadProgressListener) => {
       progress = onProgress;
       return new Promise(resolve => (land = resolve));
     });

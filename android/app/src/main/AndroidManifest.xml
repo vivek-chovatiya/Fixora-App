@@ -21,6 +21,14 @@
     <!--
       The camera is used to photograph a problem, not to inspect the device. A
       phone without one must still be able to install and run the app.
+
+      Because CAMERA is declared above, Android refuses the camera to the app
+      until it is granted, so ApiImageService asks for it (PermissionService)
+      every time before opening the camera. Choosing from the library needs no
+      permission at all: react-native-image-picker opens the system photo
+      picker, which hands over only the photos the person chose. READ_MEDIA_IMAGES
+      and READ_EXTERNAL_STORAGE are deliberately absent - whole-library access is
+      more than the app needs, and Play restricts it to apps that do (Phase 4B).
     -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 

@@ -158,9 +158,10 @@ export interface VendorRequestDetails extends VendorJobSummary {
  * The payment statuses this app sends (section 36's "Payment Status"): the
  * customer has paid, or has not yet.
  *
- * ⚠️ The app's guess at the backend's values — no endpoint exists yet — and
- * written once, here, so the form, the mock and the presentation table cannot
- * spell them three ways. Read back, a status is still a plain string: the
+ * ⚠️ The app's own values, written once, here, so the form, the mock and the
+ * presentation table cannot spell them three ways. The backend says `PAID` and
+ * `PENDING`; `ApiVendorRequestService` and `vendorWork.ts` translate at the
+ * boundary (Phase 4B contract §4). Read back, a status is still a plain string: the
  * backend may add one, and it is shown through a table that falls back safely
  * (`presentPaymentStatus`), never matched as though this pair were the whole
  * truth.
@@ -171,9 +172,10 @@ export const PAYMENT_STATUS_UNPAID = 'UNPAID';
 /**
  * The largest final amount the app accepts, in minor units: ₹10,00,000.00.
  *
- * The app's ceiling, not the backend's — none has been agreed. It stops a slip
- * of the thumb (an extra zero or three) being recorded against a household
- * repair; it is not a statement about what a job may cost.
+ * The app's ceiling, and since Phase 4B the backend's too (contract §4: at most
+ * ₹10,00,000 on `/requests/complete`). It stops a slip of the thumb (an extra
+ * zero or three) being recorded against a household repair; it is not a
+ * statement about what a job may cost.
  */
 export const FINAL_AMOUNT_MAX_MINOR = 100_000_000;
 
@@ -243,8 +245,8 @@ export interface VendorCompletionRecord {
  * ⚠️ Exact keys, both required: the status the record becomes and how the
  * customer paid — what the completion form requires of a paid job, and nothing
  * else. The amount is not here: it was fixed when the job was completed, and
- * nothing in the record but the payment changes. The app's guess at the
- * backend's body, like the rest of the payment record.
+ * nothing in the record but the payment changes — the backend's
+ * `/requests/record-payment` body exactly (Phase 4B contract §4).
  */
 export interface VendorPaymentInput {
   /** `PAYMENT_STATUS_PAID` — the one status a record can be moved to. */

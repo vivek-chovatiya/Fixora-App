@@ -120,7 +120,11 @@ let retryUpload: jest.Mock;
 let removeUpload: jest.Mock;
 let requestPermission: jest.Mock;
 
-async function uploaded(asset: ImageAsset, onProgress?: UploadProgressListener): Promise<ImageUploadResult> {
+async function uploaded(
+  asset: ImageAsset,
+  _purpose: string,
+  onProgress?: UploadProgressListener,
+): Promise<ImageUploadResult> {
   onProgress?.({ assetId: asset.id, status: 'uploading', progress: 0.5 });
   return { assetId: asset.id, remoteUrl: remote(asset.id) };
 }
@@ -605,6 +609,8 @@ describe('Shop images — adding', () => {
     expect(requestPermission).not.toHaveBeenCalled();
     expect(pickFromGallery).toHaveBeenCalledWith({ maxCount: 1 });
     expect(upload).toHaveBeenCalledTimes(1);
+    // As a shop image (Phase 4B): the backend attaches it to nothing else.
+    expect(upload.mock.calls[0][1]).toBe('shop');
     expect(updateShopImages).toHaveBeenCalledTimes(1);
     expect(updateShopImages).toHaveBeenCalledWith([remote('img_1')]);
     expect(await storedUrls()).toEqual([remote('img_1')]);
@@ -628,7 +634,7 @@ describe('Shop images — adding', () => {
   it('shows the upload’s progress on the photo, then saving, then the saved photo', async () => {
     const answer = held<ImageUploadResult>();
     let progress!: UploadProgressListener;
-    upload.mockImplementationOnce((_asset: ImageAsset, onProgress: UploadProgressListener) => {
+    upload.mockImplementationOnce((_asset: ImageAsset, _purpose: string, onProgress: UploadProgressListener) => {
       progress = onProgress;
       return answer.promise;
     });
@@ -1804,7 +1810,7 @@ describe('Shop images — unmounted part-way', () => {
       .mockReturnValueOnce(sent.promise);
     upload
       .mockImplementationOnce(uploaded)
-      .mockImplementationOnce((_asset: ImageAsset, onProgress: UploadProgressListener) => {
+      .mockImplementationOnce((_asset: ImageAsset, _purpose: string, onProgress: UploadProgressListener) => {
         progress = onProgress;
         return uploading.promise;
       });

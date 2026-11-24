@@ -690,12 +690,6 @@ export const VENDOR_COPY = Object.freeze({
 
     loading: 'Loading your report',
     failedTitle: 'We could not load your report',
-    /**
-     * Reports with no report behind them (code review, 17/11/2026): said calmly,
-     * as an answer rather than a fault, with no figures and nothing to retry.
-     */
-    unavailableTitle: 'Reports aren’t available yet',
-    unavailableMessage: 'Your request list and rating are up to date on the dashboard.',
 
     /** A pull that failed over figures that are still on screen (as on the request list). */
     staleTitle: 'Could not refresh',

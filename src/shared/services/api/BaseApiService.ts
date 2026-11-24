@@ -23,7 +23,12 @@
  */
 
 import { AppConfig } from '@/core/config/AppConfig';
-import { Http, type HttpPageMeta, type HttpRequestConfig } from '@/core/http/HttpClient';
+import {
+  Http,
+  type HttpFormOptions,
+  type HttpPageMeta,
+  type HttpRequestConfig,
+} from '@/core/http/HttpClient';
 import { createLogger } from '@/core/logger/Logger';
 import { malformedResponse } from '@/shared/services/api/apiResponse';
 import type { Page, PageRequest } from '@/shared/types/pagination';
@@ -101,6 +106,11 @@ export abstract class BaseApiService {
 
   protected delete<T>(resource = '', config?: HttpRequestConfig): Promise<T> {
     return Http.delete<T>(this.path(resource), config);
+  }
+
+  /** A multipart POST: a file upload, with its progress (`Http.postForm`). */
+  protected postForm<T>(resource: string, form: FormData, options?: HttpFormOptions): Promise<T> {
+    return Http.postForm<T>(this.path(resource), form, options);
   }
 
   /**

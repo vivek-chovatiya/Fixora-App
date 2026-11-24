@@ -87,7 +87,11 @@ interface Options {
   /** What the picker returns. An empty array is a cancelled pick. */
   picked?: ImageAsset[];
   valid?: boolean;
-  onUpload?: (asset: ImageAsset, onProgress?: UploadProgressListener) => Promise<UploadResult>;
+  onUpload?: (
+    asset: ImageAsset,
+    purpose: string,
+    onProgress?: UploadProgressListener,
+  ) => Promise<UploadResult>;
   onSetImage?: (url: string) => Promise<AuthUser>;
 }
 
@@ -271,9 +275,10 @@ describe('choosing a picture', () => {
 
     await press(COPY.photoGallery);
 
-    // With a progress listener since 3G-4; the file is still the compressed one.
-    expect(upload).toHaveBeenCalledWith(COMPRESSED, expect.any(Function));
-    expect(upload).not.toHaveBeenCalledWith(PICKED, expect.anything());
+    // With a progress listener since 3G-4; the file is still the compressed one,
+    // uploaded as the account's own picture (Phase 4B).
+    expect(upload).toHaveBeenCalledWith(COMPRESSED, 'profile', expect.any(Function));
+    expect(upload).not.toHaveBeenCalledWith(PICKED, expect.anything(), expect.anything());
   });
 
   it('puts the uploaded url into the session, never the local file', async () => {
@@ -427,7 +432,7 @@ describe('how far the upload has got', () => {
     let report: UploadProgressListener | undefined;
     let finish!: (result: UploadResult) => void;
     const r = await render({
-      onUpload: (_asset, onProgress) => {
+      onUpload: (_asset, _purpose, onProgress) => {
         report = onProgress;
         return new Promise<UploadResult>(resolve => (finish = resolve));
       },

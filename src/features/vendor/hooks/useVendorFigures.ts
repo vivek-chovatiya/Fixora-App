@@ -22,10 +22,10 @@
  * waits for anything else.
  *
  * ⚠️ The figures are the services' and are shown as given. Today's requests is
- * `VendorReportService.getTodayRequests` — the `today` report's total on the
- * mock, and on the live backend, which has no report, a count of the vendor's
- * own request list that the service documents exactly (`ApiVendorReportService`). The rating is the reviews' own average and count;
- * nothing here averages the list it comes with. Accepted and In Progress as
+ * `VendorReportService.getTodayRequests` — the `today` report's total, on the
+ * mock and on the live backend alike (`ApiVendorReportService`). The rating is
+ * the reviews' own average and count; nothing here averages the list it comes
+ * with. Accepted and In Progress as
  * separate counts are not here: no existing answer carries them, and the
  * dashboard's own counts put both in `active` (see WORKING_NOTES open items).
  *
@@ -75,9 +75,8 @@ export interface VendorFigureState<T> {
 
 export interface DashboardFiguresState {
   /**
-   * Today's requests (section 30), on their own (`getTodayRequests`): the mock's
-   * `today` report total, or — live — counted from the vendor's own request list,
-   * since the backend has no report (code review, 17/11/2026).
+   * Today's requests (section 30), on their own (`getTodayRequests`): the
+   * `today` report's total, the mock's or the backend's (Phase 4B, 24/11/2026).
    */
   today: VendorFigureState<VendorTodayRequests>;
   /** The vendor's average and count (section 30's Rating; section 41's figures). */

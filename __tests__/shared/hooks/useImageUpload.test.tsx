@@ -13,6 +13,8 @@
  *   never draws a bar under a finished or a different upload
  * - the hook's earlier contract is untouched: `isRunning()` from the tap, one
  *   action at a time, the compressed file uploaded
+ * - the upload names the purpose its caller gave (Phase 4B): the backend
+ *   attaches a picture only to a field of its own kind
  *
  * The screens' own picture tests (customer profile, business picture, team
  * member) still cover what happens to the uploaded URL.
@@ -59,6 +61,7 @@ let upload: jest.Mock;
 
 function Probe() {
   latest = useImageUpload({
+    purpose: 'team',
     attach: url => {
       attached.push(url);
     },
@@ -86,7 +89,7 @@ beforeEach(() => {
   uploads = [];
   attached = [];
   upload = jest.fn(
-    (_asset: ImageAsset, onProgress?: UploadProgressListener) =>
+    (_asset: ImageAsset, _purpose: string, onProgress?: UploadProgressListener) =>
       new Promise<ImageUploadResult>((resolve, reject) => {
         uploads.push({
           report: state => onProgress?.(state),
@@ -155,12 +158,12 @@ describe('useImageUpload — progress', () => {
     expect(latest.isBusy).toBe(true);
   });
 
-  it('hands the uploader the compressed file and a listener', async () => {
+  it('hands the uploader the compressed file, the caller’s purpose and a listener', async () => {
     await mount();
     await startUpload();
 
     expect(upload).toHaveBeenCalledTimes(1);
-    expect(upload).toHaveBeenCalledWith(COMPRESSED, expect.any(Function));
+    expect(upload).toHaveBeenCalledWith(COMPRESSED, 'team', expect.any(Function));
   });
 
   it('holds a report to 0–1, and ignores one that is not a number', async () => {

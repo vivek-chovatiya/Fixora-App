@@ -5,6 +5,8 @@
  *   at build time and allowed — `BaseApiService` names a request config);
  * - AsyncStorage only inside `src/core/storage`;
  * - NetInfo only inside `src/shared/services/device` (the one device service);
+ * - the image picker only inside `ApiImageService` (Phase 4B, 24/11/2026: the
+ *   one route to the camera and the photo library is `ImageService`);
  * - UI code — a feature's screens and components, the shared components and the
  *   navigators — never reaches the service registry, a permissions library,
  *   NetInfo, AsyncStorage, axios or an icon library. It calls a hook. The one
@@ -222,6 +224,17 @@ describe('import boundaries (CLAUDE.md section 4)', () => {
 
   it('keeps NetInfo inside the device services', () => {
     expect(offenders('@react-native-community/netinfo', 'src/shared/services/device/')).toEqual([]);
+  });
+
+  it('keeps the image picker inside the image service', () => {
+    expect(
+      offenders('react-native-image-picker', 'src/shared/services/api/ApiImageService.ts'),
+    ).toEqual([]);
+    // …and is looking: the service really does import it.
+    const service = ALL.find(({ file }) => file === 'src/shared/services/api/ApiImageService.ts');
+    expect(service && importsAtRuntime(service.text, packageNamed('react-native-image-picker'))).toBe(
+      true,
+    );
   });
 
   it('never lets UI code reach a service or a platform library', () => {

@@ -41,10 +41,17 @@
  *   before sending. `addressId` is never sent: a request copies its address by
  *   value (3D-10), so editing the address book can never move a request already
  *   raised. `description` is the customer's notes exactly as typed, or absent —
- *   nothing is written in their place. The preference becomes `scheduledAt` in
- *   India time (`scheduledAt.ts`); a time with no date cannot be held and is not
- *   sent. Photos are not sent: there is no upload endpoint, so the image URLs
- *   the app holds point nowhere the backend can reach (WORKING_NOTES: gap).
+ *   nothing is written in their place. The preference goes as the two answers
+ *   the customer gave, `preferredDate` and `preferredTime`, each on its own —
+ *   a time with no date included — and never as `scheduledAt`, which the
+ *   backend now writes itself for the web views (Phase 4B contract §3). The
+ *   photos go as `images`, the URLs `ImageService` uploaded them to; the form
+ *   cannot get this far while one is uploading or has failed (section 16).
+ * - **Reading back** (Phase 4B): `preferredDate` / `preferredTime` as the
+ *   backend stored them (`null` is none); every photo through `toImageUrl`, so a
+ *   stored `/uploads/...` path becomes an address this phone can load; the
+ *   payment from the customer's own `payment` view, never the top-level
+ *   `amount` / `paymentStatus` the web views read.
  * - **Cancelling.** `/requests/cancel { id }`; the backend decides (pending only,
  *   idempotent when already cancelled). `409 REQUEST_NOT_CANCELLABLE` is the
  *   interface's `refused` outcome, not a failure; `404 REQUEST_NOT_FOUND`
@@ -78,7 +85,7 @@ import {
   toAppRequestStatus,
   toBackendPriority,
 } from '@/shared/services/api/requestTokens';
-import { fromScheduledAt, toScheduledAt } from '@/shared/services/api/scheduledAt';
+import { toImageUrl } from '@/shared/services/api/uploadUrls';
 import type {
   CancelRequestResult,
   CreateRequestInput,
@@ -91,6 +98,10 @@ import type {
   RequestService,
   RequestedVendor,
 } from '@/shared/services/types/RequestService';
+import {
+  PAYMENT_STATUS_PAID,
+  PAYMENT_STATUS_UNPAID,
+} from '@/shared/services/types/VendorRequestService';
 import { AppError } from '@/shared/types/error';
 import type { Page, PageRequest } from '@/shared/types/pagination';
 
@@ -176,31 +187,52 @@ function toSummary(record: Record<string, unknown>): CustomerRequest {
 }
 
 /**
+ * The backend's payment status in the app's words: its `PENDING` is the app's
+ * "not paid yet" (`UNPAID`, Phase 4B contract §4). Any other word passes
+ * through, for `describePayment` to say it has no words for it.
+ */
+function toAppPaymentStatus(backend: string): string {
+  if (backend === 'PENDING') {
+    return PAYMENT_STATUS_UNPAID;
+  }
+  return backend === 'PAID' ? PAYMENT_STATUS_PAID : backend;
+}
+
+/**
  * What the professional recorded about payment, on a completed request only
- * (sections 36 and 37) — and only when the backend says it was paid.
+ * (sections 36 and 37): the backend's `payment` view for the customer
+ * (Phase 4B contract §4) — the amount, paid or not paid yet, and how it was
+ * paid when it was. `null` is no record: work completed without one, or before
+ * 4B, and the screen then says nothing about payment.
  *
- * The same rule as the vendor's side (`vendorWork.ts`, `completionOf`), so one
- * job reads the same to both. The backend's `paymentStatus: 'PENDING'` is the
- * default every request is born with, not something anybody recorded — and the
- * vendor's completion cannot set it (`/requests/complete` keeps only the
- * amount) — so it is no record at all: the screen says nothing about payment
- * rather than telling a customer they have not paid.
- *
- * ⚠️ `amount` is whole rupees (the seed's 499 and 299; the vendor side sends
- * rupees too), held here as paise. Both sides change together or not at all.
- * The backend's `paymentMode` is not shown — it defaults to `CASH` whether or
- * not anybody said so.
+ * ⚠️ `finalAmount` is rupees with up to two decimals (₹499.50 is `499.5`), held
+ * here as paise. A view that cannot be read is left out, logged, rather than
+ * shown wrong — the screen says nothing rather than a guess. The top-level
+ * `amount` / `paymentStatus` / `paymentMode` are the web views' and never read:
+ * `PENDING` there is the default every request is born with.
  */
 function toPayment(record: Record<string, unknown>): CustomerPaymentRecord | undefined {
-  const amount = record.amount;
-  if (record.paymentStatus !== 'PAID' || typeof amount !== 'number' || !(amount > 0)) {
+  const payment = record.payment;
+  if (payment === null || payment === undefined) {
     return undefined;
   }
 
+  const finalAmount = isRecord(payment) ? payment.finalAmount : undefined;
+  const status = isRecord(payment) ? optionalString(payment, 'paymentStatus') : undefined;
+  const readable =
+    typeof finalAmount === 'number' && Number.isFinite(finalAmount) && finalAmount > 0 && status;
+  if (!isRecord(payment) || !readable) {
+    log.warn('A payment record that could not be read was left out');
+    return undefined;
+  }
+  const currency = optionalString(payment, 'currency');
+  const paymentMethodLabel = optionalString(payment, 'paymentMethodLabel');
+
   return {
-    finalAmountMinor: Math.round(amount * MINOR_PER_MAJOR),
-    currency: AppConfig.money.currency,
-    paymentStatus: 'PAID',
+    finalAmountMinor: Math.round(finalAmount * MINOR_PER_MAJOR),
+    currency: currency ?? AppConfig.money.currency,
+    paymentStatus: toAppPaymentStatus(status),
+    ...(paymentMethodLabel ? { paymentMethodLabel } : {}),
   };
 }
 
@@ -222,15 +254,19 @@ function toDetails(record: Record<string, unknown>): CustomerRequestDetails {
   // The text the customer confirmed — never the populated `addressId`, which
   // the backend fills with whichever saved address it found first.
   const formattedAddress = requireString(record, 'serviceAddress', 'request');
-  const { preferredDate, preferredTime } = fromScheduledAt(record.scheduledAt);
+  // Exactly as stored (`YYYY-MM-DD`, `HH:mm`, India wall clock); `null` is none.
+  const preferredDate = optionalString(record, 'preferredDate');
+  const preferredTime = optionalString(record, 'preferredTime');
 
   // The customer's own words, or nothing: a description is optional and never filled in.
   const notes = optionalString(record, 'description');
 
+  // Each as an address this phone can load; one that is neither a path nor a URL is left out.
   const imageUrls = Array.isArray(record.images)
-    ? record.images.filter(
-        (url): url is string => typeof url === 'string' && url.trim() !== '',
-      )
+    ? record.images.flatMap(image => {
+        const url = toImageUrl(image);
+        return url ? [url] : [];
+      })
     : [];
 
   const payment = summary.status === 'COMPLETED' ? toPayment(record) : undefined;
@@ -393,9 +429,13 @@ export class ApiRequestService extends BaseApiService implements RequestService 
       throw new AppError({ kind: 'validation', message: 'Request refused before sending: no address' });
     }
 
-    const scheduledAt = toScheduledAt(input.preferredDate, input.preferredTime);
     const hasNotes = typeof input.notes === 'string' && input.notes.trim() !== '';
     const serviceAddressDetails = toAddressDetails(input.address);
+    // Each answer on its own, or no key: a time with no date is a preference too.
+    const preferredDate = input.preferredDate?.trim() ? input.preferredDate : undefined;
+    const preferredTime = input.preferredTime?.trim() ? input.preferredTime : undefined;
+    // Uploaded before this call, as section 16 requires; only their URLs travel.
+    const images = (input.imageUrls ?? []).filter(url => url.trim() !== '');
 
     const body: Record<string, unknown> = {
       categoryId: input.categoryId,
@@ -406,23 +446,24 @@ export class ApiRequestService extends BaseApiService implements RequestService 
       ...(hasNotes ? { description: input.notes } : {}),
       priority: toBackendPriority(input.priority),
       ...(input.vendorId !== undefined ? { vendorId: input.vendorId } : {}),
-      ...(scheduledAt !== undefined ? { scheduledAt } : {}),
+      ...(preferredDate ? { preferredDate } : {}),
+      ...(preferredTime ? { preferredTime } : {}),
+      ...(images.length > 0 ? { images } : {}),
     };
 
     const created = toCreated(await this.post<unknown>('', body));
 
-    // The shape, never the contents: notes, the address and the reference all
-    // lead back to somebody's home.
+    // The shape, never the contents: notes, the address, the photos and the
+    // reference all lead back to somebody's home.
     log.info('Request created', {
       categoryId: input.categoryId,
       subCategoryId: input.subCategoryId,
       priority: input.priority,
       dispatch: input.vendorId === undefined ? 'open' : 'directed',
       hasNotes,
-      hasSchedule: scheduledAt !== undefined,
-      // Kept by the app and not sent: see the file header.
-      photosNotSent: input.imageUrls?.length ?? 0,
-      timeWithoutDateNotSent: input.preferredDate === undefined && input.preferredTime !== undefined,
+      hasPreferredDate: preferredDate !== undefined,
+      hasPreferredTime: preferredTime !== undefined,
+      photoCount: images.length,
     });
 
     return created;

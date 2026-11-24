@@ -444,8 +444,8 @@ export function useShopImages(): ShopImagesState {
         const onProgress = (state: ImageUploadState) => patch(key, { progress: state.progress });
         const compressed = await images.compress(asset);
         const result = await (isRetry
-          ? images.retryUpload(compressed, onProgress)
-          : images.upload(compressed, onProgress));
+          ? images.retryUpload(compressed, 'shop', onProgress)
+          : images.upload(compressed, 'shop', onProgress));
         remoteUrl = result.remoteUrl;
       } catch (caught) {
         // Marked on the photo, which carries its own Try again. Logged by kind only.

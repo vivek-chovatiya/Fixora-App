@@ -42,15 +42,25 @@
  *   area and city, else the populated address-book entry's `city` — never a
  *   street line, and never the `serviceAddress` text, which is the full
  *   address on a record from a backend that does not reduce it.
- * - **The preferred date and time** are the backend's one `scheduledAt`,
- *   read in India time through `scheduledAt.ts` — the customer's side's own
- *   reader — never in the phone's zone.
- * - **A completion record** exists on the vendor's finished work only when the
- *   backend says `paymentStatus: 'PAID'` with an amount: the backend does not
- *   keep the vendor's own record (status, method, notes — see
- *   `ApiVendorRequestService`), and its `PENDING` is the default every request
- *   is born with, not something anybody recorded, so it is no record at all.
- *   Its `amount` is whole rupees (the seed's 499 and 299), read as paise.
+ * - **The preferred date and time** are the backend's own `preferredDate`
+ *   (`YYYY-MM-DD`) and `preferredTime` (`HH:mm`), each on its own and each
+ *   `null` when there is none (Phase 4B contract §3, 24/11/2026): India
+ *   wall-clock as the customer chose it, so nothing here converts a zone. A
+ *   value not in its shape is no preference, never a guess at one.
+ * - **The completion record** is the request's `payment` view (contract §4)
+ *   and nothing else — never the top-level `amount` or `paymentStatus`, which
+ *   stay as they were for the web views and do not say whether anybody
+ *   recorded a payment. `payment: null` is no record (work completed before the
+ *   record existed). Its `finalAmount` is rupees, read as paise; its `PENDING`
+ *   is the app's "Not paid yet" (`PAYMENT_STATUS_UNPAID`), so a job recorded
+ *   unpaid shows its amount and can have a payment recorded later; a status the
+ *   app does not know is kept as sent, for the presentation table to word
+ *   safely. `completionNotes` is the vendor's own `notes`.
+ * - **`rejectedAt`** is the backend's, on a request this vendor turned down — a
+ *   directed one they rejected, or an open one they declined, at their own time
+ *   — and is read only onto a record that is `REJECTED` to them.
+ * - **Photographs** come as host-free `/uploads/...` paths and are made
+ *   loadable by `toImageUrl` (`uploadUrls.ts`); one it cannot read is left out.
  *
  * ⚠️ PROJECT_BIBLE.md section 32 (amended 21/10/2026), enforced here as well as
  * on screen and on the backend: a record the vendor does not hold never
@@ -78,11 +88,12 @@ import {
   requireString,
 } from '@/shared/services/api/apiResponse';
 import { toAppPriority, toAppRequestStatus } from '@/shared/services/api/requestTokens';
-import { fromScheduledAt } from '@/shared/services/api/scheduledAt';
+import { toImageUrl } from '@/shared/services/api/uploadUrls';
 import type { RequestStatus } from '@/shared/services/types/RequestService';
 import type { VendorJobSummary } from '@/shared/services/types/VendorDashboardService';
 import {
   PAYMENT_STATUS_PAID,
+  PAYMENT_STATUS_UNPAID,
   type VendorCompletionRecord,
   type VendorRequestDetails,
   type VendorRequestList,
@@ -93,8 +104,18 @@ const log = createLogger('vendorWork');
 /** The backend's ids: Mongo ObjectIds, 24 hex digits (its Joi `hex().length(24)`). */
 const BACKEND_ID = /^[0-9a-f]{24}$/i;
 
-/** Paise per rupee: the backend's `amount` is in rupees, the app holds paise. */
+/** Paise per rupee: the backend's amounts are in rupees, the app holds paise. */
 const MINOR_PER_MAJOR = 100;
+
+/** The backend's payment statuses as the app's (contract §4): `PENDING` is "Not paid yet". */
+const APP_PAYMENT_STATUS: Readonly<Record<string, string>> = Object.freeze({
+  PENDING: PAYMENT_STATUS_UNPAID,
+  PAID: PAYMENT_STATUS_PAID,
+});
+
+/** The contract's shapes for a preferred date and time (§3). */
+const PREFERRED_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const PREFERRED_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /** The statuses in which this vendor holds the work (section 32). */
 const HELD: ReadonlySet<string> = new Set(['ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CLOSED']);
@@ -281,21 +302,46 @@ function localityOf(raw: Record<string, unknown>): string | undefined {
 
 function imagesOf(raw: Record<string, unknown>): string[] | undefined {
   const images = Array.isArray(raw.images)
-    ? raw.images.filter((url): url is string => typeof url === 'string' && url.trim() !== '')
+    ? raw.images.map(toImageUrl).filter((url): url is string => url !== undefined)
     : [];
   return images.length > 0 ? images : undefined;
 }
 
-/** See the header: only the backend's own `PAID`, and only with an amount. */
+/** A preferred date or time in its contract shape, or nothing (`null` included). */
+function preferredOf(raw: Record<string, unknown>, key: string, shape: RegExp): string | undefined {
+  const value = raw[key];
+  return typeof value === 'string' && shape.test(value) ? value : undefined;
+}
+
+/**
+ * See the header: the `payment` view, or no record. A view with no amount
+ * above nothing, or no status, is no record either — a screen then says
+ * nothing about payment rather than show a figure nobody recorded.
+ */
 function completionOf(raw: Record<string, unknown>): VendorCompletionRecord | undefined {
-  const amount = raw.amount;
-  if (raw.paymentStatus !== 'PAID' || typeof amount !== 'number' || !(amount > 0)) {
+  const payment = raw.payment;
+  if (!isRecord(payment)) {
     return undefined;
   }
+  const amount = payment.finalAmount;
+  const status = optionalString(payment, 'paymentStatus');
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || !(amount > 0) || status === undefined) {
+    return undefined;
+  }
+  const methodId = optionalString(payment, 'paymentMethodId');
+  const methodLabel = optionalString(payment, 'paymentMethodLabel');
+  const notes = optionalString(payment, 'completionNotes');
+
   return {
     finalAmountMinor: Math.round(amount * MINOR_PER_MAJOR),
-    currency: AppConfig.money.currency,
-    paymentStatus: PAYMENT_STATUS_PAID,
+    // The backend answers `INR` for an older record that has none (contract §4).
+    currency: optionalString(payment, 'currency') ?? AppConfig.money.currency,
+    paymentStatus: Object.prototype.hasOwnProperty.call(APP_PAYMENT_STATUS, status)
+      ? APP_PAYMENT_STATUS[status]
+      : status,
+    ...(methodId ? { paymentMethodId: methodId } : {}),
+    ...(methodLabel ? { paymentMethodLabel: methodLabel } : {}),
+    ...(notes ? { notes } : {}),
   };
 }
 
@@ -319,6 +365,8 @@ export function toJobSummary(record: VendorRequestRecord, vendorId: string): Ven
   const locality = localityOf(raw);
   const reference = optionalString(raw, 'requestNumber');
   const completedAt = FINISHED.has(record.status) ? optionalInstant(raw, 'completedAt') : undefined;
+  // Only on what this vendor turned down — never another vendor's time.
+  const rejectedAt = record.status === 'REJECTED' ? optionalInstant(raw, 'rejectedAt') : undefined;
 
   return {
     id: record.id,
@@ -333,6 +381,7 @@ export function toJobSummary(record: VendorRequestRecord, vendorId: string): Ven
       : {}),
     createdAt: requireInstant(raw, 'createdAt'),
     ...(completedAt ? { completedAt } : {}),
+    ...(rejectedAt ? { rejectedAt } : {}),
   };
 }
 
@@ -355,13 +404,16 @@ export function toRequestDetails(record: VendorRequestRecord, vendorId: string):
     held && isRecord(raw.customerId) ? optionalString(raw.customerId, 'phone') : undefined;
   const formattedAddress = held ? optionalString(raw, 'serviceAddress') : undefined;
   const completion = held && FINISHED.has(record.status) ? completionOf(raw) : undefined;
+  const preferredDate = preferredOf(raw, 'preferredDate', PREFERRED_DATE);
+  const preferredTime = preferredOf(raw, 'preferredTime', PREFERRED_TIME);
 
   return {
     ...summary,
     ...(categoryName ? { categoryName } : {}),
     ...(description ? { description } : {}),
     ...(imageUrls ? { imageUrls } : {}),
-    ...fromScheduledAt(raw.scheduledAt),
+    ...(preferredDate ? { preferredDate } : {}),
+    ...(preferredTime ? { preferredTime } : {}),
     ...(customerPhone ? { customerPhone } : {}),
     ...(formattedAddress ? { address: { formattedAddress } } : {}),
     ...(completion ? { completion } : {}),
@@ -471,7 +523,8 @@ export function groupVendorWork(
   const latest = newestFirst('updatedAt', 'createdAt');
   active.sort((a, b) => activeRank(a) - activeRank(b) || latest(a, b));
   completed.sort(newestFirst('completedAt', 'updatedAt'));
-  rejected.sort(latest);
+  // Most recently declined first: by this vendor's own time when the backend says it.
+  rejected.sort(newestFirst('rejectedAt', 'updatedAt', 'createdAt'));
 
   const summaries = (placed: Placed[]) => placed.map(entry => entry.summary);
   return {

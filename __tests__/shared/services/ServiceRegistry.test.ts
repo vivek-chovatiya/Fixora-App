@@ -17,6 +17,7 @@
 import { AppConfig } from '@/core/config/AppConfig';
 import { ApiAuthService } from '@/shared/services/api/ApiAuthService';
 import { ApiCategoryService } from '@/shared/services/api/ApiCategoryService';
+import { ApiImageService } from '@/shared/services/api/ApiImageService';
 import { ApiAddressBookService } from '@/shared/services/api/ApiAddressBookService';
 import { ApiNotificationService } from '@/shared/services/api/ApiNotificationService';
 import { ApiProfileService } from '@/shared/services/api/ApiProfileService';
@@ -87,6 +88,7 @@ describe('the default', () => {
         'profile',
         'notification',
         'addressBook',
+        'image',
       ]),
     );
   });
@@ -102,12 +104,14 @@ describe('the default', () => {
     expect(getService('profile')).toBeInstanceOf(ApiProfileService);
     expect(getService('notification')).toBeInstanceOf(ApiNotificationService);
     expect(getService('addressBook')).toBeInstanceOf(ApiAddressBookService);
+    // The phone's camera and `/uploads` since Phase 4B: the live services that
+    // keep a picture accept only one the backend stored.
+    expect(getService('image')).toBeInstanceOf(ApiImageService);
   });
 
   it('keeps the services with no live backend on their mocks', () => {
     configureServices();
 
-    expect(getService('image')).toBeInstanceOf(MockImageService);
     expect(getService('address')).toBeInstanceOf(MockAddressService);
   });
 
@@ -126,6 +130,7 @@ describe('flipping one service', () => {
 
     expect(getService('auth')).toBeInstanceOf(MockAuthService);
     expect(getService('category')).toBeInstanceOf(MockCategoryService);
+    expect(getService('image')).toBeInstanceOf(MockImageService);
   });
 
   it('moves only the service it names', () => {
@@ -151,8 +156,8 @@ describe('flipping one service', () => {
   });
 
   it('stops startup for a live service that has no Api implementation yet', () => {
-    expect(() => configureServices({ live: ['image'] })).toThrow(
-      /"image", which has no Api implementation/,
+    expect(() => configureServices({ live: ['address'] })).toThrow(
+      /"address", which has no Api implementation/,
     );
   });
 

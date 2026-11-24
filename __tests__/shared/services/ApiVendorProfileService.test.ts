@@ -5,10 +5,11 @@
  *
  * - the field table both ways, and each write's exact body — always the
  *   signed-in vendor's own id (the backend checks no ownership);
- * - setup complete derived from the real record, and an empty week where the
- *   backend keeps no hours;
- * - what the backend cannot do refused before anything is written: a new photo
- *   (no upload endpoint), clearing text it cannot clear, saving working hours;
+ * - setup complete derived from the real record, and the working week read
+ *   as stored — `[]` when never set — and saved alone (Phase 4B contract §6);
+ * - photos as the image service gave them, sent as they are, read back through
+ *   `toImageUrl`; a local file refused before anything is written (contract §2);
+ * - cleared text sent as `""`, text the record never had not sent at all;
  * - a profile answered for anybody else refused, and `_id` never passing.
  *
  * The backend is a fake axios adapter on the real HttpClient: no network.
@@ -69,6 +70,22 @@ const LOGO = 'https://cdn.example.com/vendors/kumar.jpg';
 const SHOP_A = 'https://cdn.example.com/shops/a.jpg';
 const SHOP_B = 'https://cdn.example.com/shops/b.jpg';
 
+/** Where a host-free `/uploads/...` path loads from: the API's own origin (`uploadUrls.ts`). */
+const API_ORIGIN = AppConfig.api.baseUrl.replace(/\/api\/v\d+\/?$/, '');
+const UPLOADED_LOGO = '/uploads/profile/0123456789abcdef0123456789abcdef.jpg';
+const UPLOADED_SHOP = '/uploads/shop/fedcba9876543210fedcba9876543210.webp';
+
+/** A week as the backend stores one (contract §6): Monday first, Sunday closed with no times. */
+const WEEK = [
+  ...['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(day => ({
+    day,
+    isOpen: true,
+    opensAt: '09:00',
+    closesAt: '19:00',
+  })),
+  { day: 'SUN', isOpen: false },
+];
+
 /** `GET /auth/me` for a vendor: `vendorMapper` (categories populated) plus the session user's fields. */
 function meRow(extra: Record<string, unknown> = {}) {
   return {
@@ -92,6 +109,7 @@ function meRow(extra: Record<string, unknown> = {}) {
     totalReviews: 42,
     approvalStatus: 'APPROVED',
     availability: true,
+    workingHours: [],
     status: 'ACTIVE',
     createdAt: '2026-11-17T11:52:22.074Z',
     updatedAt: '2026-11-17T11:52:22.074Z',
@@ -177,6 +195,37 @@ describe('getProfile', () => {
     expect(JSON.stringify(profile)).not.toMatch(
       /_id|slug|documents|averageRating|approvalStatus|licence|createdAt/,
     );
+  });
+
+  it('reads uploaded pictures as the API’s own address, and a seeded URL as it is', async () => {
+    backend({
+      'GET /auth/me': () =>
+        ok(meRow({ profileImage: UPLOADED_LOGO, shopImages: [UPLOADED_SHOP, SHOP_A, 'shops/relative.jpg'] })),
+    });
+
+    const profile = await service.getProfile();
+
+    expect(profile.imageUrl).toBe(`${API_ORIGIN}${UPLOADED_LOGO}`);
+    // One that cannot load anywhere is left out rather than drawn broken.
+    expect(profile.shopImageUrls).toEqual([`${API_ORIGIN}${UPLOADED_SHOP}`, SHOP_A]);
+  });
+
+  it('reads a stored week day by day, a closed day with no times', async () => {
+    backend({ 'GET /auth/me': () => ok(meRow({ workingHours: WEEK })) });
+
+    const profile = await service.getProfile();
+
+    expect(profile.workingHours).toEqual(WEEK);
+    expect(profile.workingHours[6]).not.toHaveProperty('opensAt');
+  });
+
+  it.each([
+    ['never set', []],
+    ['missing', undefined],
+  ])('reads a week %s as the empty week, never an invented one', async (_name, workingHours) => {
+    backend({ 'GET /auth/me': () => ok(meRow({ workingHours })) });
+
+    expect((await service.getProfile()).workingHours).toEqual([]);
   });
 
   it('falls back to the full owner name for a vendor registered by email', async () => {
@@ -278,27 +327,68 @@ describe('saveProfile', () => {
     expect(saved).not.toHaveProperty('imageUrl');
   });
 
-  it('refuses a new profile picture — there is nowhere to upload it — and writes nothing', async () => {
-    backend({ 'GET /auth/me': () => ok(meRow()) });
+  it('sends a new profile picture exactly as the image service gave it — the backend keeps its path', async () => {
+    const uploaded = `${API_ORIGIN}${UPLOADED_LOGO}`;
+    backend({
+      'GET /auth/me': () => ok(meRow()),
+      'POST /vendors/update': () => ok(updatedRow({ profileImage: UPLOADED_LOGO })),
+    });
 
-    const error = await rejectionOf(service.saveProfile(update({ imageUrl: 'https://picsum.photos/seed/x/800/600' })));
+    const saved = await service.saveProfile(update({ imageUrl: uploaded }));
 
-    expect(error.kind).toBe('forbidden');
-    expect(error.code).toBe('PHOTO_UPLOAD_NOT_SUPPORTED');
-    expect(sent.map(call => call.url)).toEqual(['/auth/me']);
+    expect(sent[1].body).toMatchObject({ profileImage: uploaded });
+    expect(saved.imageUrl).toBe(uploaded);
+  });
+
+  it('never clears a stored profile picture the app cannot show when other fields are saved (code review)', async () => {
+    backend({
+      'GET /auth/me': () => ok(meRow({ profileImage: 'kumar-logo.png' })),
+      'POST /vendors/update': () => ok(updatedRow({ profileImage: 'kumar-logo.png' })),
+    });
+
+    // Shown as no picture, so the form sends none — that is "unchanged", not "removed".
+    const profile = await service.getProfile();
+    expect(profile).not.toHaveProperty('imageUrl');
+    await service.saveProfile(update({ imageUrl: profile.imageUrl, description: 'Licensed electrician.' }));
+
+    const write = sent.find(call => call.url === '/vendors/update');
+    expect(write?.body).toMatchObject({ description: 'Licensed electrician.' });
+    expect(write?.body).not.toHaveProperty('profileImage');
+  });
+
+  it('does not send an uploaded picture that is unchanged', async () => {
+    backend({
+      'GET /auth/me': () => ok(meRow({ profileImage: UPLOADED_LOGO })),
+      'POST /vendors/update': () => ok(updatedRow({ profileImage: UPLOADED_LOGO })),
+    });
+
+    await service.saveProfile(update({ imageUrl: `${API_ORIGIN}${UPLOADED_LOGO}` }));
+
+    expect(sent[1].body).not.toHaveProperty('profileImage');
+  });
+
+  it('refuses a picture that is not an uploaded image — a phone’s own file — and writes nothing', async () => {
+    backend({});
+
+    const error = await rejectionOf(service.saveProfile(update({ imageUrl: 'file:///data/user/0/com.fixora/cache/x.jpg' })));
+
+    expect(error.kind).toBe('validation');
+    expect(sent).toEqual([]);
   });
 
   it.each([
-    ['the description', { description: undefined }],
-    ['the service area', { serviceArea: undefined }],
-  ])('refuses clearing %s the backend cannot clear, and writes nothing', async (_name, extra) => {
-    backend({ 'GET /auth/me': () => ok(meRow()) });
+    ['the description', { description: undefined }, 'description'],
+    ['the service area', { serviceArea: undefined }, 'address'],
+  ])('clears %s the vendor removed by sending "" (contract §6)', async (_name, extra, key) => {
+    backend({
+      'GET /auth/me': () => ok(meRow()),
+      'POST /vendors/update': () => ok(updatedRow({ [key]: '' })),
+    });
 
-    const error = await rejectionOf(service.saveProfile(update(extra)));
+    const saved = await service.saveProfile(update(extra));
 
-    expect(error.code).toBe('PROFILE_TEXT_CLEAR_NOT_SUPPORTED');
-    expect(error.isRetryable).toBe(false);
-    expect(sent.map(call => call.url)).toEqual(['/auth/me']);
+    expect(sent[1].body?.[key]).toBe('');
+    expect(saved).not.toHaveProperty(key === 'address' ? 'serviceArea' : 'description');
   });
 
   it('leaves out text the record never had, rather than sending an empty one', async () => {
@@ -351,7 +441,7 @@ describe('setAcceptingRequests', () => {
 });
 
 describe('updateShopImages', () => {
-  it('saves a removal or a new order of photos the backend already has', async () => {
+  it('reads the record, then saves a removal or a new order alone, with the vendor’s own id', async () => {
     backend({
       'GET /auth/me': () => ok(meRow()),
       'POST /vendors/update': () => ok(updatedRow({ shopImages: [SHOP_B] })),
@@ -359,20 +449,60 @@ describe('updateShopImages', () => {
 
     const profile = await service.updateShopImages([SHOP_B]);
 
-    expect(sent[1]).toEqual({ method: 'POST', url: '/vendors/update', body: { id: ME, shopImages: [SHOP_B] } });
+    expect(sent.map(call => `${call.method} ${call.url}`)).toEqual(['GET /auth/me', 'POST /vendors/update']);
+    expect(sent[1].body).toEqual({ id: ME, shopImages: [SHOP_B] });
     expect(profile.shopImageUrls).toEqual([SHOP_B]);
   });
 
-  it('refuses a photo the backend does not have — there is nowhere to upload it — and writes nothing', async () => {
-    backend({ 'GET /auth/me': () => ok(meRow()) });
+  it('sends a new photo beside the kept ones, in order, exactly as the image service gave it', async () => {
+    const uploaded = `${API_ORIGIN}${UPLOADED_SHOP}`;
+    backend({
+      'GET /auth/me': () => ok(meRow()),
+      'POST /vendors/update': () => ok(updatedRow({ shopImages: [SHOP_A, SHOP_B, UPLOADED_SHOP] })),
+    });
 
-    const error = await rejectionOf(service.updateShopImages([SHOP_A, 'https://picsum.photos/seed/new/800/600']));
+    const profile = await service.updateShopImages([SHOP_A, SHOP_B, uploaded]);
 
-    expect(error.code).toBe('PHOTO_UPLOAD_NOT_SUPPORTED');
+    expect(sent[1].body).toEqual({ id: ME, shopImages: [SHOP_A, SHOP_B, uploaded] });
+    expect(profile.shopImageUrls).toEqual([SHOP_A, SHOP_B, uploaded]);
+  });
+
+  it('never deletes a stored photo the app cannot show — it survives a photo added and another removed (code review)', async () => {
+    const uploaded = `${API_ORIGIN}${UPLOADED_SHOP}`;
+    // A seeded, web-view value: not a path the app can load, but the vendor's all the same.
+    const stored = [SHOP_A, 'shop1.jpg', SHOP_B];
+    backend({
+      'GET /auth/me': () => ok(meRow({ shopImages: stored })),
+      'POST /vendors/update': body => ok(updatedRow({ shopImages: body?.shopImages })),
+    });
+
+    const shown = (await service.getProfile()).shopImageUrls;
+    expect(shown).toEqual([SHOP_A, SHOP_B]);
+
+    // Remove SHOP_A, add a new one — the list the screen sends is only what it can see.
+    await service.updateShopImages([SHOP_B, uploaded]);
+
+    expect(sent[2].body).toEqual({ id: ME, shopImages: [SHOP_B, uploaded, 'shop1.jpg'] });
+  });
+
+  it('refuses to change the photos when the record read first is not this vendor’s, and writes nothing', async () => {
+    backend({ 'GET /auth/me': () => ok(meRow({ id: '6afc3ff63331bf0e0e5835ff' })) });
+
+    expect((await rejectionOf(service.updateShopImages([SHOP_A]))).kind).toBe('server');
     expect(sent.map(call => call.url)).toEqual(['/auth/me']);
   });
 
+  it('rejects the backend’s refusal of a photo that is not this vendor’s upload as validation', async () => {
+    backend({
+      'GET /auth/me': () => ok(meRow()),
+      'POST /vendors/update': () => fail(400, 'Validation Failed', 'VALIDATION_FAILED'),
+    });
+
+    expect((await rejectionOf(service.updateShopImages([SHOP_A]))).kind).toBe('validation');
+  });
+
   it.each([
+    ['a phone’s own file', ['file:///data/user/0/com.fixora/cache/x.jpg']],
     ['the same photo twice', [SHOP_A, SHOP_A]],
     ['more than the ceiling', Array.from({ length: AppConfig.image.maxShopImagesPerVendor + 1 }, (_, i) => `${SHOP_A}?${i}`)],
     ['a blank entry', [' ']],
@@ -385,14 +515,39 @@ describe('updateShopImages', () => {
 });
 
 describe('updateWorkingHours', () => {
-  it('refuses clearly — the backend keeps no hours — and sends nothing', async () => {
+  it('saves the week alone, with the vendor’s own id, and answers with the stored profile', async () => {
+    backend({ 'POST /vendors/update': () => ok(updatedRow({ workingHours: WEEK })) });
+
+    const profile = await service.updateWorkingHours(WEEK);
+
+    expect(sent).toEqual([{ method: 'POST', url: '/vendors/update', body: { id: ME, workingHours: WEEK } }]);
+    expect(profile.workingHours).toEqual(WEEK);
+  });
+
+  it('sends a closed day without times, and each day with the contract’s keys only', async () => {
+    backend({ 'POST /vendors/update': () => ok(updatedRow({ workingHours: WEEK })) });
+    const days = WEEK.map(day => ({ ...day, note: 'stray' }));
+    // A closed day carrying times the form kept behind the switch.
+    days[6] = { day: 'SUN', isOpen: false, opensAt: '10:00', closesAt: '14:00', note: 'stray' } as never;
+
+    await service.updateWorkingHours(days);
+
+    const sentWeek = sent[0].body?.workingHours as Record<string, unknown>[];
+    expect(Object.keys(sentWeek[0]).sort()).toEqual(['closesAt', 'day', 'isOpen', 'opensAt']);
+    expect(sentWeek[6]).toEqual({ day: 'SUN', isOpen: false });
+  });
+
+  it('rejects the backend’s refusal of a week — closing before opening, six days — as validation', async () => {
+    backend({ 'POST /vendors/update': () => fail(400, 'Validation Failed', 'VALIDATION_FAILED') });
+
+    expect((await rejectionOf(service.updateWorkingHours(WEEK.slice(0, 6)))).kind).toBe('validation');
+  });
+
+  it('refuses something that is not a list of days as validation, before anything is sent', async () => {
     backend({});
 
-    const error = await rejectionOf(service.updateWorkingHours([]));
-
-    expect(error.kind).toBe('forbidden');
-    expect(error.code).toBe('WORKING_HOURS_NOT_SUPPORTED');
-    expect(error.userMessage).toBe('Saving working hours is not available in the app yet.');
+    expect((await rejectionOf(service.updateWorkingHours('every day' as never))).kind).toBe('validation');
+    expect((await rejectionOf(service.updateWorkingHours([null] as never))).kind).toBe('validation');
     expect(sent).toEqual([]);
   });
 });

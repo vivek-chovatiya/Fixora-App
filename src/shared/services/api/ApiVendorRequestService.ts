@@ -3,9 +3,10 @@
  *
  * VendorRequestService against the real backend (Phase 4A, 17/11/2026;
  * PROJECT_BIBLE.md sections 31 to 37), built to the shared request contract
- * (`requests-contract.md`, 17/11/2026). Replaces `MockVendorRequestService`
- * with no change to the list, the details or the work screens: the records are
- * read through `vendorWork.ts`, the one reader the dashboard shares.
+ * (`requests-contract.md`, 17/11/2026) and, for the offline payment record, the
+ * Phase 4B contract §4 (24/11/2026). Replaces `MockVendorRequestService` with no
+ * change to the list, the details or the work screens: the records are read
+ * through `vendorWork.ts`, the one reader the dashboard shares.
  *
  * Endpoints, all POST:
  * - list → `/requests/list` (this vendor's records and the open ones they have
@@ -13,7 +14,9 @@
  *   declined), every page of each, grouped on the device;
  * - details → `/requests/detail { id }`;
  * - accept → `/requests/accept { id }`, reject → `/requests/reject { id }`,
- *   start → `/requests/start { id }`, complete → `/requests/complete { id, amount }`.
+ *   start → `/requests/start { id }`, complete → `/requests/complete`;
+ * - a payment recorded later → `/requests/record-payment`, the methods →
+ *   `/payment-methods/list {}`.
  *
  * Decisions:
  * - **The session says who is asking.** The signed-in vendor's id (from the
@@ -48,25 +51,35 @@
  *   carries no flag is the declined answer read to decide; otherwise a request
  *   the vendor turned down would open as new, with Accept and Reject. A backend
  *   that hides it instead (404) is answered from the declined answer as well.
- *   `rejectedAt` is never set: the backend does not say when.
- * - **Completing sends the amount and nothing else.** `finalAmountMinor` paise
- *   go as `amount` in rupees (`backendAmount`), with no currency — the backend
- *   has no field for one. Whether the customer paid, how, and the vendor's
- *   notes have nowhere to go (its `note` is the timeline's, which the customer
- *   reads). A completion that says paid is refused
- *   (`PAYMENT_RECORD_NOT_SUPPORTED`) rather than recorded as something it is
- *   not; one not paid yet completes the job.
- * - **No payment record**: `recordPayment` and `listPaymentMethods` have no
- *   endpoint and refuse (`PAYMENT_RECORD_NOT_SUPPORTED`, not retryable). The
- *   methods were the mock's answer standing in for backend configuration
- *   (section 37), not a list the app keeps, so none is invented here.
+ *   When it was declined (`rejectedAt`) is the backend's, read by `vendorWork.ts`.
+ * - **Completing sends the payment record with the job** (sections 36 and 37):
+ *   `{ id, amount, currency, paymentStatus, paymentMethodId?, completionNotes? }`.
+ *   `finalAmountMinor` paise go as `amount` in rupees (`backendAmount`); the
+ *   app's `PAID` / `UNPAID` go as the backend's own `PAID` / `PENDING`; the
+ *   method only on a paid job; the notes only when there are some. ⚠️ The notes
+ *   go as `completionNotes`, never as `note` — that is the timeline's text, which
+ *   the customer reads, and the vendor's notes are theirs alone.
+ * - **A payment recorded later** goes once: 200 is `recorded`. 409
+ *   `PAYMENT_ALREADY_RECORDED` — a retry of a call that went through, or a
+ *   second device — is read again and answered `recorded` too, as the interface
+ *   says: a paid record is final, and the method first recorded stands. 409
+ *   `INVALID_TRANSITION` (not finished, or finished with no record) is
+ *   `invalidTransition`; 404 is `notFound`.
+ * - ⚠️ Recorded, never processed (section 37). Nothing here takes, moves or
+ *   confirms money; the backend writes down what the vendor says happened.
+ * - **The payment methods are the backend's configuration** (section 37), read
+ *   in its order; the app keeps no list of its own, so none is invented here.
  */
 
 import { AppConfig } from '@/core/config/AppConfig';
 import type { AuthUser } from '@/features/auth/types';
 import { BaseApiService } from '@/shared/services/api/BaseApiService';
-import { requireRecord } from '@/shared/services/api/apiResponse';
-import { notSupported } from '@/shared/services/api/notSupported';
+import {
+  malformedResponse,
+  readRows,
+  requireRecord,
+  requireString,
+} from '@/shared/services/api/apiResponse';
 import {
   asDeclined,
   backendAmount,
@@ -106,6 +119,15 @@ const STEP_REFUSALS: Readonly<Record<string, VendorWorkRefusal>> = Object.freeze
   INVALID_TRANSITION: 'invalidTransition',
 });
 
+/** The backend's 409 for a record already paid (contract §4): an answer, not a refusal, here. */
+const PAYMENT_ALREADY_RECORDED = 'PAYMENT_ALREADY_RECORDED';
+
+/** The app's payment statuses as the backend's own (contract §4: `PENDING` is "not paid yet"). */
+const WIRE_PAYMENT_STATUS: Readonly<Record<string, string>> = Object.freeze({
+  [PAYMENT_STATUS_PAID]: 'PAID',
+  [PAYMENT_STATUS_UNPAID]: 'PENDING',
+});
+
 /** What asks the list for the open requests this vendor declined. */
 const DECLINED = Object.freeze({ declined: true });
 
@@ -127,8 +149,22 @@ function invalidCompletion(why: string): AppError {
   return new AppError({ kind: 'validation', message: `Vendor requests: ${why}` });
 }
 
-function paymentRecordNotSupported(what: string): AppError {
-  return notSupported(what, 'PAYMENT_RECORD_NOT_SUPPORTED');
+/**
+ * A method id as sent: something in it. Whether it is one the backend has
+ * configured is the backend's to say (400 `VALIDATION_FAILED`, kind
+ * `validation`): the app keeps no list to check it against.
+ */
+function isMethodId(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+/** One of the backend's payment methods, or a refusal of the row. */
+function toPaymentMethod(row: unknown): PaymentMethodOption {
+  const method = requireRecord(row, 'paymentMethod');
+  return {
+    id: requireString(method, 'id', 'paymentMethod'),
+    label: requireString(method, 'label', 'paymentMethod'),
+  };
 }
 
 /** The refusal a failure stands for, when it is a 409 with a code the table names. */
@@ -141,12 +177,15 @@ function refusalOf<R extends string>(caught: unknown, table: Readonly<Record<str
 }
 
 /**
- * A completion checked as the contract says, before anything is sent — the
- * amount a whole number of paise above 0 and within the ceiling, the one
- * currency, a status it knows, no method on a job not paid, notes within their
- * ceiling. Paid is refused separately: the backend cannot record it.
+ * A completion checked as the contract says, before anything is sent, and the
+ * body it goes as (without the id) — the amount a whole number of paise above 0
+ * and within the ceiling, the one currency, a status it knows, a method on a
+ * paid job and none on a job not paid, notes within their ceiling.
+ *
+ * Exact keys: `paymentMethodId` only when paid, `completionNotes` only when the
+ * vendor wrote something — absent, never `""` or null.
  */
-function checkCompletion(input: VendorCompletionInput): void {
+function completionBody(input: VendorCompletionInput): Record<string, unknown> {
   const value = (typeof input === 'object' && input !== null ? input : {}) as Partial<
     Record<keyof VendorCompletionInput, unknown>
   >;
@@ -160,37 +199,71 @@ function checkCompletion(input: VendorCompletionInput): void {
   ) {
     throw invalidCompletion('the final amount is not a whole number of minor units within range');
   }
-  if (value.currency !== AppConfig.money.currency) {
+  const currency = value.currency;
+  if (currency !== AppConfig.money.currency) {
     throw invalidCompletion('the currency is not one this service records');
   }
-  if (value.paymentStatus === PAYMENT_STATUS_PAID) {
-    throw paymentRecordNotSupported('a completion recorded as paid');
-  }
-  if (value.paymentStatus !== PAYMENT_STATUS_UNPAID) {
+  const status = value.paymentStatus;
+  if (status !== PAYMENT_STATUS_PAID && status !== PAYMENT_STATUS_UNPAID) {
     throw invalidCompletion('the payment status is not one this service knows');
   }
-  if (value.paymentMethodId !== undefined) {
+  const paid = status === PAYMENT_STATUS_PAID;
+  const method = value.paymentMethodId;
+  if (paid && !isMethodId(method)) {
+    throw invalidCompletion('a paid job needs a payment method');
+  }
+  if (!paid && method !== undefined) {
     throw invalidCompletion('a job that is not paid yet has no payment method');
   }
   const notes = value.notes;
   if (notes !== undefined && (typeof notes !== 'string' || notes.length > COMPLETION_NOTES_MAX_LENGTH)) {
     throw invalidCompletion('the notes are not text within the ceiling');
   }
+
+  return {
+    amount: backendAmount(amount),
+    currency,
+    paymentStatus: WIRE_PAYMENT_STATUS[status],
+    ...(paid ? { paymentMethodId: method } : {}),
+    // A blank note is no note, as the mock keeps it.
+    ...(typeof notes === 'string' && notes.trim() !== '' ? { completionNotes: notes } : {}),
+  };
+}
+
+/**
+ * A later payment checked as the contract says — exactly paid, with a method —
+ * and the body it goes as (without the id). Nothing else: the amount, currency
+ * and notes were fixed when the job was completed, and the backend refuses them.
+ */
+function paymentBody(input: VendorPaymentInput): Record<string, unknown> {
+  const value = (typeof input === 'object' && input !== null ? input : {}) as Partial<
+    Record<keyof VendorPaymentInput, unknown>
+  >;
+
+  if (value.paymentStatus !== PAYMENT_STATUS_PAID) {
+    throw invalidCompletion('a payment recorded later can only say the customer has paid');
+  }
+  if (!isMethodId(value.paymentMethodId)) {
+    throw invalidCompletion('a payment needs a payment method');
+  }
+
+  return { paymentStatus: WIRE_PAYMENT_STATUS[PAYMENT_STATUS_PAID], paymentMethodId: value.paymentMethodId };
 }
 
 export class ApiVendorRequestService extends BaseApiService implements VendorRequestService {
   private readonly currentUser: () => Promise<AuthUser | null>;
 
   constructor(options: ApiVendorRequestServiceOptions) {
-    super('/requests');
+    // Two resources, so the paths are whole: `/requests/...`, `/payment-methods/list`.
+    super('');
     this.currentUser = options.currentUser;
   }
 
   async listRequests(): Promise<VendorRequestList> {
     const vendor = await this.requireVendor();
     const [rows, declined] = await Promise.all([
-      this.postAllPages('/list', {}).then(list => list.items),
-      this.postAllPages('/list', DECLINED).then(list => list.items),
+      this.postAllPages('/requests/list', {}).then(list => list.items),
+      this.postAllPages('/requests/list', DECLINED).then(list => list.items),
     ]);
     return groupVendorWork(rows, vendor.id, declined);
   }
@@ -220,7 +293,7 @@ export class ApiVendorRequestService extends BaseApiService implements VendorReq
     const id = this.backendId(requestId);
 
     try {
-      await this.post<unknown>('/accept', { id });
+      await this.post<unknown>('/requests/accept', { id });
     } catch (caught) {
       const reason = refusalOf(caught, ANSWER_REFUSALS);
       if (reason) {
@@ -230,7 +303,7 @@ export class ApiVendorRequestService extends BaseApiService implements VendorReq
     }
 
     // Theirs now: read whole, the customer and where (see the header).
-    const record = readRequestRecord(await this.post<unknown>('/detail', { id }));
+    const record = readRequestRecord(await this.post<unknown>('/requests/detail', { id }));
     return { outcome: 'accepted', request: toRequestDetails(record, vendor.id) };
   }
 
@@ -243,7 +316,7 @@ export class ApiVendorRequestService extends BaseApiService implements VendorReq
 
     let fresh: unknown;
     try {
-      fresh = await this.post<unknown>('/reject', { id: check.record.id });
+      fresh = await this.post<unknown>('/requests/reject', { id: check.record.id });
     } catch (caught) {
       const reason = refusalOf(caught, ANSWER_REFUSALS);
       if (reason) {
@@ -266,7 +339,7 @@ export class ApiVendorRequestService extends BaseApiService implements VendorReq
       return { outcome: 'refused', reason: 'invalidTransition' };
     }
 
-    return this.step(record, vendor.id, '/start', { id: record.id }, 'started');
+    return this.step(record, vendor.id, '/requests/start', { id: record.id }, 'started');
   }
 
   async completeRequest(
@@ -275,29 +348,50 @@ export class ApiVendorRequestService extends BaseApiService implements VendorReq
   ): Promise<VendorWorkStepResult<'completed'>> {
     const vendor = await this.requireVendor();
     // The body first, as an endpoint validates it before it touches the record.
-    checkCompletion(completion);
+    const body = completionBody(completion);
     const record = await this.readOwnStep(requestId, vendor.id);
     if (record.vendorId !== vendor.id || record.status !== 'IN_PROGRESS') {
       return { outcome: 'refused', reason: 'invalidTransition' };
     }
 
-    return this.step(
-      record,
-      vendor.id,
-      '/complete',
-      { id: record.id, amount: backendAmount(completion.finalAmountMinor) },
-      'completed',
-    );
+    return this.step(record, vendor.id, '/requests/complete', { id: record.id, ...body }, 'completed');
   }
 
-  async recordPayment(_requestId: string, _payment: VendorPaymentInput): Promise<VendorPaymentResult> {
-    await this.requireVendor();
-    throw paymentRecordNotSupported('recording a payment after the job');
+  async recordPayment(requestId: string, payment: VendorPaymentInput): Promise<VendorPaymentResult> {
+    const vendor = await this.requireVendor();
+    // The body first, as for a completion.
+    const body = paymentBody(payment);
+    const id = this.backendId(requestId);
+
+    let fresh: unknown;
+    try {
+      fresh = await this.post<unknown>('/requests/record-payment', { id, ...body });
+    } catch (caught) {
+      const error = AppError.from(caught);
+      if (error.statusCode === 409 && error.code === PAYMENT_ALREADY_RECORDED) {
+        // Already paid — this call's own earlier attempt, or another device. Final
+        // and not a failure (see the header): the record as it now stands.
+        return { outcome: 'recorded', request: toRequestDetails(await this.read(id), vendor.id) };
+      }
+      const reason = refusalOf(caught, STEP_REFUSALS);
+      if (reason) {
+        return { outcome: 'refused', reason };
+      }
+      throw caught;
+    }
+
+    // The contract answers as the detail route does, whole: no names to put back.
+    return { outcome: 'recorded', request: toRequestDetails(readRequestRecord(fresh), vendor.id) };
   }
 
   async listPaymentMethods(): Promise<PaymentMethodOption[]> {
     await this.requireVendor();
-    throw paymentRecordNotSupported('the payment methods');
+    const data = await this.post<unknown>('/payment-methods/list', {});
+    if (!Array.isArray(data)) {
+      throw malformedResponse('paymentMethods');
+    }
+    // In the backend's order; a row that breaks the contract is left out, not the field.
+    return readRows(data, toPaymentMethod, 'paymentMethods');
   }
 
   /** A work step sent, and its answer: the record as it now stands, or the backend's refusal. */
@@ -334,7 +428,7 @@ export class ApiVendorRequestService extends BaseApiService implements VendorReq
 
   /** One request by reference, as the detail route answers it. */
   private async read(requestId: string): Promise<VendorRequestRecord> {
-    return readRequestRecord(await this.post<unknown>('/detail', { id: this.backendId(requestId) }));
+    return readRequestRecord(await this.post<unknown>('/requests/detail', { id: this.backendId(requestId) }));
   }
 
   /**
@@ -347,12 +441,12 @@ export class ApiVendorRequestService extends BaseApiService implements VendorReq
   ): Promise<{ record: VendorRequestRecord; declined: boolean }> {
     const id = this.backendId(requestId);
     try {
-      return { record: readRequestRecord(await this.post<unknown>('/detail', { id })), declined: false };
+      return { record: readRequestRecord(await this.post<unknown>('/requests/detail', { id })), declined: false };
     } catch (caught) {
       if (AppError.from(caught).kind !== 'notFound') {
         throw caught;
       }
-      const rows = (await this.postAllPages('/list', DECLINED)).items;
+      const rows = (await this.postAllPages('/requests/list', DECLINED)).items;
       const match = rows.map(readRequestRecord).find(record => record.id === id);
       if (!match) {
         throw caught;
@@ -370,7 +464,7 @@ export class ApiVendorRequestService extends BaseApiService implements VendorReq
     if (typeof flag === 'boolean') {
       return flag;
     }
-    const rows = (await this.postAllPages('/list', DECLINED)).items;
+    const rows = (await this.postAllPages('/requests/list', DECLINED)).items;
     return rows.map(readRequestRecord).some(row => row.id === record.id);
   }
 

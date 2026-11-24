@@ -50,11 +50,17 @@ const environment: AppEnvironment = isDev ? 'development' : 'production';
  * vendor's `/requests/list` through `vendorWork.ts`, and their mocks share one
  * book of answers — one of each would count work the other does not show.
  * `vendorProfile` and `vendorTeam` stand alone. `vendorReports` goes with
- * the backend too, but there is no report on it: its period reports refuse
- * and the Reports screen says reports are not available yet, while the
- * dashboard's Today's requests is counted from the vendor's own request list
- * (`ApiVendorReportService`, code review 17/11/2026). Off, it is the mock's
- * fixture figures — which a real vendor must never see beside live work.
+ * the backend too: the period reports and the dashboard's Today's requests are
+ * both the backend's `/vendors/report` (`ApiVendorReportService`, Phase 4B).
+ * Off, it is the mock's fixture figures — which a real vendor must never see
+ * beside live work.
+ *
+ * ⚠️ `image` goes with every service that keeps a picture — `request`,
+ * `profile`, `vendorProfile` and `vendorTeam` (Phase 4B, 24/11/2026). It takes
+ * photos with the phone's camera and library and uploads them to `/uploads`,
+ * and the backend attaches only a picture it stored itself (contract §2): the
+ * mock's placeholder URLs are refused by each of those live, as 400 on the
+ * picture's field.
  *
  * ⚠️ The web views (`App.web.tsx`) do not read this: they call `FixoraApiClient`
  * directly, against `api.baseUrl` below.
@@ -73,6 +79,7 @@ const liveServices = Object.freeze([
   'vendorTeam',
   'vendorProfile',
   'vendorReports',
+  'image',
 ] as const);
 
 export const AppConfig = Object.freeze({
@@ -104,6 +111,11 @@ export const AppConfig = Object.freeze({
     baseUrl: 'http://localhost:5000/api/v1',
     /** Milliseconds before an in-flight request is aborted. */
     timeoutMs: 30000,
+    /**
+     * The same, for a file upload alone (`Http.postForm`): a 5 MB photo on slow
+     * mobile data outlasts 30 s, and a timed-out upload's retry starts from zero.
+     */
+    uploadTimeoutMs: 120000,
     /** Retry attempts for idempotent requests that fail on transport errors. */
     maxRetries: 2,
     /**

@@ -220,6 +220,7 @@ function TeamMemberFields({ navigation, form, member }: TeamMemberFieldsProps) {
   // Seeded once, from the member as stored; a status answer never reseeds it.
   const [photoUrl, setPhotoUrl] = useState<string | undefined>(member?.photoUrl);
   const photo = useImageUpload({
+    purpose: 'team',
     attach: setPhotoUrl,
     detach: () => setPhotoUrl(undefined),
   });

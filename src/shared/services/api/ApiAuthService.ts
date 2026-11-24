@@ -40,6 +40,7 @@ import {
   requireRecord,
   requireString,
 } from '@/shared/services/api/apiResponse';
+import { toImageUrl } from '@/shared/services/api/uploadUrls';
 import type {
   AuthService,
   OtpChallenge,
@@ -109,7 +110,8 @@ function toSession(raw: unknown, expected: UserRole): SessionPayload {
   }
 
   const email = optionalString(user, 'email');
-  const avatarUrl = optionalString(user, 'avatarUrl');
+  // The stored `profileImage` path, as an address this phone can load (Phase 4B).
+  const avatarUrl = toImageUrl(user.avatarUrl);
   const authUser: AuthUser = {
     id: requireString(user, 'id', 'session.user'),
     firstName: typeof user.firstName === 'string' ? user.firstName : '',

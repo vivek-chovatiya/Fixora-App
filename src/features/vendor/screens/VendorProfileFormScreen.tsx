@@ -111,6 +111,8 @@ function VendorProfileForm({ navigation, route, profile }: Props & { profile: Ve
 
   const [imageUrl, setImageUrl] = useState<string | undefined>(profile.imageUrl);
   const photo = useImageUpload({
+    // The account's own picture, as the customer's is.
+    purpose: 'profile',
     attach: setImageUrl,
     detach: () => setImageUrl(undefined),
   });

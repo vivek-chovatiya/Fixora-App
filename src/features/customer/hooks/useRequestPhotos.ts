@@ -29,6 +29,7 @@ import { getService } from '@/shared/services/ServiceRegistry';
 import type {
   ImageAsset,
   ImageSource,
+  ImageUploadState,
   UploadStatus,
 } from '@/shared/services/types/ImageService';
 
@@ -130,9 +131,11 @@ export function useRequestPhotos(initialUrls: readonly string[] = []): RequestPh
       patch(asset.id, { status: 'uploading', progress: 0 });
 
       try {
+        const onProgress = (state: ImageUploadState) => patch(asset.id, { progress: state.progress });
+        // Uploaded as a request's photo, which the backend attaches to a request and nothing else.
         const result = await (isRetry
-          ? service.retryUpload(asset, state => patch(asset.id, { progress: state.progress }))
-          : service.upload(asset, state => patch(asset.id, { progress: state.progress })));
+          ? service.retryUpload(asset, 'request', onProgress)
+          : service.upload(asset, 'request', onProgress));
 
         patch(asset.id, { status: 'success', progress: 1, remoteUrl: result.remoteUrl });
       } catch {

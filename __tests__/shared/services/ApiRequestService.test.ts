@@ -3,14 +3,19 @@
  * backend, so these tests pin what crosses that line:
  *
  * - each endpoint, method and exact body — including what is never sent
- *   (photos, a time with no date, a vendor for open dispatch, a description
- *   nobody wrote, address details the app does not hold, a saved-address id);
+ *   (`scheduledAt`, a vendor for open dispatch, a description nobody wrote,
+ *   address details the app does not hold, a saved-address id) — and, since
+ *   Phase 4B (24/11/2026), what now is: the uploaded photos as `images`, and the
+ *   preferred date and time as the two answers the customer gave;
  * - the one vocabulary table in both directions (PENDING ↔ PENDING_VENDOR,
  *   ASSIGNED → ACCEPTED, URGENT ↔ EMERGENCY, unknown words passed through);
  *   which vendor reference a status lets the app name;
  * - the views: one status filtered by the backend, Active paged here;
  * - the reference as `requestNumber`, the id as the database id;
- * - India time both ways; the address as the text sent, never the backend's;
+ * - the preference read back exactly as stored; every photo read through
+ *   `toImageUrl`; the customer's payment from their own `payment` view, never
+ *   the top-level fields the web views read; the address as the text sent,
+ *   never the backend's;
  * - every failure as the interface's answer (null, or an AppError of the right
  *   kind); cancel's three answers — cancelled, refused (409
  *   `REQUEST_NOT_CANCELLABLE`), not found (404 `REQUEST_NOT_FOUND`);
@@ -95,6 +100,12 @@ const VENDOR_ID = '6afc3e5d7c2e50812e44de9b';
 const CATEGORY_ID = '6afc3e5d7c2e50812e44de7b';
 const SUB_ID = '6afc3e5d7c2e50812e44de83';
 const REQUEST_ID = '6afc3ea3c2951ec40c9a177a';
+
+/** The API's own origin, where a stored `/uploads/...` path is loaded from. */
+const ORIGIN = AppConfig.api.baseUrl.replace(/\/api\/v1\/?$/, '');
+/** Photos as `ImageService` hands them over: uploaded, as addresses this phone loads. */
+const UPLOADED_A = `${ORIGIN}/uploads/request/1f2e3d4c5b6a79881726354a5b6c7d8e.jpg`;
+const UPLOADED_B = `${ORIGIN}/uploads/request/9e8d7c6b5a4938271605f4e3d2c1b0a9.png`;
 
 const SECRETS = {
   customerEmail: 'customer@fixora.com',
@@ -192,6 +203,10 @@ function requestRow(extra: Record<string, unknown> = {}) {
     paymentMode: 'CASH',
     amount: 0,
     scheduledAt: '2026-11-20T03:30:00.000Z',
+    // Phase 4B: the two answers as stored, and the customer's payment view.
+    preferredDate: '2026-11-20',
+    preferredTime: '09:00',
+    payment: null,
     completedAt: null,
     notes: '',
     timeline: [],
@@ -221,6 +236,7 @@ function input(extra: Partial<CreateRequestInput> = {}): CreateRequestInput {
     preferredDate: '2026-11-20',
     preferredTime: '09:00',
     notes: 'The switch sparks when pressed.',
+    imageUrls: [UPLOADED_A, UPLOADED_B],
     address: { formattedAddress: '12 MG Road, Ashok Nagar, Bengaluru 560001' },
     vendorId: VENDOR_ID,
     ...extra,
@@ -275,8 +291,10 @@ describe('createRequest', () => {
     expect(Object.keys(bodies()[0]).sort()).toEqual([
       'categoryId',
       'description',
+      'images',
+      'preferredDate',
+      'preferredTime',
       'priority',
-      'scheduledAt',
       'serviceAddress',
       'subCategoryId',
       'vendorId',
@@ -289,9 +307,21 @@ describe('createRequest', () => {
       // Section 15's EMERGENCY is the backend's URGENT.
       priority: 'URGENT',
       vendorId: VENDOR_ID,
-      // 09:00 in India, whatever the phone's clock says.
-      scheduledAt: '2026-11-20T09:00:00+05:30',
+      // The customer's two answers, exactly as given: India wall clock, no zone.
+      preferredDate: '2026-11-20',
+      preferredTime: '09:00',
+      // The URLs the image service uploaded to, in the order added.
+      images: [UPLOADED_A, UPLOADED_B],
     });
+  });
+
+  it('never sends scheduledAt: the backend writes it for the web views', async () => {
+    backendAnswers(() => ok(createdRow(), undefined, 201));
+
+    await service.createRequest(input());
+
+    expect(bodies()[0]).not.toHaveProperty('scheduledAt');
+    expect(JSON.stringify(bodies())).not.toContain('+05:30');
   });
 
   it.each([
@@ -354,32 +384,58 @@ describe('createRequest', () => {
     expect(bodies()[0]).not.toHaveProperty('serviceAddressDetails');
   });
 
-  it('never sends photos: there is nowhere the backend can fetch them from', async () => {
+  it.each([
+    ['none attached', undefined],
+    ['an empty list', [] as string[]],
+  ])('sends no images key with %s', async (_case, imageUrls) => {
     backendAnswers(() => ok(createdRow(), undefined, 201));
 
-    await service.createRequest(input({ imageUrls: ['file:///data/user/0/com.fixora/cache/a.jpg'] }));
+    await service.createRequest(input({ imageUrls }));
 
     expect(bodies()[0]).not.toHaveProperty('images');
-    expect(JSON.stringify(bodies())).not.toContain('a.jpg');
   });
 
-  it('sends a date with no time as that day at midnight, India time', async () => {
+  it('sends the uploaded photos as they are held — the backend takes the full URL back as its path', async () => {
     backendAnswers(() => ok(createdRow(), undefined, 201));
 
-    await service.createRequest(input({ preferredTime: undefined }));
+    await service.createRequest(input({ imageUrls: [UPLOADED_B, '  ', UPLOADED_A] }));
 
-    expect(bodies()[0].scheduledAt).toBe('2026-11-20T00:00:00+05:30');
+    // Order kept, a blank dropped, nothing rewritten.
+    expect(bodies()[0].images).toEqual([UPLOADED_B, UPLOADED_A]);
   });
 
   it.each([
-    ['a time with no date', { preferredDate: undefined }],
-    ['no preference', { preferredDate: undefined, preferredTime: undefined }],
-  ])('sends no scheduledAt for %s', async (_case, extra) => {
+    ['a date with no time', { preferredTime: undefined }, { preferredDate: '2026-11-20' }],
+    // The case `scheduledAt` could not hold, and was dropped before 4B.
+    ['a time with no date', { preferredDate: undefined }, { preferredTime: '09:00' }],
+    ['no preference', { preferredDate: undefined, preferredTime: undefined }, {}],
+    ['blanks', { preferredDate: ' ', preferredTime: '' }, {}],
+  ])('sends %s as exactly the answers given', async (_case, extra, sentPreference) => {
     backendAnswers(() => ok(createdRow(), undefined, 201));
 
     await service.createRequest(input(extra));
 
-    expect(bodies()[0]).not.toHaveProperty('scheduledAt');
+    const body = bodies()[0];
+    expect({
+      ...(body.preferredDate !== undefined ? { preferredDate: body.preferredDate } : {}),
+      ...(body.preferredTime !== undefined ? { preferredTime: body.preferredTime } : {}),
+    }).toEqual(sentPreference);
+    expect(body).not.toHaveProperty('scheduledAt');
+  });
+
+  it('logs the shape of a request, never its photos, its notes or its address', async () => {
+    const info = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    backendAnswers(() => ok(createdRow(), undefined, 201));
+
+    await service.createRequest(input({ preferredDate: undefined }));
+
+    const logged = JSON.stringify(info.mock.calls);
+    expect(logged).toContain('Request created');
+    expect(logged).not.toContain('/uploads/');
+    expect(logged).not.toContain('sparks');
+    expect(logged).not.toContain('MG Road');
+    expect(logged).not.toContain('photosNotSent');
+    expect(logged).not.toContain('timeWithoutDateNotSent');
   });
 
   it.each([
@@ -674,7 +730,14 @@ describe('listRecentRequests', () => {
 
 describe('getRequest', () => {
   it('reads one request in full by its id', async () => {
-    backendAnswers(() => ok(requestRow({ vendorId: vendorDocument(), images: ['https://cdn.example/a.jpg', ''] })));
+    backendAnswers(() =>
+      ok(
+        requestRow({
+          vendorId: vendorDocument(),
+          images: ['/uploads/request/0a1b2c3d4e5f60718293a4b5c6d7e8f9.jpg', 'https://cdn.example/a.jpg', '', null],
+        }),
+      ),
+    );
 
     const details = await service.getRequest(REQUEST_ID);
 
@@ -692,11 +755,12 @@ describe('getRequest', () => {
       categoryId: CATEGORY_ID,
       subCategoryId: SUB_ID,
       categoryName: 'Electrical',
-      // 03:30 UTC is 09:00 in India.
+      // As stored — never worked out again from `scheduledAt`.
       preferredDate: '2026-11-20',
       preferredTime: '09:00',
       notes: 'The switch sparks when pressed.',
-      imageUrls: ['https://cdn.example/a.jpg'],
+      // A stored path on the API's own origin; a full URL as it is; nothing for the rest.
+      imageUrls: [`${ORIGIN}/uploads/request/0a1b2c3d4e5f60718293a4b5c6d7e8f9.jpg`, 'https://cdn.example/a.jpg'],
       // The text sent, never the saved address the backend linked it to.
       address: { formattedAddress: '12 MG Road, Ashok Nagar, Bengaluru 560001' },
     });
@@ -720,35 +784,103 @@ describe('getRequest', () => {
     expect(JSON.stringify(details)).not.toContain(SECRETS.ownerName);
   });
 
-  it('reads a midnight preference as a day with no time, and none as none', async () => {
-    backendAnswers(() => ok(requestRow({ scheduledAt: '2026-11-19T18:30:00.000Z' })));
-    const dayOnly = await service.getRequest(REQUEST_ID);
+  it.each([
+    ['a date alone', { preferredDate: '2026-11-20', preferredTime: null }, { preferredDate: '2026-11-20' }],
+    ['a time alone', { preferredDate: null, preferredTime: '18:30' }, { preferredTime: '18:30' }],
+    ['none', { preferredDate: null, preferredTime: null }, {}],
+    ['blanks', { preferredDate: '', preferredTime: '' }, {}],
+  ])('reads %s exactly as stored, whatever scheduledAt says', async (_case, stored, read) => {
+    // A `scheduledAt` that disagrees, to prove it is not what is read.
+    backendAnswers(() => ok(requestRow({ scheduledAt: '2026-12-31T12:00:00.000Z', ...stored })));
 
-    backendAnswers(() => ok(requestRow({ scheduledAt: null })));
-    const none = await service.getRequest(REQUEST_ID);
+    const details = await service.getRequest(REQUEST_ID);
 
-    expect(dayOnly).toMatchObject({ preferredDate: '2026-11-20' });
-    expect(dayOnly).not.toHaveProperty('preferredTime');
-    expect(none).not.toHaveProperty('preferredDate');
-    expect(none).not.toHaveProperty('preferredTime');
+    expect({
+      ...(details?.preferredDate !== undefined ? { preferredDate: details.preferredDate } : {}),
+      ...(details?.preferredTime !== undefined ? { preferredTime: details.preferredTime } : {}),
+    }).toEqual(read);
   });
 
-  it('carries the payment a completed job recorded, in paise', async () => {
+  it('carries the payment a completed job recorded, from the customer’s own view, in paise', async () => {
     backendAnswers(() =>
-      ok(requestRow({ status: 'COMPLETED', vendorId: vendorDocument(), amount: 499, paymentStatus: 'PAID' })),
+      ok(
+        requestRow({
+          status: 'COMPLETED',
+          vendorId: vendorDocument(),
+          // The web views' fields, which disagree on purpose: they are not read.
+          amount: 100,
+          paymentStatus: 'PENDING',
+          paymentMode: 'CASH',
+          payment: { finalAmount: 499.5, currency: 'INR', paymentStatus: 'PAID', paymentMethodLabel: 'UPI' },
+        }),
+      ),
     );
 
     const details = await service.getRequest(REQUEST_ID);
 
-    expect(details?.payment).toEqual({ finalAmountMinor: 49900, currency: 'INR', paymentStatus: 'PAID' });
+    expect(details?.payment).toEqual({
+      finalAmountMinor: 49950,
+      currency: 'INR',
+      paymentStatus: 'PAID',
+      paymentMethodLabel: 'UPI',
+    });
     expect(details?.vendorName).toBe('Kumar Electricals');
   });
 
+  it('reads the backend’s PENDING as not paid yet, with no method', async () => {
+    backendAnswers(() =>
+      ok(requestRow({ status: 'COMPLETED', payment: { finalAmount: 499, currency: 'INR', paymentStatus: 'PENDING' } })),
+    );
+
+    const details = await service.getRequest(REQUEST_ID);
+
+    expect(details?.payment).toEqual({ finalAmountMinor: 49900, currency: 'INR', paymentStatus: 'UNPAID' });
+  });
+
+  it('keeps nothing of the payment view the customer has no business with', async () => {
+    backendAnswers(() =>
+      ok(
+        requestRow({
+          status: 'COMPLETED',
+          // Were the backend ever to send the vendor's own view, none of it passes.
+          payment: {
+            finalAmount: 499,
+            currency: 'INR',
+            paymentStatus: 'PAID',
+            paymentMethodId: 'UPI',
+            paymentMethodLabel: 'UPI',
+            completionNotes: 'Gate code 4471, dog in the yard',
+            recordedAt: '2026-11-24T10:00:00.000Z',
+            paidAt: '2026-11-24T10:00:00.000Z',
+          },
+        }),
+      ),
+    );
+
+    const details = await service.getRequest(REQUEST_ID);
+
+    expect(Object.keys(details?.payment ?? {}).sort()).toEqual([
+      'currency',
+      'finalAmountMinor',
+      'paymentMethodLabel',
+      'paymentStatus',
+    ]);
+    expect(JSON.stringify(details)).not.toContain('Gate code');
+  });
+
   it.each([
-    // The backend's default, which nobody recorded — and the vendor's completion cannot set.
-    ['completed with the payment status still the default', { status: 'COMPLETED', amount: 350, paymentStatus: 'PENDING' }],
-    ['completed and paid with no amount', { status: 'COMPLETED', amount: 0, paymentStatus: 'PAID' }],
-    ['paid but not completed', { status: 'IN_PROGRESS', amount: 499, paymentStatus: 'PAID' }],
+    ['completed with no record (payment: null)', { status: 'COMPLETED', amount: 350, paymentStatus: 'PAID', payment: null }],
+    ['completed, from a backend without the view', { status: 'COMPLETED', amount: 499, paymentStatus: 'PAID', payment: undefined }],
+    ['completed with an amount that is not one', {
+      status: 'COMPLETED',
+      payment: { finalAmount: '499', currency: 'INR', paymentStatus: 'PAID' },
+    }],
+    ['completed with no status', { status: 'COMPLETED', payment: { finalAmount: 499, currency: 'INR' } }],
+    ['a view that is not an object', { status: 'COMPLETED', payment: 'PAID' }],
+    ['a record on a request not completed', {
+      status: 'IN_PROGRESS',
+      payment: { finalAmount: 499, currency: 'INR', paymentStatus: 'PAID' },
+    }],
   ])('says nothing about payment for a request %s', async (_case, extra) => {
     backendAnswers(() => ok(requestRow(extra)));
 

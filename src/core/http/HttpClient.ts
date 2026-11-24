@@ -18,6 +18,10 @@
  *   and becomes one `AppError`: its kind from the status, its copy from the
  *   `code` (`AppError.messageForCode`), its field names from `errors`.
  *
+ * Since Phase 4B (24/11/2026) it uploads files too (`Http.postForm`, the only
+ * multipart call), and logs a refusal — a 4xx — below error level: it is the
+ * backend answering, and only a server failing earns the red debug toast.
+ *
  * ⚠️ Nothing the backend wrote in English reaches `userMessage`, and nothing the
  * request carried reaches the error. The axios error is deliberately not kept as
  * the `cause`: it holds the request body — a one-time code, a vendor's auth
@@ -31,6 +35,7 @@ import axios, {
   AxiosHeaders,
   type AxiosError,
   type AxiosInstance,
+  type AxiosProgressEvent,
   type AxiosRequestConfig,
   type InternalAxiosRequestConfig,
 } from 'axios';
@@ -291,8 +296,29 @@ function normalizeAxiosError(error: AxiosError): AppError {
     onUnauthorized();
   }
 
-  log.error('response failed', { status, url: call.url, kind: appError.kind, code: appError.code });
+  const details = { status, url: call.url, kind: appError.kind, code: appError.code };
+  if (isAnswer(status)) {
+    log.info('response refused', details);
+  } else {
+    log.error('response failed', details);
+  }
   return appError;
+}
+
+/**
+ * Whether a failed status is the backend answering rather than failing.
+ *
+ * A 4xx is a considered answer to this request — "no review yet"
+ * (`REVIEW_NOT_FOUND`), "already accepted" (`REQUEST_NOT_CANCELLABLE`), a field
+ * refused — and every service turns it into an outcome or its copy. Logged at
+ * error level, each one raised the red debug toast over a screen that was
+ * behaving exactly as designed (Phase 4B, 24/11/2026). A 5xx, or a status the
+ * contract never uses, is the server failing, and stays an error. Transport
+ * failures (no response, a timeout) are not logged here at all: the caller has
+ * them as an AppError.
+ */
+function isAnswer(status: number): boolean {
+  return status >= 400 && status < 500;
 }
 
 export const httpClient = createInstance();
@@ -300,6 +326,28 @@ export const httpClient = createInstance();
 async function send<T>(config: HttpRequestConfig): Promise<HttpEnvelope<T>> {
   const response = await httpClient.request<unknown>(config);
   return readEnvelope<T>(response.data, config);
+}
+
+/** A multipart POST's options: how far the body has gone, as it goes. */
+export interface HttpFormOptions {
+  /**
+   * The share of the body sent so far, 0 to 1, as the platform reports it.
+   * Not called while the size is unknown — a guess would draw a bar that jumps.
+   */
+  onProgress?: (fraction: number) => void;
+}
+
+/** What an upload progress event says, as a 0–1 fraction, or undefined when it cannot say. */
+function progressOf(event: AxiosProgressEvent): number | undefined {
+  const fraction =
+    typeof event.progress === 'number'
+      ? event.progress
+      : typeof event.total === 'number' && event.total > 0
+        ? event.loaded / event.total
+        : undefined;
+  return typeof fraction === 'number' && Number.isFinite(fraction)
+    ? Math.min(1, Math.max(0, fraction))
+    : undefined;
 }
 
 /**
@@ -329,5 +377,38 @@ export const Http = {
   /** As `post`, keeping `meta` — the backend's list endpoints are POSTs. */
   postEnvelope<T>(url: string, body?: unknown, config?: HttpRequestConfig): Promise<HttpEnvelope<T>> {
     return send<T>({ ...config, method: 'post', url, data: body });
+  },
+  /**
+   * A `multipart/form-data` POST — a file upload (Phase 4B, `/uploads`).
+   *
+   * ⚠️ The header must be said here. The instance's default is JSON, and axios
+   * turns a FormData sent under a JSON header into JSON — the file part would
+   * arrive as text and never as a file. Under `multipart/form-data` axios hands
+   * the form to React Native untouched, and the platform writes the boundary.
+   * The file itself is a `{ uri, name, type }` part the platform reads from
+   * disk: nothing here holds its bytes.
+   */
+  async postForm<T>(url: string, form: FormData, options: HttpFormOptions = {}): Promise<T> {
+    const { onProgress } = options;
+    return (
+      await send<T>({
+        method: 'post',
+        url,
+        data: form,
+        headers: { 'Content-Type': 'multipart/form-data' },
+        // A file takes longer than a JSON call; every other request keeps the 30 s.
+        timeout: AppConfig.api.uploadTimeoutMs,
+        ...(onProgress
+          ? {
+              onUploadProgress: (event: AxiosProgressEvent) => {
+                const fraction = progressOf(event);
+                if (fraction !== undefined) {
+                  onProgress(fraction);
+                }
+              },
+            }
+          : {}),
+      })
+    ).data;
   },
 };

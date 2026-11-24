@@ -82,31 +82,34 @@ const BACKEND_CODE_MESSAGE: Readonly<Record<string, string>> = Object.freeze({
   // yet. `NOT_SUPPORTED` travels as kind `forbidden`, so nothing offers a retry
   // that would fail the same way.
   NOT_SUPPORTED: 'This is not available in the app yet.',
-  // The customer's side (APP-CUST, 17/11/2026), kind `forbidden` like `NOT_SUPPORTED`:
-  // `/customers/update` cannot clear an email; there is no image upload endpoint.
-  EMAIL_REMOVAL_NOT_SUPPORTED: 'Removing your email address is not available in the app yet.',
-  PROFILE_PHOTO_NOT_SUPPORTED: 'Changing your profile photo is not available in the app yet.',
+  // Phase 4B contract §7 (24/11/2026): the customer has no verified phone, so the
+  // email and its password are their only way in. Nothing changed.
+  EMAIL_REQUIRED_FOR_SIGN_IN:
+    'Your email address can’t be removed: it is how you sign in to this account.',
+  // Phase 4B contract §1: the backend's refusals of an uploaded file, judged by its
+  // bytes. `ApiImageService` reads each as a validation failure, so nothing offers to
+  // send the same file again. The type sentence is the device check's own
+  // (`shared/validation/image.ts`), so both refusals read the same.
+  FILE_TOO_LARGE: 'This photo is too large to upload. Please choose a smaller one.',
+  FILE_TYPE_NOT_ALLOWED: 'Only JPG, PNG and WebP images are supported.',
+  TOO_MANY_FILES: 'Too many photos were sent at once. Please try again with fewer.',
   // Sent by the backend (requests-contract.md, 17/11/2026). Not found also covers
   // a request the caller may not see — it never confirms one exists.
   REQUEST_NOT_FOUND: 'We could not find that request.',
   REQUEST_NOT_CANCELLABLE:
     "A professional has already accepted this request, so it can't be cancelled here.",
-  // The vendor's side (APP-VEND, 17/11/2026), kind `forbidden` like `NOT_SUPPORTED`:
-  // the backend keeps no payment record, no working hours, and has no photo upload;
-  // `/vendors/update` cannot clear a text field.
-  PAYMENT_RECORD_NOT_SUPPORTED: 'Recording a payment is not available in the app yet.',
-  WORKING_HOURS_NOT_SUPPORTED: 'Saving working hours is not available in the app yet.',
-  PHOTO_UPLOAD_NOT_SUPPORTED: 'Adding a new photo is not available in the app yet.',
-  PROFILE_TEXT_CLEAR_NOT_SUPPORTED:
-    'Removing the description or the service area is not available in the app yet.',
+  // Phase 4B contract §4 (24/11/2026). The vendor's request service answers it as
+  // recorded — a paid record is final, a retry is not a failure — so this shows only
+  // if it reaches a screen some other way. Recorded, never processed (section 37).
+  PAYMENT_ALREADY_RECORDED: 'A payment is already recorded for this job.',
+  // Phase 4B contract §8: not in this inbox, whoever else's it may be.
+  NOTIFICATION_NOT_FOUND: 'This notification is no longer available.',
   // The request contract (17/11/2026). The vendor's request service reads all three
   // as business answers — refused, not failed — so these show only if one reaches a
   // screen some other way. The words are the vendor copy's own (`vendorCopy.ts`).
   REQUEST_ALREADY_TAKEN: 'This request is no longer available. Another professional accepted it first.',
   REQUEST_NOT_PENDING: 'This request is no longer waiting for an answer.',
   INVALID_TRANSITION: 'This job has already changed. Showing its latest status.',
-  // No report endpoint (code review, 17/11/2026): the Reports screen shows this calmly.
-  REPORTS_NOT_SUPPORTED: 'Reports aren’t available yet.',
   // requests-contract.md section 8. A per-IP limit on `/auth/*`, or ten codes to
   // one phone in a day; this is the wording for when no `Retry-After` came with it.
   RATE_LIMITED: 'Too many attempts. Please wait a little and try again.',

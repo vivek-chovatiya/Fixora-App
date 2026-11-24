@@ -6,9 +6,10 @@
  * `MockNotificationService` with no change to the bell or the inbox.
  *
  * Endpoints: `POST /notifications/list` `{ page, limit }` (newest first, scoped
- * by the token to the caller's own account and role) and `POST
- * /notifications/read` `{ id }`. `GET /notifications` is the same handler but
- * reads its paging from a body a GET does not carry, so it is not used.
+ * by the token to the caller's own account and role), `POST
+ * /notifications/read` `{ id }` and `POST /notifications/delete` `{ id }`.
+ * `GET /notifications` is the same handler as the list but reads its paging
+ * from a body a GET does not carry, so it is not used.
  *
  * Decisions:
  * - **Each row read by name**: `title`, `message` (the app's `body`),
@@ -35,13 +36,16 @@
  *   inbox was too long to read whole, or a mark failed after some had succeeded
  *   — → `{ complete: false }`; a failure before anything was marked rejects.
  *   Running it again finishes the rest (marking is idempotent).
- * - **No delete endpoint**: `remove` refuses clearly. Phase 1 never offers it.
+ * - **Removing one** is the backend's soft delete (Phase 4B contract §8,
+ *   24/11/2026): gone from the list after. One that is not in this inbox —
+ *   another account's, the same id under the other role, already removed — is
+ *   404 `NOTIFICATION_NOT_FOUND`, kind `notFound`, as the interface says; it is
+ *   never confirmed to exist. Nothing in Phase 1 offers it yet.
  * - Push registration is Phase 2 (section 72): inert, exactly as the mock is.
  */
 
 import { createLogger } from '@/core/logger/Logger';
 import { BaseApiService } from '@/shared/services/api/BaseApiService';
-import { notSupported } from '@/shared/services/api/notSupported';
 import {
   optionalString,
   referenceId,
@@ -135,8 +139,9 @@ export class ApiNotificationService extends BaseApiService implements Notificati
     return truncated ? { complete: false } : undefined;
   }
 
-  async remove(_id: string): Promise<void> {
-    throw notSupported('Removing a notification');
+  async remove(id: string): Promise<void> {
+    // 404 arrives as kind `notFound` (HttpClient): not in this inbox, whoever else has it.
+    await this.post<unknown>('/delete', { id });
   }
 
   async registerDevice(deviceToken: string): Promise<void> {

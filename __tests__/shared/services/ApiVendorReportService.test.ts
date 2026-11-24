@@ -1,75 +1,80 @@
 /**
- * ApiVendorReportService (code review, 17/11/2026): the backend has no report
- * endpoint, so the period reports refuse — no figures nobody counted — and the
- * dashboard's Today's requests is counted from the vendor's own request list,
- * exactly as the service documents: the requests in the vendor's groups whose
- * `createdAt` is today's calendar date in India time.
+ * ApiVendorReportService reads the vendor's report from `POST /vendors/report
+ * { period }` (Phase 4B contract §5, 24/11/2026; PROJECT_BIBLE.md sections 30
+ * and 42). Pinned here:
+ *
+ * - the one route and its exact body — the period key and nothing else: no
+ *   vendor id, no dates the phone worked out;
+ * - the answer checked against `VendorReport` — the period echoed, whole
+ *   counts, an average or `null` — and nothing financial passed on;
+ * - Today's requests as the `today` report's total, one call, whole — the same
+ *   figure the Reports screen shows, never counted on the phone;
+ * - the session, and failures as their own kinds.
  *
  * The backend is a fake axios adapter on the real HttpClient: no network.
  */
 
 import { AxiosError, type AxiosAdapter, type AxiosResponse } from 'axios';
 
-import { AppConfig } from '@/core/config/AppConfig';
 import { httpClient } from '@/core/http/HttpClient';
 import type { AuthUser } from '@/features/auth/types';
 import { ApiVendorReportService } from '@/shared/services/api/ApiVendorReportService';
-import { VENDOR_REPORT_PERIODS } from '@/shared/services/types/VendorReportService';
+import { VENDOR_REPORT_PERIODS, type VendorReportPeriod } from '@/shared/services/types/VendorReportService';
 import { AppError } from '@/shared/types/error';
 
-const sent: { url?: string; body: Record<string, unknown> }[] = [];
+type Reply = { status: number; body: unknown } | 'network';
+
+const sent: { method: string; url?: string; body: Record<string, unknown> }[] = [];
 const originalAdapter = httpClient.defaults.adapter;
 
-function listAnswers(rows: unknown[] | 'network'): void {
+/** The report route, answering each call with `reply(body)`. */
+function backend(reply: (body: Record<string, unknown>) => Reply): void {
   const adapter: AxiosAdapter = async config => {
-    sent.push({ url: config.url, body: JSON.parse((config.data as string) ?? '{}') });
-    if (rows === 'network') {
+    const body = JSON.parse((config.data as string) ?? '{}');
+    sent.push({ method: (config.method ?? 'get').toUpperCase(), url: config.url, body });
+    const answer = config.url === '/vendors/report' ? reply(body) : 'network';
+    if (answer === 'network') {
       throw new AxiosError('Network Error', AxiosError.ERR_NETWORK, config);
     }
-    const response: AxiosResponse = {
-      data: {
-        success: true,
-        message: 'Done.',
-        data: rows,
-        meta: { total: rows.length, page: 1, limit: 100, pages: 1, hasNextPage: false },
-        errors: null,
-      },
-      status: 200,
-      statusText: '',
-      headers: {},
-      config,
-    };
+    const response: AxiosResponse = { data: answer.body, status: answer.status, statusText: '', headers: {}, config };
+    if (answer.status >= 400) {
+      throw new AxiosError('Request failed', AxiosError.ERR_BAD_REQUEST, config, null, response);
+    }
     return response;
   };
   httpClient.defaults.adapter = adapter;
 }
 
-const ME = '6afc3ce87d5e8db042251443';
-const OTHER = '6afc3ce87d5e8db042251499';
+const ok = (data: unknown): Reply => ({
+  status: 200,
+  body: { success: true, message: 'Done.', data, meta: null, errors: null },
+});
+const fail = (status: number, message: string, code?: string): Reply => ({
+  status,
+  body: { success: false, message, code, errors: null, data: null },
+});
 
-let counter = 0;
-function row(createdAt: string, status = 'PENDING', vendor: 'me' | 'other' | null = null) {
-  counter += 1;
+/** The contract's answer for a period, as the backend sends it. */
+function report(period: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    id: `6afc3ce97d5e8db0422${String(counter).padStart(5, '0')}`,
-    customerId: '6afc3ce87d5e8db04225143e',
-    vendorId: vendor === null ? null : { _id: vendor === 'me' ? ME : OTHER },
-    categoryId: { _id: '6afc3ce87d5e8db04225142a', name: 'Electrical' },
-    subCategoryId: { _id: '6afc3ce87d5e8db042251431', name: 'Fan & Light Installation' },
-    priority: 'MEDIUM',
-    status,
-    createdAt,
-    updatedAt: createdAt,
-    declinedByMe: false,
+    period,
+    totalRequests: 12,
+    completedRequests: 7,
+    rejectedRequests: 2,
+    cancelledRequests: 1,
+    averageRating: 4.6,
+    ratingCount: 5,
+    from: '2026-11-17T18:30:00.000Z',
+    to: '2026-11-18T18:30:00.000Z',
+    timeZone: 'Asia/Kolkata',
+    ...extra,
   };
 }
 
-/** 15:00 on 18 November 2026 in India (09:30 UTC). */
-const NOW = Date.parse('2026-11-18T09:30:00.000Z');
-
+const ME = '6afc3ce87d5e8db042251443';
 const vendor: AuthUser = { id: ME, firstName: 'Ravi', lastName: 'Kumar', phone: '9000000001', role: 'vendor' };
 let session: AuthUser | null;
-const service = () => new ApiVendorReportService({ currentUser: async () => session, now: () => NOW });
+const service = () => new ApiVendorReportService({ currentUser: async () => session });
 
 async function rejectionOf(promise: Promise<unknown>): Promise<AppError> {
   try {
@@ -95,98 +100,142 @@ afterEach(() => {
 });
 
 describe('getReport', () => {
-  it.each(VENDOR_REPORT_PERIODS)('refuses %s calmly — no figures nobody counted — and sends nothing', async period => {
-    listAnswers([]);
+  it.each(VENDOR_REPORT_PERIODS)('asks for %s by its key alone, and reads the figures as the server counted them', async period => {
+    backend(body => ok(report(String(body.period))));
 
-    const error = await rejectionOf(service().getReport(period));
+    const figures = await service().getReport(period);
 
-    expect(error.kind).toBe('forbidden');
-    expect(error.code).toBe('REPORTS_NOT_SUPPORTED');
-    expect(error.isRetryable).toBe(false);
-    expect(error.userMessage).toBe('Reports aren’t available yet.');
+    expect(sent).toEqual([{ method: 'POST', url: '/vendors/report', body: { period } }]);
+    expect(figures).toEqual({
+      period,
+      totalRequests: 12,
+      completedRequests: 7,
+      rejectedRequests: 2,
+      cancelledRequests: 1,
+      averageRating: 4.6,
+      ratingCount: 5,
+    });
+  });
+
+  it('passes on exactly the report’s figures — not the backend’s working, and nothing financial', async () => {
+    backend(() => ok(report('week', { amount: 1999, earnings: 5000 })));
+
+    const figures = await service().getReport('week');
+
+    expect(Object.keys(figures).sort()).toEqual(
+      [
+        'averageRating',
+        'cancelledRequests',
+        'completedRequests',
+        'period',
+        'ratingCount',
+        'rejectedRequests',
+        'totalRequests',
+      ].sort(),
+    );
+    expect(JSON.stringify(figures)).not.toMatch(/from|to"|timeZone|amount|earnings|1999|5000/);
+  });
+
+  it('keeps a period nobody rated as no average — never zero stars', async () => {
+    backend(() => ok(report('month', { averageRating: null, ratingCount: 0 })));
+
+    await expect(service().getReport('month')).resolves.toMatchObject({ averageRating: null, ratingCount: 0 });
+  });
+
+  it('never checks that completed, rejected and cancelled fit inside the total — they count when they happened', async () => {
+    backend(() => ok(report('today', { totalRequests: 0, completedRequests: 1 })));
+
+    await expect(service().getReport('today')).resolves.toMatchObject({ totalRequests: 0, completedRequests: 1 });
+  });
+
+  it.each([
+    ['another period than the one asked for', { period: 'month' }],
+    ['a count that is not whole', { completedRequests: 1.5 }],
+    ['a negative count', { rejectedRequests: -1 }],
+    ['a count as text', { totalRequests: '12' }],
+    ['a missing count', { cancelledRequests: undefined }],
+    ['an average that is not a number', { averageRating: '4.6' }],
+    ['a rating count that is not whole', { ratingCount: null }],
+  ])('refuses an answer with %s as a server fault — no figures drawn from a guess', async (_name, extra) => {
+    backend(() => ok(report('week', extra)));
+
+    expect((await rejectionOf(service().getReport('week'))).kind).toBe('server');
+  });
+
+  it('refuses a period that is not one of the three as validation, and sends nothing', async () => {
+    backend(() => ok(report('year')));
+
+    expect((await rejectionOf(service().getReport('year' as VendorReportPeriod))).kind).toBe('validation');
     expect(sent).toEqual([]);
+  });
+
+  it.each([
+    ['a refusal of the period', fail(400, 'Validation Failed', 'VALIDATION_FAILED'), 'validation'],
+    ['a server fault', fail(500, 'Internal Server Error', 'INTERNAL_ERROR'), 'server'],
+    ['a dropped connection', 'network' as const, 'network'],
+  ])('rejects %s as its own kind, so the screen shows its error with Try again where it helps', async (_name, reply, kind) => {
+    backend(() => reply);
+
+    expect((await rejectionOf(service().getReport('today'))).kind).toBe(kind);
   });
 });
 
 describe('getTodayRequests', () => {
-  it('reads the vendor’s own list, as the dashboard does', async () => {
-    listAnswers([]);
+  it('is the today report’s total — one call, whole, never a lower bound', async () => {
+    backend(body => ok(report(String(body.period), { totalRequests: 3 })));
 
-    await expect(service().getTodayRequests()).resolves.toEqual({ totalRequests: 0 });
-    expect(sent).toEqual([
-      {
-        url: '/requests/list',
-        body: { page: AppConfig.pagination.initialPage, limit: AppConfig.api.fullListPageSize },
-      },
-    ]);
+    await expect(service().getTodayRequests()).resolves.toEqual({ totalRequests: 3 });
+    expect(sent).toEqual([{ method: 'POST', url: '/vendors/report', body: { period: 'today' } }]);
   });
 
-  it('counts the requests in the vendor’s groups raised today in India time, and nothing else', async () => {
-    listAnswers([
-      // Today in India: counted, whichever group they are in.
-      row('2026-11-18T04:00:00.000Z'), // open, waiting — 09:30 IST
-      row('2026-11-17T18:40:00.000Z', 'PENDING', 'me'), // directed — 00:10 IST on the 18th
-      row('2026-11-18T06:00:00.000Z', 'ACCEPTED', 'me'),
-      row('2026-11-18T07:00:00.000Z', 'COMPLETED', 'me'),
-      row('2026-11-18T08:00:00.000Z', 'REJECTED', 'me'), // a directed one they declined
-      // Not counted:
-      row('2026-11-17T18:20:00.000Z'), // 23:50 IST on the 17th: yesterday in India
-      row('2026-11-18T05:00:00.000Z', 'ACCEPTED', 'other'), // another vendor's
-      row('2026-11-18T05:00:00.000Z', 'CANCELLED', 'me'), // cancelled
-      row('2026-11-18T05:00:00.000Z', 'REJECTED'), // open, no longer waiting
-    ]);
+  it('is the same figure the Reports screen shows for Today', async () => {
+    backend(body => ok(report(String(body.period), { totalRequests: 8 })));
 
-    await expect(service().getTodayRequests()).resolves.toEqual({ totalRequests: 5 });
+    const reports = service();
+    const [today, figure] = await Promise.all([reports.getReport('today'), reports.getTodayRequests()]);
+
+    expect(figure.totalRequests).toBe(today.totalRequests);
   });
 
-  it('marks the figure a lower bound when the list was longer than the app reads — never silently low', async () => {
-    const adapter: AxiosAdapter = async config => {
-      sent.push({ url: config.url, body: JSON.parse((config.data as string) ?? '{}') });
-      const response: AxiosResponse = {
-        data: {
-          success: true,
-          message: 'Done.',
-          data: [row('2026-11-18T04:00:00.000Z')],
-          meta: { total: 5000, page: 1, limit: 100, pages: 50, hasNextPage: true },
-          errors: null,
-        },
-        status: 200,
-        statusText: '',
-        headers: {},
-        config,
-      };
-      return response;
-    };
-    httpClient.defaults.adapter = adapter;
+  it('never reads the request list to count it on the phone', async () => {
+    backend(body => ok(report(String(body.period))));
 
-    await expect(service().getTodayRequests()).resolves.toEqual({
-      totalRequests: AppConfig.api.fullListMaxPages,
-      isLowerBound: true,
-    });
+    await service().getTodayRequests();
+
+    expect(sent.map(call => call.url)).toEqual(['/vendors/report']);
   });
 
-  it('starts "today" at midnight in India, not at the phone’s or UTC’s midnight', async () => {
-    // 00:10 on the 18th in India is still the 17th in UTC, and the 17th in New York.
-    listAnswers([row('2026-11-17T18:40:00.000Z'), row('2026-11-17T18:29:00.000Z')]);
+  it('refuses an answer for another period as a server fault', async () => {
+    backend(() => ok(report('week')));
 
-    await expect(service().getTodayRequests()).resolves.toEqual({ totalRequests: 1 });
+    expect((await rejectionOf(service().getTodayRequests())).kind).toBe('server');
   });
 
+  it('rejects a dropped connection as network, so the figure shows its own failure', async () => {
+    backend(() => 'network');
+
+    expect((await rejectionOf(service().getTodayRequests())).kind).toBe('network');
+  });
+});
+
+describe('the session', () => {
   it.each([
     ['nobody', null],
     ['a customer', { ...vendor, role: 'customer' as const }],
   ])('refuses %s as unauthorized, and sends nothing', async (_name, who) => {
     session = who;
-    listAnswers([]);
+    backend(body => ok(report(String(body.period))));
 
     expect((await rejectionOf(service().getTodayRequests())).kind).toBe('unauthorized');
     expect((await rejectionOf(service().getReport('today'))).kind).toBe('unauthorized');
     expect(sent).toEqual([]);
   });
 
-  it('rejects a dropped connection as network, so the figure shows its own failure', async () => {
-    listAnswers('network');
+  it('never sends a vendor id — whose report it is, is the token’s', async () => {
+    backend(body => ok(report(String(body.period))));
 
-    expect((await rejectionOf(service().getTodayRequests())).kind).toBe('network');
+    await service().getReport('month');
+
+    expect(JSON.stringify(sent)).not.toContain(ME);
   });
 });

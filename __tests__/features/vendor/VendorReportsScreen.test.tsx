@@ -689,25 +689,31 @@ describe('Vendor reports — a failed read', () => {
   });
 });
 
-describe('Vendor reports — no reports to give (code review, 17/11/2026)', () => {
-  /** What the live service answers: the backend has no report endpoint. */
-  const notAvailable = () =>
-    new AppError({ kind: 'forbidden', code: 'REPORTS_NOT_SUPPORTED', message: 'no report endpoint' });
+describe('Vendor reports — a refusal is a failure, not "not available" (Phase 4B, 24/11/2026)', () => {
+  /** A refusal that trying again cannot change: the backend's 403 to a session that is not a vendor's. */
+  const refused = () => new AppError({ kind: 'forbidden', code: 'FORBIDDEN', message: 'not a vendor' });
 
-  it('says calmly that reports are not available yet — no figures, no fault, no retry, no periods', async () => {
-    jest.spyOn(reports, 'getReport').mockRejectedValue(notAvailable());
+  it('shows the failure where the figures would be, keeps the periods, and offers no retry that would fail again', async () => {
+    jest.spyOn(reports, 'getReport').mockRejectedValue(refused());
     const screen = await render();
 
-    expect(screen.has('vendor-reports-unavailable')).toBe(true);
-    expect(screen.text('vendor-reports-unavailable')).toContain(COPY.unavailableTitle);
-    expect(screen.text('vendor-reports-unavailable')).toContain(COPY.unavailableMessage);
-    expect(screen.has('vendor-reports-error')).toBe(false);
+    expect(screen.has('vendor-reports-error')).toBe(true);
+    expect(screen.text('vendor-reports-error')).toContain(COPY.failedTitle);
+    expect(screen.has('vendor-reports-unavailable')).toBe(false);
     expect(screen.has('vendor-reports-figures')).toBe(false);
-    expect(screen.has('vendor-reports-periods')).toBe(false);
+    expect(screen.chosen()).toEqual(['today']);
     expect(screen.pressable('Try again')).toHaveLength(0);
     expect(screen.pullControl()).toBeUndefined();
-    // Still on the screen, with the way back.
-    expect(screen.text('vendor-reports-heading')).toBe(COPY.title);
+  });
+
+  it('reads another period normally after a refusal', async () => {
+    jest.spyOn(reports, 'getReport').mockRejectedValueOnce(refused());
+    const screen = await render();
+
+    await screen.choose('month');
+
+    expect(screen.has('vendor-reports-error')).toBe(false);
+    expect(screen.counts()).toEqual(RAVI_COUNTS.month);
   });
 });
 

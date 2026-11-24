@@ -13,9 +13,15 @@
  * - the contract's codes as the interface's refusals (`REQUEST_ALREADY_TAKEN`,
  *   `REQUEST_NOT_PENDING`, `INVALID_TRANSITION`, `REQUEST_NOT_FOUND`), and no
  *   English text read to decide anything;
- * - the reference (`requestNumber`) beside the id, and the preferred time read
- *   in India time whatever the phone's zone;
- * - the payment record the backend cannot keep, refused rather than faked;
+ * - the reference (`requestNumber`) beside the id, the preferred date and time
+ *   exactly as the backend holds them, and `rejectedAt` only on what this vendor
+ *   turned down (Phase 4B contract §3, §5);
+ * - the offline payment record (Phase 4B contract §4): the completion's exact
+ *   body — rupees, `PAID`/`PENDING`, a method only when paid, the vendor's notes
+ *   as `completionNotes` and never as the timeline's `note` — the `payment` view
+ *   read back, a not-paid-yet record included, a payment recorded later and
+ *   `PAYMENT_ALREADY_RECORDED` answered as recorded, and the methods read from
+ *   the backend;
  * - `_id` never leaving the service.
  *
  * The backend is a fake axios adapter on the real HttpClient: no network.
@@ -124,6 +130,9 @@ const SERVICE_ADDRESS = `${STREET}, Koramangala, Bengaluru 560095`;
 const AREA = 'Koramangala';
 const CITY = 'Bengaluru';
 
+/** Where a host-free `/uploads/...` path loads from: the API's own origin (`uploadUrls.ts`). */
+const API_ORIGIN = AppConfig.api.baseUrl.replace(/\/api\/v\d+\/?$/, '');
+
 const vendorSession: AuthUser = {
   id: ME,
   firstName: 'Ravi',
@@ -203,6 +212,11 @@ function requestRow(id: string, options: RowOptions = {}): Record<string, unknow
     paymentMode: 'CASH',
     amount: 499,
     scheduledAt: null,
+    // The Phase 4B fields every request response carries (contract §3 to §5).
+    preferredDate: null,
+    preferredTime: null,
+    payment: null,
+    rejectedAt: null,
     completedAt: null,
     notes: '',
     timeline: [],
@@ -326,6 +340,11 @@ describe('the session', () => {
     ['acceptRequest', (s: ApiVendorRequestService) => s.acceptRequest('REQ-31042')],
     ['rejectRequest', (s: ApiVendorRequestService) => s.rejectRequest('REQ-31042')],
     ['startRequest', (s: ApiVendorRequestService) => s.startRequest('REQ-31042')],
+    [
+      'recordPayment',
+      (s: ApiVendorRequestService) =>
+        s.recordPayment('REQ-31042', { paymentStatus: PAYMENT_STATUS_PAID, paymentMethodId: 'CASH' }),
+    ],
   ])('%s answers a reference that is not a backend id as not found, without asking', async (_name, call) => {
     backend({});
 
@@ -567,6 +586,48 @@ describe('listRequests', () => {
     expect(list.completed.map(job => job.id)).toEqual([finishedLast, finishedFirst]);
   });
 
+  it('dates what this vendor turned down by their own `rejectedAt`, most recent first (contract §5)', async () => {
+    const rejectedEarly = nextId();
+    const declinedLate = nextId();
+    backend({
+      'POST /requests/list': lists(
+        [
+          requestRow(rejectedEarly, {
+            vendor: 'me',
+            status: 'REJECTED',
+            // Touched since, but declined first: their own time orders it, not `updatedAt`.
+            extra: { rejectedAt: '2026-11-16T08:00:00.000Z', updatedAt: '2026-11-18T08:00:00.000Z' },
+          }),
+        ],
+        [requestRow(declinedLate, { extra: { rejectedAt: '2026-11-17T08:00:00.000Z' } })],
+      ),
+    });
+
+    const list = await service.listRequests();
+
+    expect(list.rejected.map(job => [job.id, job.rejectedAt])).toEqual([
+      [declinedLate, '2026-11-17T08:00:00.000Z'],
+      [rejectedEarly, '2026-11-16T08:00:00.000Z'],
+    ]);
+  });
+
+  it('reads `rejectedAt` onto nothing this vendor did not turn down', async () => {
+    const waiting = nextId();
+    const held = nextId();
+    const stamp = { rejectedAt: '2026-11-17T08:00:00.000Z' };
+    backend({
+      'POST /requests/list': lists([
+        requestRow(waiting, { extra: stamp }),
+        requestRow(held, { vendor: 'me', status: 'ACCEPTED', extra: stamp }),
+      ]),
+    });
+
+    const list = await service.listRequests();
+
+    expect(list.pending[0]).not.toHaveProperty('rejectedAt');
+    expect(list.active[0]).not.toHaveProperty('rejectedAt');
+  });
+
   it('reads every page, and keeps a request two pages both listed once', async () => {
     const first = nextId();
     const second = nextId();
@@ -640,9 +701,11 @@ describe('getRequest', () => {
             vendor: 'me',
             status: 'IN_PROGRESS',
             extra: {
-              images: ['https://cdn.example.com/a.jpg', '', 'https://cdn.example.com/b.jpg'],
-              // 09:30 on the 18th, India time.
-              scheduledAt: '2026-11-18T09:30:00+05:30',
+              images: ['/uploads/request/9f3c0000000000000000000000000001.jpg', '', 'https://cdn.example.com/b.jpg'],
+              preferredDate: '2026-11-18',
+              preferredTime: '09:30',
+              // Kept for the web views; the pair above is what the app reads.
+              scheduledAt: '2026-11-19T12:00:00+05:30',
             },
           }),
         ),
@@ -660,7 +723,7 @@ describe('getRequest', () => {
       address: { formattedAddress: SERVICE_ADDRESS },
       locality: `${AREA}, ${CITY}`,
       description: 'Living room ceiling fan is making clicking noise.',
-      imageUrls: ['https://cdn.example.com/a.jpg', 'https://cdn.example.com/b.jpg'],
+      imageUrls: [`${API_ORIGIN}/uploads/request/9f3c0000000000000000000000000001.jpg`, 'https://cdn.example.com/b.jpg'],
       preferredDate: '2026-11-18',
       preferredTime: '09:30',
       priority: 'HIGH',
@@ -670,58 +733,78 @@ describe('getRequest', () => {
     expectNoBackendKeys(request);
   });
 
-  describe('the preferred moment, read in India time whatever the phone’s zone', () => {
-    /**
-     * The phone's own clock, answering as New York's would for 04:00 UTC on the
-     * 18th — 23:00 the evening before. A reader that used the device's zone
-     * would say the 17th; India's answer is 09:30 on the 18th. Stubbed rather
-     * than set with `TZ`: Jest does not pick up a zone changed at run time, and
-     * Node on Windows ignores the variable altogether.
-     */
-    function phoneInNewYork(): void {
-      jest.spyOn(Date.prototype, 'getFullYear').mockReturnValue(2026);
-      jest.spyOn(Date.prototype, 'getMonth').mockReturnValue(10);
-      jest.spyOn(Date.prototype, 'getDate').mockReturnValue(17);
-      jest.spyOn(Date.prototype, 'getHours').mockReturnValue(23);
-      jest.spyOn(Date.prototype, 'getMinutes').mockReturnValue(0);
-      jest.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(300);
-    }
+  describe('the preferred date and time, exactly as the backend holds them (contract §3)', () => {
+    it.each([
+      ['a date and a time', { preferredDate: '2026-11-18', preferredTime: '09:30' }],
+      ['a date alone', { preferredDate: '2026-11-18', preferredTime: null }],
+      ['a time alone — no longer dropped', { preferredDate: null, preferredTime: '18:00' }],
+      ['neither', { preferredDate: null, preferredTime: null }],
+    ])('reads %s, each one absent when null', async (_name, pair) => {
+      const id = nextId();
+      backend({ 'POST /requests/detail': () => ok(requestRow(id, { extra: pair })) });
 
-    it('reads 04:00 UTC as 09:30 on the 18th in India, not the phone’s 23:00 on the 17th', async () => {
+      const request = await service.getRequest(id);
+
+      for (const key of ['preferredDate', 'preferredTime'] as const) {
+        if (pair[key] === null) {
+          expect(request).not.toHaveProperty(key);
+        } else {
+          expect(request[key]).toBe(pair[key]);
+        }
+      }
+    });
+
+    it('never works a preference out of `scheduledAt` — the backend sends the pair itself', async () => {
       const id = nextId();
       backend({
         'POST /requests/detail': () => ok(requestRow(id, { extra: { scheduledAt: '2026-11-18T04:00:00.000Z' } })),
       });
-      phoneInNewYork();
-
-      const request = await service.getRequest(id);
-
-      expect(request.preferredDate).toBe('2026-11-18');
-      expect(request.preferredTime).toBe('09:30');
-    });
-
-    it('reads midnight in India as a date with no time', async () => {
-      const id = nextId();
-      backend({
-        'POST /requests/detail': () => ok(requestRow(id, { extra: { scheduledAt: '2026-11-19T18:30:00.000Z' } })),
-      });
-      phoneInNewYork();
-
-      const request = await service.getRequest(id);
-
-      expect(request.preferredDate).toBe('2026-11-20');
-      expect(request).not.toHaveProperty('preferredTime');
-    });
-
-    it('carries no preference when the backend has none', async () => {
-      const id = nextId();
-      backend({ 'POST /requests/detail': () => ok(requestRow(id)) });
 
       const request = await service.getRequest(id);
 
       expect(request).not.toHaveProperty('preferredDate');
       expect(request).not.toHaveProperty('preferredTime');
     });
+
+    it.each([
+      ['a time in the wrong shape', { preferredTime: '9:00' }],
+      ['an instant for a date', { preferredDate: '2026-11-18T00:00:00.000Z' }],
+      ['a number', { preferredDate: 20261118 }],
+    ])('reads %s as no preference, never a guess at one', async (_name, extra) => {
+      const id = nextId();
+      backend({ 'POST /requests/detail': () => ok(requestRow(id, { extra })) });
+
+      const request = await service.getRequest(id);
+
+      expect(request).not.toHaveProperty('preferredDate');
+      expect(request).not.toHaveProperty('preferredTime');
+    });
+  });
+
+  it('shows the photographs before the vendor holds the work — they describe the job (section 32, amended)', async () => {
+    const id = nextId();
+    backend({
+      'POST /requests/detail': () =>
+        ok(requestRow(id, { extra: { images: ['/uploads/request/9f3c0000000000000000000000000002.jpg', 'file:///x.jpg'] } })),
+    });
+
+    const request = await service.getRequest(id);
+
+    // The one it cannot load — a phone's own file — is left out.
+    expect(request.imageUrls).toEqual([`${API_ORIGIN}/uploads/request/9f3c0000000000000000000000000002.jpg`]);
+    expectWithheld(request);
+  });
+
+  it('dates a request this vendor declined by their own `rejectedAt`', async () => {
+    const id = nextId();
+    backend({
+      'POST /requests/detail': () =>
+        ok(requestRow(id, { extra: { declinedByMe: true, rejectedAt: '2026-11-17T08:00:00.000Z' } })),
+    });
+
+    const request = await service.getRequest(id);
+
+    expect(request).toMatchObject({ status: 'REJECTED', rejectedAt: '2026-11-17T08:00:00.000Z' });
   });
 
   it.each([
@@ -888,25 +971,81 @@ describe('getRequest', () => {
     expect(calls()).toEqual(['POST /requests/detail']);
   });
 
-  it('carries a payment record only when the backend says paid, the amount read as paise', async () => {
-    const paid = nextId();
-    const unpaid = nextId();
+  describe('the completion record, read from the `payment` view (contract §4)', () => {
     const finished = { vendor: 'me' as Holder, status: 'COMPLETED' };
-    backend({
-      'POST /requests/detail': body =>
-        ok(
-          body?.id === paid
-            ? requestRow(paid, { ...finished, extra: { paymentStatus: 'PAID', amount: 185.5 } })
-            : requestRow(unpaid, finished),
-        ),
+    const opened = async (payment: unknown, extra: Record<string, unknown> = {}) => {
+      const id = nextId();
+      backend({ 'POST /requests/detail': () => ok(requestRow(id, { ...finished, extra: { payment, ...extra } })) });
+      return service.getRequest(id);
+    };
+
+    it('reads a paid record whole: rupees as paise, the method, its label and the vendor’s notes', async () => {
+      const request = await opened({
+        finalAmount: 499.5,
+        currency: 'INR',
+        paymentStatus: 'PAID',
+        paymentMethodId: 'UPI',
+        paymentMethodLabel: 'UPI',
+        completionNotes: 'Replaced the regulator.',
+        recordedAt: '2026-11-17T13:00:00.000Z',
+        paidAt: '2026-11-17T13:00:00.000Z',
+      });
+
+      // Exactly the record's keys: the times stay the backend's.
+      expect(request.completion).toEqual({
+        finalAmountMinor: 49_950,
+        currency: 'INR',
+        paymentStatus: PAYMENT_STATUS_PAID,
+        paymentMethodId: 'UPI',
+        paymentMethodLabel: 'UPI',
+        notes: 'Replaced the regulator.',
+      });
     });
 
-    expect((await service.getRequest(paid)).completion).toEqual({
-      finalAmountMinor: 18_550,
-      currency: AppConfig.money.currency,
-      paymentStatus: PAYMENT_STATUS_PAID,
+    it('reads a not-paid-yet record with its amount — the vendor sees what is owed, and can record it later', async () => {
+      const request = await opened({
+        finalAmount: 499,
+        currency: 'INR',
+        paymentStatus: 'PENDING',
+        recordedAt: '2026-11-17T13:00:00.000Z',
+      });
+
+      expect(request.completion).toEqual({
+        finalAmountMinor: 49_900,
+        currency: 'INR',
+        paymentStatus: PAYMENT_STATUS_UNPAID,
+      });
     });
-    expect(await service.getRequest(unpaid)).not.toHaveProperty('completion');
+
+    it('takes no record from the top-level fields the web views read — `payment: null` is none', async () => {
+      const request = await opened(null, { paymentStatus: 'PAID', amount: 499 });
+
+      expect(request).not.toHaveProperty('completion');
+    });
+
+    it.each([
+      ['no amount', { currency: 'INR', paymentStatus: 'PENDING' }],
+      ['an amount of nothing', { finalAmount: 0, currency: 'INR', paymentStatus: 'PENDING' }],
+      ['no status', { finalAmount: 499, currency: 'INR' }],
+    ])('reads a view with %s as no record, rather than a figure nobody recorded', async (_name, payment) => {
+      expect(await opened(payment)).not.toHaveProperty('completion');
+    });
+
+    it('keeps a status it does not know as sent, for the presentation table to word safely', async () => {
+      const request = await opened({ finalAmount: 499, currency: 'INR', paymentStatus: 'PART_PAID' });
+
+      expect(request.completion?.paymentStatus).toBe('PART_PAID');
+    });
+
+    it('never reads a record onto work this vendor does not hold, whatever was sent', async () => {
+      const id = nextId();
+      backend({
+        'POST /requests/detail': () =>
+          ok(requestRow(id, { extra: { payment: { finalAmount: 499, currency: 'INR', paymentStatus: 'PENDING' } } })),
+      });
+
+      expect(await service.getRequest(id)).not.toHaveProperty('completion');
+    });
   });
 });
 
@@ -1131,36 +1270,117 @@ describe('completeRequest', () => {
     paymentStatus: PAYMENT_STATUS_UNPAID,
   });
 
-  it('completes work under way with the amount in rupees, and nothing else', async () => {
+  /** The completion route, answering as the contract does: bare references, the `payment` view on it. */
+  function completing(before: Record<string, unknown>, payment: unknown = null): Route {
+    return () =>
+      ok(bareRow(before, { status: 'COMPLETED', payment, completedAt: '2026-11-17T13:00:00.000Z' }));
+  }
+
+  it('completes a job not paid yet with exactly the contract’s keys — rupees, the currency, PENDING', async () => {
     const id = nextId();
     const before = requestRow(id, { vendor: 'me', status: 'IN_PROGRESS' });
     backend({
       'POST /requests/detail': () => ok(before),
-      'POST /requests/complete': body =>
-        ok(bareRow(before, { status: 'COMPLETED', amount: body?.amount, completedAt: '2026-11-17T13:00:00.000Z' })),
+      'POST /requests/complete': completing(before, {
+        finalAmount: 185.5,
+        currency: 'INR',
+        paymentStatus: 'PENDING',
+        recordedAt: '2026-11-17T13:00:00.000Z',
+      }),
     });
 
-    const result = await service.completeRequest(id, { ...unpaid(18_550), notes: 'Replaced the regulator.' });
+    const result = await service.completeRequest(id, unpaid(18_550));
 
-    expect(sent[1]).toEqual({ method: 'POST', url: '/requests/complete', body: { id, amount: 185.5 } });
-    expect(JSON.stringify(sent)).not.toContain('Replaced the regulator.');
+    expect(sent[1]).toEqual({
+      method: 'POST',
+      url: '/requests/complete',
+      body: { id, amount: 185.5, currency: 'INR', paymentStatus: 'PENDING' },
+    });
+    // No method on a job not paid, and no notes when there are none: absent, not null.
+    expect(Object.keys(sent[1].body ?? {}).sort()).toEqual(['amount', 'currency', 'id', 'paymentStatus']);
     expect(result).toMatchObject({
       outcome: 'completed',
-      request: { id, status: 'COMPLETED', completedAt: '2026-11-17T13:00:00.000Z' },
+      request: {
+        id,
+        status: 'COMPLETED',
+        completedAt: '2026-11-17T13:00:00.000Z',
+        completion: { finalAmountMinor: 18_550, currency: 'INR', paymentStatus: PAYMENT_STATUS_UNPAID },
+      },
     });
   });
 
-  it('sends a whole-rupee amount as a whole number', async () => {
+  it('completes a paid job with its method, and the vendor’s notes as `completionNotes` — never the timeline’s `note`', async () => {
     const id = nextId();
     const before = requestRow(id, { vendor: 'me', status: 'IN_PROGRESS' });
     backend({
       'POST /requests/detail': () => ok(before),
-      'POST /requests/complete': () => ok(bareRow(before, { status: 'COMPLETED' })),
+      'POST /requests/complete': completing(before, {
+        finalAmount: 499,
+        currency: 'INR',
+        paymentStatus: 'PAID',
+        paymentMethodId: 'UPI',
+        paymentMethodLabel: 'UPI',
+        completionNotes: 'Replaced the regulator.',
+        recordedAt: '2026-11-17T13:00:00.000Z',
+        paidAt: '2026-11-17T13:00:00.000Z',
+      }),
     });
 
-    await service.completeRequest(id, unpaid(49_900));
+    const result = await service.completeRequest(id, {
+      ...unpaid(49_900),
+      paymentStatus: PAYMENT_STATUS_PAID,
+      paymentMethodId: 'UPI',
+      notes: 'Replaced the regulator.',
+    });
 
-    expect(sent[1].body).toEqual({ id, amount: 499 });
+    expect(sent[1].body).toEqual({
+      id,
+      amount: 499,
+      currency: 'INR',
+      paymentStatus: 'PAID',
+      paymentMethodId: 'UPI',
+      completionNotes: 'Replaced the regulator.',
+    });
+    // The timeline's `note` is what the customer reads: the vendor's notes are not in it.
+    expect(sent[1].body).not.toHaveProperty('note');
+    expect(result).toMatchObject({
+      outcome: 'completed',
+      request: {
+        completion: {
+          finalAmountMinor: 49_900,
+          paymentStatus: PAYMENT_STATUS_PAID,
+          paymentMethodId: 'UPI',
+          paymentMethodLabel: 'UPI',
+          notes: 'Replaced the regulator.',
+        },
+      },
+    });
+  });
+
+  it('sends no notes the vendor left blank', async () => {
+    const id = nextId();
+    const before = requestRow(id, { vendor: 'me', status: 'IN_PROGRESS' });
+    backend({ 'POST /requests/detail': () => ok(before), 'POST /requests/complete': completing(before) });
+
+    await service.completeRequest(id, { ...unpaid(49_900), notes: '   ' });
+
+    expect(sent[1].body).not.toHaveProperty('completionNotes');
+    expect(sent[1].body).not.toHaveProperty('note');
+  });
+
+  it.each([
+    [49_900, 499],
+    [49_999, 499.99],
+    [1, 0.01],
+    [100_000_000, 1_000_000],
+  ])('sends %p paise as %p rupees — two decimals at most, never rounded', async (minor, rupees) => {
+    const id = nextId();
+    const before = requestRow(id, { vendor: 'me', status: 'IN_PROGRESS' });
+    backend({ 'POST /requests/detail': () => ok(before), 'POST /requests/complete': completing(before) });
+
+    await service.completeRequest(id, unpaid(minor));
+
+    expect(sent[1].body?.amount).toBe(rupees);
   });
 
   it('reads 409 INVALID_TRANSITION on the completion as an invalid transition', async () => {
@@ -1176,21 +1396,18 @@ describe('completeRequest', () => {
     });
   });
 
-  it('refuses a job recorded as paid — the backend cannot keep it — and sends nothing', async () => {
-    backend({});
+  it('rejects the backend’s refusal of a method it has not configured as validation', async () => {
+    const id = nextId();
+    backend({
+      'POST /requests/detail': () => ok(requestRow(id, { vendor: 'me', status: 'IN_PROGRESS' })),
+      'POST /requests/complete': () => fail(400, 'Validation Failed', 'VALIDATION_FAILED'),
+    });
 
     const error = await rejectionOf(
-      service.completeRequest(nextId(), {
-        ...unpaid(49_900),
-        paymentStatus: PAYMENT_STATUS_PAID,
-        paymentMethodId: 'cash',
-      }),
+      service.completeRequest(id, { ...unpaid(49_900), paymentStatus: PAYMENT_STATUS_PAID, paymentMethodId: 'GOLD' }),
     );
 
-    expect(error.kind).toBe('forbidden');
-    expect(error.code).toBe('PAYMENT_RECORD_NOT_SUPPORTED');
-    expect(error.isRetryable).toBe(false);
-    expect(sent).toEqual([]);
+    expect(error.kind).toBe('validation');
   });
 
   it.each([
@@ -1199,7 +1416,10 @@ describe('completeRequest', () => {
     ['more than the ceiling', { ...unpaid(100_000_001) }],
     ['another currency', { ...unpaid(49_900), currency: 'USD' }],
     ['a status nobody knows', { ...unpaid(49_900), paymentStatus: 'PART_PAID' }],
-    ['a method on a job not paid', { ...unpaid(49_900), paymentMethodId: 'cash' }],
+    ['the backend’s own word for not paid', { ...unpaid(49_900), paymentStatus: 'PENDING' }],
+    ['a method on a job not paid', { ...unpaid(49_900), paymentMethodId: 'CASH' }],
+    ['a paid job with no method', { ...unpaid(49_900), paymentStatus: PAYMENT_STATUS_PAID }],
+    ['a paid job with a blank method', { ...unpaid(49_900), paymentStatus: PAYMENT_STATUS_PAID, paymentMethodId: ' ' }],
     ['notes over the ceiling', { ...unpaid(49_900), notes: 'x'.repeat(501) }],
   ])('refuses %s as validation, before anything is sent', async (_name, input) => {
     backend({});
@@ -1220,25 +1440,145 @@ describe('completeRequest', () => {
   });
 });
 
-/* What the backend cannot keep -------------------------------------- */
+/* A payment recorded later, and the methods (contract §4) ------------ */
 
-describe('the payment record', () => {
+describe('recordPayment', () => {
+  const NOT_PAID = { finalAmount: 499, currency: 'INR', paymentStatus: 'PENDING', recordedAt: '2026-11-17T13:00:00.000Z' };
+  const PAID_BY_UPI = {
+    ...NOT_PAID,
+    paymentStatus: 'PAID',
+    paymentMethodId: 'UPI',
+    paymentMethodLabel: 'UPI',
+    paidAt: '2026-11-18T09:00:00.000Z',
+  };
+  const paidByUpi = { paymentStatus: PAYMENT_STATUS_PAID, paymentMethodId: 'UPI' };
+  const finishedRow = (id: string, payment: unknown) =>
+    requestRow(id, { vendor: 'me', status: 'COMPLETED', extra: { payment, completedAt: '2026-11-17T13:00:00.000Z' } });
+
+  it('sends exactly the id, PAID and the method — nothing the completion fixed — and answers recorded', async () => {
+    const id = nextId();
+    backend({ 'POST /requests/record-payment': () => ok(finishedRow(id, PAID_BY_UPI)) });
+
+    const result = await service.recordPayment(id, paidByUpi);
+
+    expect(sent).toEqual([
+      { method: 'POST', url: '/requests/record-payment', body: { id, paymentStatus: 'PAID', paymentMethodId: 'UPI' } },
+    ]);
+    expect(result).toEqual({
+      outcome: 'recorded',
+      request: expect.objectContaining({
+        id,
+        status: 'COMPLETED',
+        completion: {
+          finalAmountMinor: 49_900,
+          currency: 'INR',
+          paymentStatus: PAYMENT_STATUS_PAID,
+          paymentMethodId: 'UPI',
+          paymentMethodLabel: 'UPI',
+        },
+      }),
+    });
+  });
+
+  it('answers 409 PAYMENT_ALREADY_RECORDED as recorded — read again, the first method standing', async () => {
+    const id = nextId();
+    backend({
+      'POST /requests/record-payment': () => fail(409, 'Payment already recorded.', 'PAYMENT_ALREADY_RECORDED'),
+      'POST /requests/detail': () => ok(finishedRow(id, PAID_BY_UPI)),
+    });
+
+    const result = await service.recordPayment(id, { paymentStatus: PAYMENT_STATUS_PAID, paymentMethodId: 'CASH' });
+
+    expect(calls()).toEqual(['POST /requests/record-payment', 'POST /requests/detail']);
+    expect(sent[1].body).toEqual({ id });
+    expect(result).toMatchObject({
+      outcome: 'recorded',
+      request: { id, completion: { paymentStatus: PAYMENT_STATUS_PAID, paymentMethodId: 'UPI' } },
+    });
+  });
+
+  it('reads 409 INVALID_TRANSITION — not finished, or finished with no record — as an invalid transition', async () => {
+    backend({
+      'POST /requests/record-payment': () => fail(409, 'Invalid transition.', 'INVALID_TRANSITION'),
+    });
+
+    await expect(service.recordPayment(nextId(), paidByUpi)).resolves.toEqual({
+      outcome: 'refused',
+      reason: 'invalidTransition',
+    });
+  });
+
+  it('rejects 404 — not this vendor’s, or not there — as not found, never confirming it exists', async () => {
+    backend({
+      'POST /requests/record-payment': () => fail(404, 'Service request not found.', 'REQUEST_NOT_FOUND'),
+    });
+
+    const error = await rejectionOf(service.recordPayment(nextId(), paidByUpi));
+
+    expect(error.kind).toBe('notFound');
+    expect(calls()).toEqual(['POST /requests/record-payment']);
+  });
+
+  it('keeps a 409 with no code it knows a conflict, rather than guessing it recorded', async () => {
+    backend({ 'POST /requests/record-payment': () => fail(409, 'Conflict.') });
+
+    expect((await rejectionOf(service.recordPayment(nextId(), paidByUpi))).kind).toBe('conflict');
+  });
+
   it.each([
-    [
-      'recordPayment',
-      (s: ApiVendorRequestService) =>
-        s.recordPayment(nextId(), { paymentStatus: PAYMENT_STATUS_PAID, paymentMethodId: 'cash' }),
-    ],
-    ['listPaymentMethods', (s: ApiVendorRequestService) => s.listPaymentMethods()],
-  ])('%s refuses clearly — not retryable, the app’s own words — and sends nothing', async (_name, call) => {
+    ['a status other than paid', { paymentStatus: PAYMENT_STATUS_UNPAID, paymentMethodId: 'UPI' }],
+    ['the backend’s own word for paid spelt another way', { paymentStatus: 'paid', paymentMethodId: 'UPI' }],
+    ['no method', { paymentStatus: PAYMENT_STATUS_PAID }],
+    ['a blank method', { paymentStatus: PAYMENT_STATUS_PAID, paymentMethodId: '' }],
+  ])('refuses %s as validation, before anything is sent', async (_name, input) => {
     backend({});
 
-    const error = await rejectionOf(call(service));
+    const error = await rejectionOf(service.recordPayment(nextId(), input as never));
 
-    expect(error.kind).toBe('forbidden');
-    expect(error.code).toBe('PAYMENT_RECORD_NOT_SUPPORTED');
-    expect(error.isRetryable).toBe(false);
-    expect(error.userMessage).toBe('Recording a payment is not available in the app yet.');
+    expect(error.kind).toBe('validation');
     expect(sent).toEqual([]);
+  });
+});
+
+describe('listPaymentMethods', () => {
+  it('reads the backend’s configured methods, in its order, as they are', async () => {
+    backend({
+      'POST /payment-methods/list': () =>
+        ok([
+          { id: 'CASH', label: 'Cash' },
+          { id: 'UPI', label: 'UPI' },
+          { id: 'BANK_TRANSFER', label: 'Bank transfer' },
+          { id: 'CARD', label: 'Card' },
+          { id: 'OTHER', label: 'Other' },
+        ]),
+    });
+
+    const methods = await service.listPaymentMethods();
+
+    expect(sent).toEqual([{ method: 'POST', url: '/payment-methods/list', body: {} }]);
+    expect(methods).toEqual([
+      { id: 'CASH', label: 'Cash' },
+      { id: 'UPI', label: 'UPI' },
+      { id: 'BANK_TRANSFER', label: 'Bank transfer' },
+      { id: 'CARD', label: 'Card' },
+      { id: 'OTHER', label: 'Other' },
+    ]);
+  });
+
+  it('leaves out a method that breaks the contract, and keeps the rest', async () => {
+    backend({
+      'POST /payment-methods/list': () => ok([{ id: 'CASH', label: 'Cash' }, { id: 'UPI' }, { label: 'Card' }, null]),
+    });
+
+    await expect(service.listPaymentMethods()).resolves.toEqual([{ id: 'CASH', label: 'Cash' }]);
+  });
+
+  it.each([
+    ['an answer that is not a list', ok({ methods: [] }), 'server'],
+    ['a dropped connection', 'network' as const, 'network'],
+  ])('rejects %s as its own kind, so the method field shows its own failure', async (_name, reply, kind) => {
+    backend({ 'POST /payment-methods/list': () => reply });
+
+    expect((await rejectionOf(service.listPaymentMethods())).kind).toBe(kind);
   });
 });
