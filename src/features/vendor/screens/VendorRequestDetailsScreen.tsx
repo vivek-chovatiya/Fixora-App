@@ -4,8 +4,8 @@
  * One request, opened (PROJECT_BIBLE.md section 32; Phase 3E-3), answered
  * (section 33; Phase 3E-4), and worked (sections 35 and 36; Phase 3E-5).
  *
- * It shows what the request is (section 32): the reference, the category and
- * service, how urgent it is, when the customer would like it done, how it
+ * It shows what the request is (section 32): the reference (with a button that
+ * copies it, T135), the category and service, how urgent it is, when the customer would like it done, how it
  * reached this vendor, what the customer said and the photographs they
  * attached — and where it is and who raised it, as far as the vendor may know
  * yet. Straight under the heading — on the first screen, so nobody scrolls to
@@ -100,6 +100,7 @@ import type { VendorStackParamList } from '@/navigation/types';
 import {
   BackButton,
   Card,
+  CopyButton,
   EmptyState,
   ErrorState,
   Icon,
@@ -530,13 +531,28 @@ function RequestBody({ request, action, onRecordPayment }: RequestBodyProps) {
         <Text variant="overline" color="textTertiary" accessibilityRole="header">
           {COPY.requestSection}
         </Text>
-        {/* The quotable reference, or no row: the id is a database id nobody can quote. */}
+        {/*
+          The quotable reference, or no row: the id is a database id nobody can
+          quote. Copied by the button beside it (T135), level with the two lines.
+        */}
         {request.reference ? (
-          <ProfileDetailRow
-            label={COPY.referenceLabel}
-            value={request.reference}
-            testID="vendor-request-reference"
-          />
+          <View style={[styles.row, { gap: theme.spacing.md }]}>
+            <View style={styles.grow}>
+              <ProfileDetailRow
+                label={COPY.referenceLabel}
+                value={request.reference}
+                testID="vendor-request-reference"
+              />
+            </View>
+            <CopyButton
+              value={request.reference}
+              accessibilityLabel={COPY.copyReference(request.reference)}
+              accessibilityHint={COPY.copyReferenceHint}
+              copiedLabel={COPY.copied}
+              failedMessage={COPY.copyFailed}
+              testID="vendor-request-reference-copy"
+            />
+          </View>
         ) : null}
         {request.categoryName ? (
           <ProfileDetailRow label={COPY.categoryLabel} value={request.categoryName} />
@@ -670,5 +686,8 @@ const styles = StyleSheet.create({
   },
   start: {
     alignItems: 'flex-start',
+  },
+  grow: {
+    flex: 1,
   },
 });

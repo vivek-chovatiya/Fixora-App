@@ -93,7 +93,8 @@ describe('AsyncStorageMockVendorTeam', () => {
       members: [
         SURESH,
         { id: 'tm_9', name: '', role: 'Helper', status: 'ACTIVE' },
-        { id: 'tm_10', name: 'No Role', status: 'ACTIVE' },
+        // A role is optional (T137), but one that is there is never blank.
+        { id: 'tm_10', name: 'Blank Role', role: '   ', status: 'ACTIVE' },
         { id: 'tm_11', name: 'Bad Phone', role: 'Helper', phone: '+91 90000', status: 'ACTIVE' },
         { id: 'tm_12', name: 'N'.repeat(81), role: 'Helper', status: 'ACTIVE' },
         { id: '', name: 'No Id', role: 'Helper', status: 'ACTIVE' },
@@ -103,6 +104,15 @@ describe('AsyncStorageMockVendorTeam', () => {
     });
 
     expect(await storage.read('usr_vendor_1')).toEqual([SURESH, FARHAN]);
+  });
+
+  it('reads a member saved without a role, with no role key at all (T137)', async () => {
+    const leela: TeamMember = { id: 'tm_7', name: 'Leela Das', status: 'ACTIVE' };
+    await storage.write('usr_vendor_1', [SURESH, leela]);
+
+    const read = await storage.read('usr_vendor_1');
+    expect(read).toEqual([SURESH, leela]);
+    expect(Object.keys(read?.[1] ?? {}).sort()).toEqual(['id', 'name', 'status']);
   });
 
   it('keeps the first of two members with one id', async () => {
@@ -156,7 +166,8 @@ describe('AsyncStorageMockVendorTeam — status', () => {
   it('still drops an old member that does not decode', async () => {
     await stored({
       version: 1,
-      members: [statusless(SURESH), { id: 'tm_10', name: 'No Role' }, statusless(FARHAN)],
+      // Not a missing role, which is no longer a fault (T137): a missing name.
+      members: [statusless(SURESH), { id: 'tm_10', name: '', role: 'Helper' }, statusless(FARHAN)],
     });
 
     expect((await storage.read('usr_vendor_1'))?.map(member => member.id)).toEqual(['tm_1', 'tm_3']);

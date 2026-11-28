@@ -24,7 +24,8 @@ import { KeyboardAvoidingView } from 'react-native';
 
 import { AppRoot } from '@/app/AppRoot';
 import { store } from '@/app/store';
-import { Screen, Text, WindowOffsetContext } from '@/shared/components';
+import { Screen, Text, ToastProvider, WindowOffsetContext } from '@/shared/components';
+import { FirebasePushService } from '@/shared/services/device/FirebasePushService';
 import { MockNetworkStatusService } from '@/shared/services/mock/MockNetworkStatusService';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import { ThemeProvider } from '@/shared/theme';
@@ -75,6 +76,8 @@ afterEach(async () => {
 
 async function renderApp(network: MockNetworkStatusService) {
   registerService('networkStatus', network);
+  // Push as every build has it today: no Firebase configured, so off.
+  registerService('push', new FirebasePushService());
 
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   await act(async () => {
@@ -82,7 +85,10 @@ async function renderApp(network: MockNetworkStatusService) {
       <Provider store={store}>
         <SafeAreaProvider initialMetrics={METRICS}>
           <ThemeProvider>
-            <AppRoot />
+            {/* Above AppRoot, as in App.tsx: a push in front is said in a toast. */}
+            <ToastProvider>
+              <AppRoot />
+            </ToastProvider>
           </ThemeProvider>
         </SafeAreaProvider>
       </Provider>,

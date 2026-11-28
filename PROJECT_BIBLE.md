@@ -221,6 +221,14 @@ verifyCustomerOtp(phone, code)
 
 ## 7A.2 Vendor — registration, phone verification, permanent auth code
 
+> **Amended 28/11/2026 (owner decision): the permanent auth code is removed.**
+> A vendor now proves the phone with a one-time code on **every** sign-in, exactly
+> like a customer, and a new vendor is signed in as soon as the registration code
+> is verified. Wherever this section describes issuing, showing, confirming,
+> regenerating or signing in with an auth code, that no longer applies; the rest
+> (no administrator approval, phone verification, roles) still does. The as-built
+> rules are in `D:\kano\Fixora-local-backups\contracts\phase5-contract.md` §1.
+
 > **Supersedes the earlier admin-approval model.** There is **no manual
 > administrator approval** in vendor onboarding. Do not show "waiting for
 > approval", "pending review", or "admin approval required" anywhere in the
@@ -1216,7 +1224,7 @@ If these workflows work reliably, **Phase 1 has achieved its goal**.
 **Vendor**
 - [ ] Registration
 - [ ] Login (phone + permanent auth code)
-- [ ] Auth Code display, copy and confirmation (§7A.2)
+- [ ] ~~Auth Code display, copy and confirmation (§7A.2)~~ — removed by the owner's decision of 28/11/2026: vendors sign in with a one-time code every time
 - [ ] Dashboard
 - [ ] Profile
 - [ ] Shop Images
@@ -1329,6 +1337,12 @@ Invite Friend → Friend Registers → Friend Completes First Service → Referr
 
 Push, Email, SMS, WhatsApp. Customer notifications: Vendor Assigned, Vendor En Route, Service Reminder, Payment Reminder, Invoice, Promotional.
 
+> **Brought forward 28/11/2026 (owner approval):** push notifications (Firebase Cloud
+> Messaging, Android) are built now: every in-app notification is also pushed to the
+> account's phones. Sign-in codes may go by WhatsApp (backend only, switched off until
+> a WhatsApp Business account exists). Email, SMS and the other notification kinds
+> listed above stay Phase 2.
+
 # 73. PHASE 2 CUSTOMER RETENTION
 
 Service history, rebook service, favorite vendor, favorite service, repeat request, maintenance reminders, personalized recommendations.
@@ -1347,6 +1361,12 @@ Only where it provides measurable value:
 # 75. PHASE 2 MULTI-LANGUAGE
 
 Potential: English, Hindi, Gujarati.
+
+> **Brought forward 28/11/2026 (owner approval):** the app offers English, Hindi and
+> Gujarati, chosen on first launch and changeable in Profile. Text the backend sends
+> (notifications, category and service names) stays English for now; the app sends
+> `Accept-Language` so the backend can translate later. Hindi and Gujarati wording
+> must be checked by a native speaker before launch.
 
 The frontend architecture should be **localization-ready from Phase 1**, but full translation need not be implemented before launch unless required.
 

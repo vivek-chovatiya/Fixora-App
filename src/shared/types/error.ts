@@ -12,7 +12,21 @@
  * error can also carry the backend's machine `code`. The code picks the copy;
  * the backend's English `message` never does — it is developer detail, and a
  * server that could choose the sentence on a screen could put anything there.
+ *
+ * Since Phase 5 (28/11/2026, phase5-contract.md section 7) every sentence here
+ * is in English, Hindi and Gujarati: the English tables below are the source,
+ * `error.hi.ts` and `error.gu.ts` translate them, and `ERROR_COPY` answers in the
+ * current language. A `userMessage` is worded when the error is made, so it is
+ * in the language the app spoke at that moment.
+ *
+ * ⚠️ The code tables are filled from `USER_MESSAGE_EN`, the raw English table,
+ * never from the localized `USER_MESSAGE`: a read of a localized table while this
+ * module loads would freeze whichever language was current into the English.
  */
+
+import { localized } from '@/core/i18n';
+import { ERROR_COPY_GU } from '@/shared/types/error.gu';
+import { ERROR_COPY_HI } from '@/shared/types/error.hi';
 
 export type AppErrorKind =
   | 'network'
@@ -33,7 +47,7 @@ export type AppErrorKind =
  * These live here rather than in screens so messaging stays consistent, and so
  * that introducing multi-language support later means translating one map.
  */
-const USER_MESSAGE: Readonly<Record<AppErrorKind, string>> = {
+const USER_MESSAGE_EN: Readonly<Record<AppErrorKind, string>> = {
   network: 'No internet connection. Check your network and try again.',
   timeout: 'This is taking longer than expected. Please try again.',
   unauthorized: 'Your session has expired. Please sign in again.',
@@ -57,23 +71,28 @@ const USER_MESSAGE: Readonly<Record<AppErrorKind, string>> = {
  * words: the screens were built and checked against them.
  *
  * ⚠️ Keyed by the code and nothing else — never by the backend's `message`.
- * No entry may repeat what was typed, and none may say which half of a vendor
- * sign in was wrong: `AUTH_CODE_INVALID` is one answer for a wrong code, an
- * unknown number and a revoked code on purpose (PROJECT_BIBLE.md section 7A.2).
+ * No entry may repeat what was typed, and none may say whether a number has an
+ * account: `OTP_INVALID` is one answer for a wrong code and, at vendor sign in,
+ * for a number no code was ever sent to, on purpose (phase5-contract.md
+ * section 1.1). The vendor auth code's `AUTH_CODE_INVALID` and its sign-in
+ * lockout `SIGNIN_TOO_MANY_ATTEMPTS` were retired with it (section 1.3,
+ * 28/11/2026); a stray one reads as its kind.
  */
-const BACKEND_CODE_MESSAGE: Readonly<Record<string, string>> = Object.freeze({
-  VALIDATION_FAILED: USER_MESSAGE.validation,
-  UNAUTHORIZED: USER_MESSAGE.unauthorized,
+const BACKEND_CODE_MESSAGE_EN = Object.freeze({
+  VALIDATION_FAILED: USER_MESSAGE_EN.validation,
+  UNAUTHORIZED: USER_MESSAGE_EN.unauthorized,
   OTP_INVALID: 'That code is not correct. Please check and try again.',
   OTP_EXPIRED: 'That code has expired. Request a new one.',
   OTP_TOO_MANY_ATTEMPTS: 'Too many incorrect attempts. Request a new code to try again.',
   OTP_RESEND_TOO_SOON: 'Please wait a moment before requesting another code.',
+  // phase5-contract.md section 2 (28/11/2026): the provider refused or timed out
+  // (503, so `server` — retryable). The code was not counted as sent, so trying
+  // again at once is the right advice. Names no channel: it may not be the one
+  // the screen last said.
+  OTP_DELIVERY_FAILED: 'We could not send your code just now. Please try again.',
   PHONE_ALREADY_REGISTERED: 'An account already exists for this number. Try signing in instead.',
-  AUTH_CODE_INVALID: 'Those sign-in details were not recognised.',
-  // For when no `Retry-After` came with it. The lock ends 15 minutes after the
-  // fifth failure, so this is never shorter than the truth.
-  SIGNIN_TOO_MANY_ATTEMPTS: 'Too many attempts. Try again in 15 minutes.',
-  // No support channel exists in Phase 1, so this promises none.
+  // No support channel exists in Phase 1, so this promises none. Customers and
+  // vendors alike, and only ever after a correct code.
   ACCOUNT_SUSPENDED: 'This account is not active right now, so you cannot sign in with it.',
   REGISTRATION_NOT_FOUND: 'That registration is no longer available. Please start again.',
 
@@ -82,6 +101,11 @@ const BACKEND_CODE_MESSAGE: Readonly<Record<string, string>> = Object.freeze({
   // yet. `NOT_SUPPORTED` travels as kind `forbidden`, so nothing offers a retry
   // that would fail the same way.
   NOT_SUPPORTED: 'This is not available in the app yet.',
+  // Raised by `ApiImageService` (T136, 28/11/2026) when the picker reports no camera
+  // it can use — none on the device, or one another app holds. Points to the way
+  // that still works rather than to a retry.
+  CAMERA_UNAVAILABLE:
+    'The camera can’t be used right now. You can choose a photo from your gallery instead.',
   // Phase 4B contract §7 (24/11/2026): the customer has no verified phone, so the
   // email and its password are their only way in. Nothing changed.
   EMAIL_REQUIRED_FOR_SIGN_IN:
@@ -124,18 +148,37 @@ const BACKEND_CODE_MESSAGE: Readonly<Record<string, string>> = Object.freeze({
  * says "try again" before the backend will allow it. Without the header, the
  * fixed sentence above is used.
  */
-const BACKEND_CODE_WAIT_MESSAGE: Readonly<Record<string, string>> = Object.freeze({
-  SIGNIN_TOO_MANY_ATTEMPTS: 'Too many attempts. Try again in {wait}.',
+const BACKEND_CODE_WAIT_MESSAGE_EN = Object.freeze({
   RATE_LIMITED: 'Too many attempts. Try again in {wait}.',
 });
 
 /** Minutes under an hour; whole hours, rounded up, past it (a day's code limit). */
-const WAIT_COPY = Object.freeze({
+const WAIT_COPY_EN = Object.freeze({
   oneMinute: '1 minute',
   minutes: '{minutes} minutes',
   oneHour: '1 hour',
   hours: '{hours} hours',
 });
+
+/**
+ * Every sentence above, as one table the translations are typed against
+ * (`LocaleTable<typeof ERROR_COPY_EN>`), so a Hindi or Gujarati key that English
+ * does not have fails `tsc`.
+ */
+export const ERROR_COPY_EN = Object.freeze({
+  userMessage: USER_MESSAGE_EN,
+  backendCode: BACKEND_CODE_MESSAGE_EN,
+  backendCodeWait: BACKEND_CODE_WAIT_MESSAGE_EN,
+  wait: WAIT_COPY_EN,
+});
+
+/** The same tables, answering in the current language (English where a translation has no entry). */
+const ERROR_COPY = localized({ en: ERROR_COPY_EN, hi: ERROR_COPY_HI, gu: ERROR_COPY_GU });
+
+const USER_MESSAGE: Readonly<Record<AppErrorKind, string>> = ERROR_COPY.userMessage;
+const BACKEND_CODE_MESSAGE: Readonly<Record<string, string>> = ERROR_COPY.backendCode;
+const BACKEND_CODE_WAIT_MESSAGE: Readonly<Record<string, string>> = ERROR_COPY.backendCodeWait;
+const WAIT_COPY = ERROR_COPY.wait;
 
 function waitPhrase(seconds: number): string {
   const minutes = Math.max(1, Math.ceil(seconds / 60));
@@ -199,7 +242,9 @@ export class AppError extends Error {
   readonly cause?: unknown;
 
   constructor(options: AppErrorOptions) {
-    super(options.message ?? options.userMessage ?? USER_MESSAGE[options.kind]);
+    // The developer-facing message falls back to English whatever the app speaks:
+    // it is for logs and the crash reporter, never for the screen.
+    super(options.message ?? options.userMessage ?? USER_MESSAGE_EN[options.kind]);
 
     this.name = 'AppError';
     this.kind = options.kind;

@@ -53,21 +53,27 @@ export interface ShopImageTileProps {
 }
 
 interface StatePresentation {
-  word: string;
+  /**
+   * The copy key of the state's word, read when the tile is drawn. It was the
+   * word itself, read when this module loaded — so a photo's "Uploading…"
+   * stayed in that moment's language after the app switched (Phase 5,
+   * 28/11/2026).
+   */
+  word: 'uploading' | 'waiting' | 'saving' | 'removing' | 'uploadFailed' | 'notSaved';
   icon: IconName;
   isFailure: boolean;
 }
 
 /** The word and glyph for every state but `saved`, which needs neither. */
 const PRESENTATION: Readonly<Record<Exclude<ShopImageState, 'saved'>, StatePresentation>> = {
-  uploading: { word: COPY.uploading, icon: 'upload', isFailure: false },
+  uploading: { word: 'uploading', icon: 'upload', isFailure: false },
   // In line behind another save, and not sent: a different fact from "Saving", said differently.
-  waiting: { word: COPY.waiting, icon: 'pending', isFailure: false },
-  saving: { word: COPY.saving, icon: 'upload', isFailure: false },
+  waiting: { word: 'waiting', icon: 'pending', isFailure: false },
+  saving: { word: 'saving', icon: 'upload', isFailure: false },
   // Confirmed and on its way off: still stored, so still drawn, until the service answers.
-  removing: { word: COPY.removing, icon: 'remove', isFailure: false },
-  uploadFailed: { word: COPY.uploadFailed, icon: 'warning', isFailure: true },
-  saveFailed: { word: COPY.notSaved, icon: 'warning', isFailure: true },
+  removing: { word: 'removing', icon: 'remove', isFailure: false },
+  uploadFailed: { word: 'uploadFailed', icon: 'warning', isFailure: true },
+  saveFailed: { word: 'notSaved', icon: 'warning', isFailure: true },
 };
 
 function ShopImageTileComponent({
@@ -87,6 +93,7 @@ function ShopImageTileComponent({
   const name = COPY.photoSpoken(position, total);
   const status = image.state === 'saved' ? null : PRESENTATION[image.state];
   const isFailure = status?.isFailure ?? false;
+  const statusWord = status ? COPY[status.word] : '';
   // Its save is already in line or sent, or its removal is: a second would undo or repeat it.
   const canRemove =
     image.state !== 'waiting' && image.state !== 'saving' && image.state !== 'removing';
@@ -124,7 +131,7 @@ function ShopImageTileComponent({
             // A failed tile is spoken by its Try again, which covers it; this would say it twice.
             accessible={!isFailure}
             accessibilityRole="text"
-            accessibilityLabel={`${name}, ${status.word}`}
+            accessibilityLabel={`${name}, ${statusWord}`}
             accessibilityElementsHidden={isFailure}
             importantForAccessibility={isFailure ? 'no-hide-descendants' : 'yes'}
             style={[
@@ -140,7 +147,7 @@ function ShopImageTileComponent({
             testID={testID ? `${testID}-status` : undefined}>
             <Icon name={status.icon} size="md" color={isFailure ? 'danger' : 'primary'} />
             <Text variant="caption" align="center">
-              {status.word}
+              {statusWord}
             </Text>
             {isFailure ? (
               <View style={[styles.row, { gap: theme.spacing.xxs }]}>
@@ -179,7 +186,7 @@ function ShopImageTileComponent({
           onPress={retry}
           style={StyleSheet.absoluteFill}
           accessibilityRole="button"
-          accessibilityLabel={COPY.tryAgainSpoken(position, total, status.word)}
+          accessibilityLabel={COPY.tryAgainSpoken(position, total, statusWord)}
           accessibilityHint={COPY.tryAgainHint}
           testID={testID ? `${testID}-retry` : undefined}
         />

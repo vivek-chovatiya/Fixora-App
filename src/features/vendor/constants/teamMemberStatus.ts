@@ -49,26 +49,42 @@ export interface TeamMemberStatusPresentation {
   isDisabled: boolean;
 }
 
-const ACTIVE: TeamMemberStatusPresentation = Object.freeze({
-  label: COPY.statusActive,
+/*
+  ⚠️ `label` and `formMessage` are getters over copy keys. They were strings
+  read when this module loaded, which kept a member's badge and the form's
+  status sentence in that moment's language after the app switched (Phase 5,
+  28/11/2026). The three presentations stay the same three objects.
+*/
+function statusPresentation(
+  label: 'statusActive' | 'statusDisabled' | 'statusUnknown',
+  formMessage: 'statusActiveMessage' | 'statusDisabledMessage' | 'statusUnknownMessage',
+  look: Pick<TeamMemberStatusPresentation, 'tone' | 'showOnCard' | 'isDisabled'>,
+): TeamMemberStatusPresentation {
+  return Object.freeze({
+    get label(): string {
+      return COPY[label];
+    },
+    get formMessage(): string {
+      return FORM[formMessage];
+    },
+    ...look,
+  });
+}
+
+const ACTIVE = statusPresentation('statusActive', 'statusActiveMessage', {
   tone: 'success',
-  formMessage: FORM.statusActiveMessage,
   showOnCard: false,
   isDisabled: false,
 });
 
-const DISABLED: TeamMemberStatusPresentation = Object.freeze({
-  label: COPY.statusDisabled,
+const DISABLED = statusPresentation('statusDisabled', 'statusDisabledMessage', {
   tone: 'neutral',
-  formMessage: FORM.statusDisabledMessage,
   showOnCard: true,
   isDisabled: true,
 });
 
-const UNKNOWN: TeamMemberStatusPresentation = Object.freeze({
-  label: COPY.statusUnknown,
+const UNKNOWN = statusPresentation('statusUnknown', 'statusUnknownMessage', {
   tone: 'neutral',
-  formMessage: FORM.statusUnknownMessage,
   showOnCard: true,
   isDisabled: false,
 });

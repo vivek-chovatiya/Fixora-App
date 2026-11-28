@@ -39,6 +39,7 @@ import { ApiVendorRequestService } from '@/shared/services/api/ApiVendorRequestS
 import { ApiVendorTeamService } from '@/shared/services/api/ApiVendorTeamService';
 import { DeviceNetworkStatusService } from '@/shared/services/device/DeviceNetworkStatusService';
 import { DevicePermissionService } from '@/shared/services/device/DevicePermissionService';
+import { FirebasePushService } from '@/shared/services/device/FirebasePushService';
 import { MockAddressService } from '@/shared/services/mock/MockAddressService';
 import { MockAnalyticsService } from '@/shared/services/mock/MockAnalyticsService';
 import { MockAuthService } from '@/shared/services/mock/MockAuthService';
@@ -73,6 +74,7 @@ import type { LocationService } from '@/shared/services/types/LocationService';
 import type { NetworkStatusService } from '@/shared/services/types/NetworkStatusService';
 import type { NotificationService } from '@/shared/services/types/NotificationService';
 import type { PermissionService } from '@/shared/services/types/PermissionService';
+import type { PushService } from '@/shared/services/types/PushService';
 import type { RequestService } from '@/shared/services/types/RequestService';
 import type { ReviewService } from '@/shared/services/types/ReviewService';
 import type { AddressBookService } from '@/shared/services/types/AddressBookService';
@@ -116,8 +118,9 @@ export interface ServiceMap {
   category: CategoryService;
   /**
    * The signed-in account's in-app notifications (PROJECT_BIBLE.md sections 57
-   * and 80), for either role. Push is section 72's Phase 2: its methods are on
-   * the interface as a seam and do nothing yet.
+   * and 80), for either role — and pairing this device's push token with the
+   * account (`registerDevice` / `unregisterDevice`, phase5-contract.md section
+   * 6.1), which follows the live switch like the rest of it.
    */
   notification: NotificationService;
   image: ImageService;
@@ -211,19 +214,28 @@ export interface ServiceMap {
    * the device's answer in every build. Reached through `useNetworkStatus`.
    */
   networkStatus: NetworkStatusService;
+  /**
+   * The device's push token and the messages it receives (phase5-contract.md
+   * section 6, owner-approved 28/11/2026). The device's answer, registered
+   * beside `permission`: Firebase on every build, and a build without
+   * Firebase's config file answers "not available" and does nothing. Telling
+   * the backend about the token is `notification`'s, which follows the live
+   * switch like every backend call.
+   */
+  push: PushService;
 }
 
 export type ServiceKey = keyof ServiceMap;
 
 /**
  * The services the backend answers, and so the ones `AppConfig.services.live`
- * may name. The rest are the device's (`permission`, `networkStatus`) or a
+ * may name. The rest are the device's (`permission`, `networkStatus`, `push`) or a
  * provider's (`location`, `analytics`, `crashReporter`): going live with the
  * API changes none of their answers.
  */
 export type BackendServiceKey = Exclude<
   ServiceKey,
-  'permission' | 'networkStatus' | 'location' | 'analytics' | 'crashReporter'
+  'permission' | 'networkStatus' | 'push' | 'location' | 'analytics' | 'crashReporter'
 >;
 
 /**
@@ -319,6 +331,9 @@ export function configureServices(options: ConfigureServicesOptions = {}): void 
   // Connectivity is the device's answer too: a mock backend still runs on a
   // phone that can lose its signal.
   registerService('networkStatus', new DeviceNetworkStatusService());
+  // The phone's push token is the device's too. Nothing is loaded here: the
+  // service looks for Firebase on first use, and off is its normal answer.
+  registerService('push', new FirebasePushService());
 
   registerBackend('auth', () => new MockAuthService());
   registerBackend('category', () => new MockCategoryService());

@@ -839,7 +839,7 @@ describe('The Rejected filter', () => {
     expect(screen.answerLabels()).toEqual([]);
   });
 
-  it('opens a declined request read-only: Rejected, when it was declined, and only Back', async () => {
+  it('opens a declined request read-only: Rejected, when it was declined, and only Back and Copy', async () => {
     const screen = await render();
     await rejectOnList(screen, DIRECTED);
     await screen.choose(COPY.filterRejected);
@@ -852,7 +852,11 @@ describe('The Rejected filter', () => {
     expect(screen.text('vendor-request-rejected')).toContain('Just now');
     expect(screen.has('vendor-request-answer')).toBe(false);
     expect(screen.has('vendor-request-work')).toBe(false);
-    expect(screen.pressablesIn(DETAILS_SCREEN)).toEqual([DETAILS.back]);
+    // Copying its reference (T135) is the one thing besides Back, and it changes nothing.
+    expect(screen.pressablesIn(DETAILS_SCREEN)).toEqual([
+      DETAILS.back,
+      DETAILS.copyReference(DIRECTED.id),
+    ]);
 
     await screen.tap(DETAILS.back);
     expect(screen.has(DETAILS_SCREEN)).toBe(false);

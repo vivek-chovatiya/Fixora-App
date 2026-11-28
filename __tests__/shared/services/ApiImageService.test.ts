@@ -327,6 +327,23 @@ describe('taking a photo', () => {
 
     await expect(service.pickFromCamera()).resolves.toEqual([]);
   });
+
+  it('says a camera it cannot use points to the gallery, in the app’s words, never the library’s (T136)', async () => {
+    camera.mockResolvedValueOnce({ errorCode: 'camera_unavailable', errorMessage: 'Camera 0 is held by /system/app' });
+
+    const error = await rejectionOf(service.pickFromCamera());
+
+    expect(error.code).toBe('CAMERA_UNAVAILABLE');
+    expect(error.userMessage).toBe(AppError.messageForCode('CAMERA_UNAVAILABLE'));
+    expect(error.userMessage).toMatch(/gallery/);
+    expect(JSON.stringify({ ...error, message: error.message })).not.toContain('/system/app');
+  });
+
+  it('gives any other picker failure no such code', async () => {
+    camera.mockResolvedValueOnce({ errorCode: 'others' });
+
+    expect((await rejectionOf(service.pickFromCamera())).code).toBeUndefined();
+  });
 });
 
 describe('before the upload', () => {

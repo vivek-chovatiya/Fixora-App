@@ -96,10 +96,11 @@ export function AuthEntryScreen({ navigation }: Props) {
             align="center"
             accessibilityRole="header"
             style={{ marginTop: theme.spacing.sm }}>
-            {COPY.title}{' '}
+            {COPY.title ? `${COPY.title} ` : ''}
             <Text variant="hero" color="primary">
               {AUTH_COPY.brand.wordmark}
             </Text>
+            {COPY.titleAfter ? ` ${COPY.titleAfter}` : ''}
           </Text>
 
           <Text variant="subtitle" color="textSecondary" align="center">

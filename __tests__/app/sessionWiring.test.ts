@@ -7,7 +7,10 @@
  *   which tells the server once — even when the server answers that sign out
  *   with a 401 of its own, which before `skipUnauthorizedHandler` started a
  *   second sign out beside the first;
- * - a refused vendor auth code signs nobody out.
+ * - a refused vendor sign-in code (a 400, phase5-contract.md section 1.1)
+ *   signs nobody out;
+ * - that sign out is a forced one: the session is cleared without waiting for
+ *   this device's push token to be unregistered.
  *
  * The backend is a fake axios adapter: no network.
  */
@@ -26,7 +29,8 @@ import { signedIn } from '@/features/auth/state/authSlice';
 import { signOut } from '@/features/auth/state/authThunks';
 import type { SessionPayload } from '@/features/auth/types';
 import { ApiAuthService } from '@/shared/services/api/ApiAuthService';
-import { getService, resetServices } from '@/shared/services/ServiceRegistry';
+import { getService, registerService, resetServices } from '@/shared/services/ServiceRegistry';
+import type { NotificationService } from '@/shared/services/types/NotificationService';
 import { AppError } from '@/shared/types/error';
 
 type Answer = { status: number; body: unknown };
@@ -57,8 +61,8 @@ function backendAnswers(byPath: Record<string, Answer>): void {
 
 const OK: Answer = { status: 200, body: { success: true, message: 'ok', data: null } };
 
-function refused(code: string): Answer {
-  return { status: 401, body: { success: false, message: 'English', code, data: null, errors: null } };
+function refused(code: string, status = 401): Answer {
+  return { status, body: { success: false, message: 'English', code, data: null, errors: null } };
 }
 
 const SESSION: SessionPayload = {
@@ -167,6 +171,46 @@ it('joins a sign out the person asked for while a 401 starts another', async () 
   expect(sentTo('/auth/logout')).toHaveLength(1);
 });
 
+it('clears a refused session without waiting for push to be unregistered', async () => {
+  backendAnswers({ '/addresses': refused('UNAUTHORIZED'), '/auth/logout': OK });
+  const livePush = getService('push');
+  const liveNotifications = getService('notification');
+  let land: () => void = () => undefined;
+  const unregisterDevice = jest.fn(
+    () =>
+      new Promise<void>(resolve => {
+        land = resolve;
+      }),
+  );
+  const off = () => () => undefined;
+  registerService('push', {
+    isAvailable: () => true,
+    platform: () => 'android',
+    getToken: async () => 'device-token',
+    onTokenRefresh: off,
+    onForegroundMessage: off,
+    onMessageOpened: off,
+    getInitialMessage: async () => null,
+    handleBackgroundMessages: () => undefined,
+  });
+  registerService('notification', { unregisterDevice } as unknown as NotificationService);
+
+  try {
+    await expect(Http.get('/addresses')).rejects.toBeInstanceOf(AppError);
+    await settle();
+
+    // Signed out, and the server told, while the unregister is still in the air.
+    expect(unregisterDevice).toHaveBeenCalledWith('device-token');
+    expect(store.getState().auth.status).toBe('unauthenticated');
+    expect(sentTo('/auth/logout')).toHaveLength(1);
+  } finally {
+    land();
+    await settle();
+    registerService('push', livePush);
+    registerService('notification', liveNotifications);
+  }
+});
+
 it('leaves the next account signed in when the last one’s request is refused late', async () => {
   // A's request is in flight when A signs out and B signs in; its 401 lands after.
   const adapter: AxiosAdapter = async config => {
@@ -194,12 +238,12 @@ it('leaves the next account signed in when the last one’s request is refused l
   expect(sentTo('/auth/logout')).toHaveLength(0);
 });
 
-it('signs nobody out over a refused vendor auth code', async () => {
-  backendAnswers({ '/auth/vendor/signin': refused('AUTH_CODE_INVALID') });
+it('signs nobody out over a refused vendor sign-in code', async () => {
+  backendAnswers({ '/auth/vendor/signin/otp/verify': refused('OTP_INVALID', 400) });
 
-  await expect(getService('auth').signInVendor('9000000001', '111111')).rejects.toBeInstanceOf(
-    AppError,
-  );
+  await expect(
+    getService('auth').verifyVendorSignInOtp('9000000001', '111111'),
+  ).rejects.toBeInstanceOf(AppError);
   await settle();
 
   expect(store.getState().auth.status).toBe('authenticated');

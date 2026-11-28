@@ -25,9 +25,12 @@ import { NOTIFICATIONS_COPY } from '@/features/notifications/constants/notificat
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
 import type { CategoryService, SubCategory } from '@/shared/services/types/CategoryService';
 import type { EligibleVendor, VendorService } from '@/shared/services/types/VendorService';
+import { ToastProvider } from '@/shared/components';
 import { ThemeProvider } from '@/shared/theme';
 
 const COPY = CUSTOMER_COPY.requestSubmitted;
+/** The copy button's spoken name for the fixture's reference (T135: it names what it copies). */
+const COPY_REFERENCE = COPY.copyReference('REQ-24083');
 
 const CATEGORY_ID = 'cat_electrical';
 const SUB_CATEGORY_ID = 'sub_fan';
@@ -124,10 +127,13 @@ async function render({ outcome = SUBMITTED, services = SERVICES, vendors = VEND
   await act(async () => {
     renderer = ReactTestRenderer.create(
       <ThemeProvider>
-        <RequestDraftProvider>
-          <OutcomeSeed outcome={outcome} />
-          <RequestSubmittedScreen navigation={navigation} route={route} />
-        </RequestDraftProvider>
+        {/* A failed copy is said in a toast (T135). */}
+        <ToastProvider>
+          <RequestDraftProvider>
+            <OutcomeSeed outcome={outcome} />
+            <RequestSubmittedScreen navigation={navigation} route={route} />
+          </RequestDraftProvider>
+        </ToastProvider>
       </ThemeProvider>,
     );
   });
@@ -254,7 +260,7 @@ describe('RequestSubmittedScreen — the reference', () => {
   it('copies through the shared abstraction', async () => {
     const { press, text } = await render();
 
-    await press(COPY.copy);
+    await press(COPY_REFERENCE);
 
     expect(copiedValue).toBe('REQ-24083');
     // The button says so, rather than leaving the customer to guess.
@@ -270,7 +276,7 @@ describe('RequestSubmittedScreen — the reference', () => {
 
     const { press, text } = await render();
 
-    await press(COPY.copy);
+    await press(COPY_REFERENCE);
 
     expect(text()).toContain(COPY.copyFailed);
     // Still readable, which is the point of the fallback wording.
@@ -467,7 +473,7 @@ describe('RequestSubmittedScreen — leaving', () => {
 
     // Copy, open the request, and Home — and that is the whole surface. A
     // success screen that could submit is a success screen that can submit twice.
-    expect(new Set(buttons)).toEqual(new Set([COPY.copy, COPY.viewRequest, COPY.home]));
+    expect(new Set(buttons)).toEqual(new Set([COPY_REFERENCE, COPY.viewRequest, COPY.home]));
   });
 
   it('leaves no draft behind for Home to offer', async () => {

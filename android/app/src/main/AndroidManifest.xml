@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -11,7 +12,10 @@
       offered and the grant silently fails.
 
       POST_NOTIFICATIONS is Android 13+. Older versions grant notifications at
-      install and ignore this, which is why there is no maxSdkVersion here.
+      install and ignore this, which is why there is no maxSdkVersion here. With
+      push on (phase5-contract.md section 6.3) it is also asked for once after
+      the first sign in, unless onboarding already asked - never at launch, and
+      never again after a refusal (shared/services/pushRegistration.ts).
     -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -53,5 +57,32 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+
+      <!--
+        Push notifications (phase5-contract.md section 6, owner-approved
+        28/11/2026). Inert until android/app/google-services.json is added: with
+        no Firebase app, nothing is delivered and these are never read.
+
+        The channel is the one the backend names on every message
+        (`android.notification.channelId: "fixora-default"`); this makes it the
+        default too, for a message that names none. MainApplication creates it at
+        start-up, so it exists before the first message arrives. React Native
+        Firebase declares the same key with an empty value from firebase.json,
+        hence tools:replace.
+
+        The small icon is a white bell on transparent (drawable/ic_notification):
+        Android draws the status-bar icon from the alpha channel alone, so the
+        full-colour launcher icon would show as a white square.
+
+        ⚠️ The channel id is written in three places that must agree: here,
+        MainApplication.kt and the backend's push service.
+      -->
+      <meta-data
+        android:name="com.google.firebase.messaging.default_notification_channel_id"
+        android:value="@string/notification_channel_default_id"
+        tools:replace="android:value" />
+      <meta-data
+        android:name="com.google.firebase.messaging.default_notification_icon"
+        android:resource="@drawable/ic_notification" />
     </application>
 </manifest>

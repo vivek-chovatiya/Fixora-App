@@ -85,3 +85,39 @@ jest.mock('@react-native-async-storage/async-storage', () => {
     },
   };
 });
+
+/**
+ * Firebase (push notifications, phase5-contract.md section 6). Its packages build
+ * a native event emitter the moment they load, which does not exist under Jest,
+ * and only `FirebasePushService` ever loads them. Both are replaced here, so no
+ * suite needs the native module and none sends anything.
+ *
+ * The default is the build the app has today: no Firebase app configured
+ * (`getApps()` is empty), so push is off everywhere unless a suite says
+ * otherwise. A suite that wants push on makes `getApps` answer
+ * `[{ name: '[DEFAULT]' }]` and drives the messaging functions below, each a
+ * plain `jest.fn`; listeners hand back an unsubscribe.
+ */
+jest.mock('@react-native-firebase/app', () => ({
+  getApps: jest.fn(() => []),
+}));
+
+jest.mock('@react-native-firebase/messaging', () => ({
+  getMessaging: jest.fn(() => ({})),
+  getToken: jest.fn(async () => 'test-fcm-token'),
+  onTokenRefresh: jest.fn(() => jest.fn()),
+  onMessage: jest.fn(() => jest.fn()),
+  onNotificationOpenedApp: jest.fn(() => jest.fn()),
+  getInitialNotification: jest.fn(async () => null),
+  setBackgroundMessageHandler: jest.fn(),
+}));
+
+/**
+ * The app's language (phase5-contract.md section 7, 28/11/2026). Every suite
+ * starts on a device where English has already been chosen and the saved choice
+ * has been read — the state every screen was written and checked in — so no
+ * suite meets the first-launch chooser, or AppRoot's wait for the saved
+ * language, unless it asks to. `__tests__/i18n` is where they do, with
+ * `resetLocaleState` and `updateLocaleState`.
+ */
+require('./src/core/i18n/locale').updateLocaleState({ isChosen: true, isRestored: true });

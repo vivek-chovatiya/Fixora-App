@@ -28,6 +28,7 @@ import { authReducer, signedIn } from '@/features/auth/state/authSlice';
 import type { AuthUser } from '@/features/auth/types';
 import { CUSTOMER_COPY } from '@/features/customer/constants/customerCopy';
 import { profileOf } from '@/features/customer/hooks/useCustomerProfile';
+import { LANGUAGE_COPY, LANGUAGE_NAMES } from '@/features/language/constants/languageCopy';
 import { CustomerProfileScreen } from '@/features/customer/screens/CustomerProfileScreen';
 import {
   RequestDraftProvider,
@@ -313,8 +314,9 @@ describe('CustomerProfileScreen — what it shows', () => {
 
   /*
     Section 25's four actions, and nothing else: 3D-8 added the picture and Edit
-    Profile, 3D-9 added Manage Addresses. What stays absent is section 25's
-    "Future" list, which this is what keeps absent.
+    Profile, 3D-9 added Manage Addresses, and Phase 5 the Language row (approved
+    by the owner 28/11/2026, phase5-contract.md section 7). What stays absent is
+    section 25's "Future" list, which this is what keeps absent.
   */
   it('offers exactly the actions section 25 defines — and none of its future ones', async () => {
     const { buttons, text } = await render(LONG);
@@ -324,6 +326,7 @@ describe('CustomerProfileScreen — what it shows', () => {
       COPY.photoGallery,
       COPY.edit,
       COPY.addresses,
+      LANGUAGE_COPY.profileRow.label.replace('{language}', LANGUAGE_NAMES.en),
       COPY.logout,
     ]);
     expect(text()).not.toMatch(/favourite|favorite|saved service|setting|notification/i);

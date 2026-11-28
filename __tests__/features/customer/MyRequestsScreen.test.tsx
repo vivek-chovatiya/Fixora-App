@@ -519,6 +519,20 @@ describe('MyRequestsScreen — the next page', () => {
 });
 
 describe('MyRequestsScreen — the filters', () => {
+  it('puts them on one row that scrolls sideways, with no scroll indicator (T134)', async () => {
+    const { hosts } = await render();
+
+    const [group] = hosts('my-requests-filters');
+    expect(group.props.horizontal).toBe(true);
+    expect(group.props.showsHorizontalScrollIndicator).toBe(false);
+    // Every chip is in that one row.
+    expect(
+      group.findAll(
+        node => node.props?.accessibilityRole === 'radio' && typeof node.props?.onPress === 'function',
+      ),
+    ).toHaveLength(4);
+  });
+
   it('offers section 23’s four, as one choice, with All chosen', async () => {
     const { hosts, renderer } = await render();
 

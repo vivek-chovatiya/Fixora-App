@@ -9,10 +9,9 @@
  *   in exactly the shape `parseNotificationLink` opens;
  * - the unread count read from every page (no count endpoint) — a floor
  *   (`{ atLeast }`) when the inbox is longer than the page ceiling;
- * - mark-all as one mark per unread notification, in order, a vanished one
- *   skipped (no bulk endpoint), and saying nothing false: incomplete when the
- *   inbox was cut short or it stopped after marking some, a rejection only when
- *   nothing was marked;
+ * - mark-all and clear-all as one bulk request each, with an empty body
+ *   (phase5-contract.md section 3, T133) — no list read first, no mark one at
+ *   a time;
  * - `remove` as the backend's delete by id, and anything not in this inbox
  *   (404 `NOTIFICATION_NOT_FOUND`, Phase 4B contract §8) as not found; push
  *   registration inert;
@@ -29,7 +28,7 @@ import {
 } from 'axios';
 
 import { AppConfig } from '@/core/config/AppConfig';
-import { httpClient } from '@/core/http/HttpClient';
+import { httpClient, setTokenProvider, setUnauthorizedHandler } from '@/core/http/HttpClient';
 import { parseNotificationLink } from '@/features/notifications/constants/notificationLinks';
 import { ApiNotificationService } from '@/shared/services/api/ApiNotificationService';
 import { AppError } from '@/shared/types/error';
@@ -241,82 +240,62 @@ describe('markAsRead', () => {
 });
 
 describe('markAllAsRead', () => {
-  it('marks each unread one, one at a time, in order, and nothing already read', async () => {
-    backendAnswers(url =>
-      url === '/notifications/list'
-        ? list([row(n(1)), row(n(2), { isRead: true }), row(n(3))])
-        : ok(null),
-    );
+  it('is one POST to read-all with an empty body — the inbox is the token’s, every page of it', async () => {
+    backendAnswers(() => ok({ updated: 3 }));
+
+    await expect(service.markAllAsRead()).resolves.toBeUndefined();
+
+    expect(sent.map(config => [config.method?.toUpperCase(), config.url])).toEqual([
+      ['POST', '/notifications/read-all'],
+    ]);
+    expect(bodies()).toEqual([{}]);
+  });
+
+  it('reads nothing first and marks nothing one at a time any more', async () => {
+    backendAnswers(() => ok({ updated: 0 }));
 
     await service.markAllAsRead();
 
-    expect(sent.map(config => config.url)).toEqual([
-      '/notifications/list',
-      '/notifications/read',
-      '/notifications/read',
+    expect(sent.map(config => config.url)).not.toContain('/notifications/list');
+    expect(sent.map(config => config.url)).not.toContain('/notifications/read');
+  });
+
+  it.each([
+    ['a dropped connection', 'network' as const, 'network'],
+    ['the server failing', failure(500, 'INTERNAL_ERROR'), 'server'],
+  ])('rejects %s as its own kind, so nothing is claimed as read', async (_name, reply, kind) => {
+    backendAnswers(() => reply);
+
+    expect((await rejectionOf(service.markAllAsRead())).kind).toBe(kind);
+  });
+});
+
+describe('removeAll', () => {
+  it('is one POST to delete-all with an empty body, and sends nothing else', async () => {
+    backendAnswers(() => ok({ deleted: 7 }));
+
+    await expect(service.removeAll()).resolves.toBeUndefined();
+
+    expect(sent.map(config => [config.method?.toUpperCase(), config.url])).toEqual([
+      ['POST', '/notifications/delete-all'],
     ]);
-    expect(bodies().slice(1)).toEqual([{ id: n(1) }, { id: n(3) }]);
+    expect(bodies()).toEqual([{}]);
+    expect(Object.keys(bodies()[0])).toEqual([]);
   });
 
-  it('skips one that vanished meanwhile and marks the rest', async () => {
-    backendAnswers((url, body) => {
-      if (url === '/notifications/list') {
-        return list([row(n(1)), row(n(2)), row(n(3))]);
-      }
-      return body.id === n(2) ? failure(404, 'NOT_FOUND') : ok(null);
-    });
+  it('succeeds on an inbox that is already empty', async () => {
+    backendAnswers(() => ok({ deleted: 0 }));
 
-    await expect(service.markAllAsRead()).resolves.toBeUndefined();
-    expect(bodies().slice(1)).toEqual([{ id: n(1) }, { id: n(2) }, { id: n(3) }]);
+    await expect(service.removeAll()).resolves.toBeUndefined();
   });
 
-  it('answers incomplete when it stopped after marking some — neither "all" nor "none" is true', async () => {
-    backendAnswers((url, body) => {
-      if (url === '/notifications/list') {
-        return list([row(n(1)), row(n(2)), row(n(3))]);
-      }
-      return body.id === n(2) ? 'network' : ok(null);
-    });
+  it('rejects a failure as its own kind, in the app’s words', async () => {
+    backendAnswers(() => 'network');
 
-    await expect(service.markAllAsRead()).resolves.toEqual({ complete: false });
-    // It stopped there; running it again finishes the rest.
-    expect(bodies().slice(1)).toEqual([{ id: n(1) }, { id: n(2) }]);
-  });
-
-  it('rejects when it failed before marking anything — "not marked" is then the truth', async () => {
-    backendAnswers(url => (url === '/notifications/list' ? list([row(n(1)), row(n(2))]) : 'network'));
-
-    const error = await rejectionOf(service.markAllAsRead());
+    const error = await rejectionOf(service.removeAll());
 
     expect(error.kind).toBe('network');
-    expect(sent).toHaveLength(2);
-  });
-
-  it('answers complete with nothing at all when every unread one was marked', async () => {
-    backendAnswers(url => (url === '/notifications/list' ? list([row(n(1))]) : ok(null)));
-
-    await expect(service.markAllAsRead()).resolves.toBeUndefined();
-  });
-
-  it('marks what it read of an inbox longer than the page ceiling, and says it is incomplete', async () => {
-    backendAnswers((url, body) =>
-      url === '/notifications/list'
-        ? list([row(n(Number(body.page)))], { page: body.page, hasNextPage: true })
-        : ok(null),
-    );
-
-    await expect(service.markAllAsRead()).resolves.toEqual({ complete: false });
-    expect(sent.filter(config => config.url === '/notifications/read')).toHaveLength(
-      AppConfig.api.fullListMaxPages,
-    );
-  });
-
-  it('asks nothing more of an inbox with nothing unread', async () => {
-    backendAnswers(() => list([row(n(1), { isRead: true })]));
-
-    await service.markAllAsRead();
-
-    expect(sent).toHaveLength(1);
+    expect(error.userMessage).not.toContain('Backend English');
   });
 });
 
@@ -351,12 +330,69 @@ describe('remove', () => {
   });
 });
 
-describe('push', () => {
-  it('keeps push registration inert, as Phase 2 leaves it', async () => {
-    backendAnswers(() => ok(null));
+/*
+  The push token calls (phase5-contract.md section 6.1, 28/11/2026). The body
+  is exactly the contract's keys — whose device it is, is the session's — and
+  unregistering is part of signing out, so a dead session's 401 there must not
+  start a second sign out.
+*/
+describe('push devices', () => {
+  const TOKEN = 'fcm-token-for-this-device';
 
-    await expect(service.registerDevice('device-token')).resolves.toBeUndefined();
-    await expect(service.unregisterDevice()).resolves.toBeUndefined();
-    expect(sent).toHaveLength(0);
+  afterEach(() => {
+    setTokenProvider(() => null);
+    setUnauthorizedHandler(() => {});
+  });
+
+  it('registers the token and platform at /devices/register, and nothing else', async () => {
+    backendAnswers(() => ok({ registered: true }));
+
+    await expect(service.registerDevice({ token: TOKEN, platform: 'android' })).resolves.toBeUndefined();
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].method).toBe('post');
+    expect(sent[0].url).toBe('/devices/register');
+    expect(Object.keys(bodies()[0]).sort()).toEqual(['platform', 'token']);
+    expect(bodies()[0]).toEqual({ token: TOKEN, platform: 'android' });
+  });
+
+  it('unregisters the token alone at /devices/unregister', async () => {
+    backendAnswers(() => ok({ removed: true }));
+
+    await expect(service.unregisterDevice(TOKEN)).resolves.toBeUndefined();
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].url).toBe('/devices/unregister');
+    expect(Object.keys(bodies()[0])).toEqual(['token']);
+    expect(bodies()[0]).toEqual({ token: TOKEN });
+  });
+
+  it("succeeds for a token that is not this account's, as the backend answers it", async () => {
+    backendAnswers(() => ok({ removed: false }));
+
+    await expect(service.unregisterDevice(TOKEN)).resolves.toBeUndefined();
+  });
+
+  it('keeps an unregister 401 from the unauthorized handler, but not a register 401', async () => {
+    const onUnauthorized = jest.fn();
+    setTokenProvider(() => 'jwt-expired');
+    setUnauthorizedHandler(onUnauthorized);
+    backendAnswers(() => failure(401, 'UNAUTHORIZED'));
+
+    expect((await rejectionOf(service.unregisterDevice(TOKEN))).kind).toBe('unauthorized');
+    expect(onUnauthorized).not.toHaveBeenCalled();
+
+    expect((await rejectionOf(service.registerDevice({ token: TOKEN, platform: 'ios' }))).kind).toBe(
+      'unauthorized',
+    );
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a refused registration as its own kind', async () => {
+    backendAnswers(() => failure(400, 'VALIDATION_FAILED'));
+
+    expect(
+      (await rejectionOf(service.registerDevice({ token: TOKEN, platform: 'android' }))).kind,
+    ).toBe('validation');
   });
 });

@@ -15,8 +15,8 @@
  * inside the global handler, stop React Native's own handling from running.
  *
  * ⚠️ A report carries the error and the signed-in user's id and role. Never the
- * user's name, phone number or any code: the vendor auth code is a standing
- * credential and section 7A.2 forbids it in crash reports by name.
+ * user's name, phone number or any code: a one-time code is a credential for
+ * as long as it lives, and section 7A keeps every code out of crash reports.
  */
 
 export interface CrashContext {

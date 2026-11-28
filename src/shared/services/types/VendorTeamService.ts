@@ -7,7 +7,7 @@
  *
  * ⚠️ Simple on purpose — section 39: "Phase 1 team management should remain
  * simple", section 40: "Do not build a complex workforce-management system in
- * Phase 1." A member is a name, a role, optionally a phone number and a photo,
+ * Phase 1." A member is a name, optionally a role, a phone number and a photo,
  * and a status — active or disabled. There
  * is no assignment to requests (section 40), no permissions or hierarchy, no
  * login — team members never sign in (section 7A.3) — and no attendance, pay,
@@ -80,8 +80,13 @@ export interface TeamMember {
   /** Who they are, as the vendor writes it. Required. */
   name: string;
 
-  /** What they do — section 39's "Designation". Required (owner decision, 2026-10-08). */
-  role: string;
+  /**
+   * What they do — section 39's "Designation". Optional since 28/11/2026
+   * (phase5-contract.md section 4, T137; it was required by the owner's
+   * decision of 2026-10-08). Absent when the vendor gave none, never an empty
+   * string — the phone's rule — and the team then shows no role line.
+   */
+  role?: string;
 
   /**
    * How to reach them, as digits — the canonical form every phone number in
@@ -124,14 +129,15 @@ export interface VendorTeamService {
   /**
    * Adds one, `ACTIVE`, and answers with the whole team.
    *
-   * Rejects with `validation` when the name or role is missing or too long, the
-   * phone is not a phone number, or the photo is not an http(s) URL.
+   * Rejects with `validation` when the name is missing, the name or role is too
+   * long, the phone is not a phone number, or the photo is not an http(s) URL.
    */
   addMember(input: TeamMemberInput): Promise<TeamMember[]>;
 
   /**
    * Replaces one member's details, keeping their `id`, status and place in the
-   * list. Every detail: a phone or `photoUrl` left out of the input is removed.
+   * list. Every detail: a role, phone or `photoUrl` left out of the input is
+   * removed.
    *
    * Rejects with `notFound` when the id is not on this vendor's team, and with
    * `validation` as `addMember` does.

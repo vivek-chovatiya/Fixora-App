@@ -69,6 +69,7 @@ Scope: Phase 1 only. Nothing here implements a Phase 2 feature — see
 | `icons.cancelled` | `cancel` | `theme/icons.ts` | A request called off (Reports, 3E-8). Not `reject`: declining and being cancelled are different outcomes, and side by side on the report they must differ in shape, not only in word. |
 | `icons.markAllRead` | `check-all` | same | Marking every notification read (3F-2). Two ticks, not `selected`'s one: it acts on the whole list. |
 | `icons.accept` / `reject` / `startWork` / `completeWork` / `copy` | `check` / `close-circle-outline` / `play-circle-outline` / `check-circle-outline` / `content-copy` | same | Earlier phases, recorded here for completeness: answering a request (3E-4), moving work along (3E-5), and copying a reference — distinct from `document`, which read as "open the paperwork". |
+| `duration.copiedHold` | `2000` | `theme/animation.ts` | How long "Copied" stays beside a `CopyButton` (T135, 28/11/2026: "about two seconds"). Shorter than `toast` (4000): one word confirming what the person just did, not a sentence that may be a failure. |
 
 ### 2.2 Changed signatures
 
@@ -271,7 +272,8 @@ Built from existing tokens; no token was added.
     `border` at rest and a `thick` `danger` border when the day closes before it
     opens — with the sentence beside it, never colour alone.
 - **The Rejected filter.** Requests' chips are All, Pending, Active, Completed,
-  Rejected, wrapping as before. A rejected card wears the neutral "Rejected"
+  Rejected — on one sideways-scrolling row since T134 (section 3.6), no longer
+  wrapped. A rejected card wears the neutral "Rejected"
   badge with the crossed-circle glyph (an answer, not an alarm), its date line
   reads "Rejected …", and it has no buttons under it.
 - **The team member photo card.** At the top of the add and edit form, drawn as
@@ -381,6 +383,55 @@ else was.
   payment", which asks first in a primary-toned `ConfirmDialog` ("Mark as paid
   by UPI?" / "This can't be changed later.").
 
+### 3.6 Added and changed on 28/11/2026 (T134, T135)
+
+- **`SelectionChipRail`** (shared, new): one row of `SelectionChip`s that
+  scrolls sideways — no scroll indicator, bleeding to the screen edge and
+  padded back by `screenPadding`, chips `spacing.sm` apart, a named
+  `radiogroup`. The chosen chip is brought into view with the least movement
+  (none when it is already whole on screen; one gutter clear of the edge when
+  it is not), measured at its chosen size, and honours reduced motion. It is
+  the customer's `ScheduleRail` generalised: `ScheduleRail` now draws it, and
+  so do both requests lists' status filters, which no longer wrap.
+- **`CopyButton`** (shared, new): a 36dp disc (`spacing.sm` around an `md`
+  `copy` glyph, `hitSlop` to the 44dp floor) in the secondary button's tonal
+  fill — `surfaceAlt`, pressed `borderStrong` — beside the value it copies.
+  Spoken "Copy reference REQ-…" as a button. Once copied, the glyph becomes
+  `selected`'s tick and a `caption` "Copied" in `textSecondary` appears to its
+  left, announced politely, for `duration.copiedHold`; a failure is a danger
+  toast instead, never the word. On the customer's `RequestReference` (request
+  details and the success screen) it replaces the labelled secondary "Copy"
+  button; on the vendor's request details it sits beside the Reference row.
+
+### 3.7 Added and changed on 28/11/2026 (T129, T131–T133, T136, T137)
+
+- **`OptionsSheet`** (shared, new): a bottom sheet on the platform `Modal` (the
+  same base as `ConfirmDialog`; `@gorhom/bottom-sheet` is installed but unused and
+  would need a provider), a title, one row per option (glyph + label, danger
+  tone for destructive ones, disabled rows dimmed) and a full-width Cancel. A
+  choice runs once, after the sheet has closed. Used by the notifications menu
+  and the team member photo options.
+- **Notifications:** a round 3-dot button opposite Back (the same disc as Back
+  and the bell; only when the list has rows; the dots are horizontal, `more` =
+  `dots-horizontal`, by the owner's choice) opens the sheet with Mark all as
+  read and Clear all; Clear all confirms through `ConfirmDialog`. A row swiped
+  left past most of its width reveals the danger panel and is deleted, with a
+  toast; every row also offers Delete as an accessibility action.
+- **Team member form:** one Add photo / Change photo button opens the sheet
+  (Choose from gallery, Take photo, Remove photo only when one is set). Role has
+  no required mark and an "Optional" helper line, like Phone; a member with no
+  role shows the name only.
+- **Vendor sign-in:** phone only with Send code (the auth-code field, display and
+  confirmation are gone); the code screen ends with "New vendor?" and a
+  secondary Register your business button.
+- **Language:** a first-launch "Choose your language" screen (each language in
+  its own script, radio rows like `SelectableCard`, Continue) and a Language row
+  in both profiles with the new icon token `language` (`translate`). Hindi and
+  Gujarati are longer than English: every text wraps by rule, nothing new has a
+  fixed width.
+- **Push:** Android notification channel `fixora-default` ("Request updates",
+  high importance) and a white bell small icon `drawable/ic_notification`.
+
 ---
 
 ## 4. Auth feature components
@@ -408,9 +459,10 @@ All new unless noted.
 | `AuthEntryScreen` | **no** | — | inline | own `city-skyline` | The only auth screen without the top bar: nothing behind it, and the page scrolls, so the mark should scroll with it. Two `RoleCard`s. Footer links to vendor sign in, which is the only path to registration. |
 | `CustomerLoginScreen` | yes | yes | yes | yes | Phone field carries `PhoneCountryPrefix`; submit uses `icon="arrowForward" iconPosition="trailing"`. |
 | `CustomerOtpScreen` | yes | yes (→ change number) | yes | yes (`flex: 1` foot) | `changeIcon="call"`. `paddingTop: spacing.huge`. |
-| `VendorLoginScreen` | yes | yes | yes | yes | **No `+91` prefix yet** — open item. Since 21/10/2026 two faces: the full form, and for a vendor who has signed in on this device before, "Welcome back" with a bordered `Card` (call glyph, `••••••0001`), the code field alone and a secondary "Use a different number". |
+| `VendorLoginScreen` | yes | yes | yes | yes | **No `+91` prefix yet** — open item. Since 28/11/2026 (T131, auth code retired) it asks for the phone only and sends a one-time code: "Send code" with `icon="arrowForward" iconPosition="trailing"`, as customer sign in. Two faces since 21/10/2026: the phone form, and for a vendor who has signed in on this device before, "Welcome back" with a bordered `Card` (call glyph, `••••••0001`), "Send code" and a secondary "Use a different number". |
+| `VendorSignInOtpScreen` | yes | yes (→ change number) | yes | yes (`flex: 1` foot) | New 28/11/2026 (T131). A sibling of `CustomerOtpScreen` with the same layout, `changeIcon="call"`, `paddingTop: spacing.huge`; adds a "New vendor?" prompt and a secondary "Register your business" under the form, offered to everyone because an unknown number's code is only ever refused as a wrong one. |
 | `VendorRegistrationScreen` | yes | yes | yes | yes (`flexGrow: 1` foot) | `padded={false}` + body gutter; BUSINESS / CONTACT / SERVICES overlines in `textSecondary`; `required` on the service field. |
-| `VendorOtpScreen` | yes (mark only) | **no** | yes | **no** | Deliberate: it holds three steps in one screen, two of which display a standing credential. `changeIcon="edit"`. |
+| `VendorOtpScreen` | yes (mark only) | **no** | yes | **no** | Since 28/11/2026 one step only — the registration code, which signs the vendor in; the auth-code display and confirmation steps are gone. Layout left as it was (no back control, no foot), so reshaping it is a separate decision. `changeIcon="edit"`. |
 
 **Vertical rhythm.** Screens with a top bar use `contentContainerStyle` with
 `paddingTop: spacing.huge`, which puts the heading **≈69dp below the brand-mark

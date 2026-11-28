@@ -1,31 +1,30 @@
 /**
  * VendorLoginScreen
  *
- * A returning vendor signs in with their phone number and the permanent auth
- * code they saved during onboarding (PROJECT_BIBLE.md section 7A.2).
+ * Step one of a returning vendor's sign in: the phone number a one-time code is
+ * sent to (owner decision 28/11/2026, phase5-contract.md section 1.1 —
+ * supersedes the permanent auth code of PROJECT_BIBLE.md section 7A.2). The
+ * code is entered on VendorSignInOtp, the next screen, exactly as a customer's
+ * is.
  *
- * No one-time code is involved. Onboarding already proved the number, and
- * requiring an OTP on every sign in is not the approved flow. Nothing here
- * registers, re-registers, or regenerates anything: an authentication failure is
- * a failure, not a reason to start onboarding again.
+ * Nothing here registers, re-registers or signs anybody in. The code request
+ * answers alike for every well-formed number — with a vendor account or
+ * without — so this screen moves on for both, and cannot be used to learn which
+ * numbers are vendors. A number with no account is told so only in the way the
+ * contract allows: its code is refused as a wrong one.
  *
- * Separate from CustomerLogin on purpose. The two roles authenticate by
- * different mechanisms, and one screen branching on role would have to decide
- * which mechanism applies before knowing who is signing in.
- *
- * The screen does not navigate on success. `useVendorSignIn` establishes the
- * session and RootNavigator swaps the tree, so auth state stays the only thing
- * that decides who is signed in.
+ * Separate from CustomerLogin on purpose. The two roles reach different
+ * services, and one screen branching on role would have to decide which applies
+ * before knowing who is signing in.
  *
  * Two faces, one form (PROJECT_BIBLE.md section 7A.2, amended 21/10/2026).
  * Where a vendor has signed in on this device before, the number they used is
- * remembered and the screen opens on "Welcome back": that number masked, the
- * code field alone, and "Use a different number", which forgets it and brings
- * the phone field back.
- * Everywhere else — and whenever the remembered number cannot be read — it is
- * the phone-and-code form it always was. Underneath both is one form: the
- * remembered number fills the phone field the vendor no longer sees, so one
- * schema checks one set of values and a sign in sends the same two things.
+ * remembered and the screen opens on "Welcome back": that number masked, "Send
+ * code", and "Use a different number", which forgets it and brings the phone
+ * field back. Everywhere else — and whenever the remembered number cannot be
+ * read — it is the phone form. Underneath both is one form: the remembered
+ * number fills the phone field the vendor no longer sees, so one schema checks
+ * one value and both faces send the same request.
  *
  * ⚠️ Neither face is drawn until the device has said whether a number is
  * remembered. Drawing the phone field first and swapping it away a moment later
@@ -40,20 +39,19 @@
  * after the paint, and a tap in between would submit an empty phone the vendor
  * cannot see — refused by the form with nothing on screen to fix.
  *
- * Both values typed here are credentials. Neither is logged, dispatched, or put
- * in navigation params. The code is passed to the service and forgotten with the
- * screen — never stored (PROJECT_BIBLE.md section 7A.2). The phone number is
- * remembered on this device after a successful sign in, by the thunk rather than
- * here, so a refused attempt never replaces a number that worked.
+ * The phone number is not logged or dispatched. It travels to the code screen
+ * as a param, as the customer's does, because verification needs it; it is
+ * remembered on this device only after a successful sign in, by the thunk
+ * rather than here, so an attempt that never finished never replaces a number
+ * that worked.
  */
 
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 
-import { AppConfig } from '@/core/config/AppConfig';
 import { AuthCityscape } from '@/features/auth/components/AuthCityscape';
 import { AuthHeading } from '@/features/auth/components/AuthHeading';
 import { AuthTopBar } from '@/features/auth/components/AuthTopBar';
@@ -63,20 +61,17 @@ import {
   phoneEnding,
   spellOut,
 } from '@/features/auth/constants/vendorAuthPresentation';
-import { useRememberedVendorPhone, useVendorSignIn } from '@/features/auth/hooks/useAuth';
 import {
-  VENDOR_AUTH_CODE_INPUT_MAX_LENGTH,
-  normaliseVendorAuthCode,
-  vendorLoginSchema,
-  type VendorLoginForm,
-} from '@/features/auth/validation/authSchemas';
+  useRememberedVendorPhone,
+  useRequestVendorSignInOtp,
+} from '@/features/auth/hooks/useAuth';
+import { vendorLoginSchema, type VendorLoginForm } from '@/features/auth/validation/authSchemas';
 import type { AuthStackParamList } from '@/navigation/types';
 import {
   Card,
   ControlledInput,
   Icon,
   Loader,
-  PasswordInput,
   PhoneInput,
   PrimaryButton,
   Screen,
@@ -85,7 +80,6 @@ import {
   useErrorToast,
 } from '@/shared/components';
 import { spacing, useTheme } from '@/shared/theme';
-import { AppError } from '@/shared/types/error';
 import { capPhoneInput, normalisePhone } from '@/shared/validation/phone';
 
 const COPY = AUTH_COPY.vendorLogin;
@@ -104,14 +98,20 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'VendorLogin'>;
 export function VendorLoginScreen({ navigation }: Props) {
   const theme = useTheme();
 
-  const { mutate: signIn, error, isSubmitting } = useVendorSignIn();
+  const { mutate: requestOtp, error, isSubmitting } = useRequestVendorSignInOtp();
+
+  // The submit button is the retry: the number survives the failure, so trying
+  // again is one tap. Every failure here is the service's own sentence — a
+  // rate limit, a code that could not be sent, the network — and none of them
+  // says anything about whether the number has an account.
+  useErrorToast(error);
 
   const { phone: rememberedPhone, isReading, forget } = useRememberedVendorPhone();
   const isRemembered = rememberedPhone !== null;
 
   const { control, handleSubmit, setValue } = useForm<VendorLoginForm>({
     resolver: zodResolver(vendorLoginSchema),
-    defaultValues: { phone: '', authCode: '' },
+    defaultValues: { phone: '' },
     mode: 'onSubmit',
     reValidateMode: 'onChange',
   });
@@ -136,25 +136,21 @@ export function VendorLoginScreen({ navigation }: Props) {
     return () => clearTimeout(timer);
   }, [isReading]);
 
-  /**
-   * The sentence a refused sign in gets, fixed when the attempt is made.
-   *
-   * State rather than read from `isRemembered` while rendering: "Use a
-   * different number" after a refusal would otherwise rebuild the message, and
-   * the toast — which tells failures apart by identity — would announce the old
-   * failure a second time.
-   */
-  const [refusal, setRefusal] = useState<string>(COPY.detailsRefused);
-
   const submit = useCallback(
-    // Nothing is done with the session. The thunk behind this hook persists and
-    // publishes it; RootNavigator reacts. A failure leaves both fields as they
-    // are, so a mistyped character costs one edit rather than a retype.
-    async ({ phone, authCode }: VendorLoginForm) => {
-      setRefusal(isRemembered ? COPY.codeRefused : COPY.detailsRefused);
-      await signIn(normalisePhone(phone), normaliseVendorAuthCode(authCode));
+    async ({ phone }: VendorLoginForm) => {
+      // Normalised here so the service always receives digits, whatever was
+      // typed. `mutate` resolves null on failure and surfaces the error through
+      // `error`, so there is nothing to catch.
+      const digits = normalisePhone(phone);
+      const challenge = await requestOtp(digits);
+
+      if (challenge) {
+        // The number travels with the challenge because verification needs it
+        // and the challenge carries no identifier of its own.
+        navigation.navigate('VendorSignInOtp', { phone: digits, challenge });
+      }
     },
-    [signIn, isRemembered],
+    [requestOtp, navigation],
   );
 
   const onSubmit = handleSubmit(submit);
@@ -172,34 +168,11 @@ export function VendorLoginScreen({ navigation }: Props) {
   }, [navigation]);
 
   // Forgotten on the device as well as here, so the next visit asks for a
-  // number too. The typed code is left alone: the person may well be the same
-  // vendor with a new number.
+  // number too.
   const handleUseDifferentNumber = useCallback(() => {
     forget();
     setValue('phone', '');
   }, [forget, setValue]);
-
-  /**
-   * A refusal reads as the app's sentence; every other failure as the service's.
-   *
-   * Rebuilt only when a new failure arrives (or a new attempt fixes the
-   * sentence, in the same render that clears the old failure), so one failure
-   * is one toast.
-   */
-  const shownError = useMemo(
-    () =>
-      error?.kind === 'unauthorized'
-        ? new AppError({ kind: 'unauthorized', userMessage: refusal })
-        : error,
-    [error, refusal],
-  );
-
-  // Retry is the submit button; both values survive the failure. The message
-  // carries itself, needs no heading, and says nothing about which of the two
-  // was wrong.
-  useErrorToast(shownError);
-
-  const codeHelper = formatCopy(COPY.codeHelper, { length: AppConfig.vendorAuthCode.length });
 
   return (
     <Screen
@@ -268,52 +241,22 @@ export function VendorLoginScreen({ navigation }: Props) {
                   label={COPY.phoneLabel}
                   required
                   placeholder={COPY.phonePlaceholder}
+                  // Locked while the request is in flight: the number stays
+                  // visible and stays submitted.
                   editable={!isSubmitting}
-                  returnKeyType="next"
+                  returnKeyType="send"
+                  onSubmitEditing={handleSubmitPress}
                   testID="vendor-login-phone"
                 />
               )}
 
-              {/*
-                Masked, with the reveal toggle PasswordInput already provides:
-                this is a standing credential, entered where a password would be.
-
-                Digits on a number pad, but the ceiling is characters, twice the
-                code: a code pasted in groups ("482 913") must fit, and anything
-                that is not the code is refused with a reason beside the field
-                rather than trimmed by `maxLength` into something that looks
-                complete.
-
-                Kept out of autofill, so the OS does not offer to save it as a
-                password: the app must not persist this credential, and should
-                not prompt it into another store either. `autoComplete="off"`
-                does that on Android; on iOS a secure field is taken for a
-                password unless it is marked `oneTimeCode`.
-              */}
-              <ControlledInput
-                control={control}
-                name="authCode"
-                as={PasswordInput}
-                label={COPY.codeLabel}
-                required
-                placeholder={COPY.codePlaceholder}
-                helperText={codeHelper}
-                revealLabel={COPY.codeReveal}
-                hideLabel={COPY.codeHide}
-                keyboardType="number-pad"
-                maxLength={VENDOR_AUTH_CODE_INPUT_MAX_LENGTH}
-                autoComplete="off"
-                importantForAutofill="no"
-                textContentType="oneTimeCode"
-                editable={!isSubmitting}
-                returnKeyType="done"
-                onSubmitEditing={handleSubmitPress}
-                testID="vendor-login-code"
-              />
-
               <PrimaryButton
                 fullWidth
                 label={COPY.submit}
+                // As customer sign in's "Send code": the words say what the
+                // button does and the arrow says that doing it moves you on.
+                icon="arrowForward"
+                iconPosition="trailing"
                 onPress={handleSubmitPress}
                 isLoading={isSubmitting}
                 accessibilityHint={COPY.submitHint}

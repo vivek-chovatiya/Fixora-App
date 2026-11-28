@@ -21,6 +21,11 @@
  *
  * Recording a payment later (21/10/2026) is held to the paid half of the same
  * rules, here, so the two forms cannot ask for a method differently.
+ *
+ * ⚠️ Every message is read through a function (`{ error: () => … }`): the schema
+ * is built once, when this module loads, and a string read then would stay in
+ * that moment's language once the vendor copy is translated (Phase 5,
+ * 28/11/2026).
  */
 
 import { z } from 'zod';
@@ -118,14 +123,18 @@ export const completeWorkSchema = z
      */
     paymentStatus: z
       .string()
-      .refine(value => SELECTABLE_PAYMENT_STATUSES.includes(value), COPY.paymentStatusRequired),
+      .refine(value => SELECTABLE_PAYMENT_STATUSES.includes(value), {
+        error: () => COPY.paymentStatusRequired,
+      }),
 
     /** Checked against the status below: required when paid, ignored otherwise. */
     paymentMethodId: z.string(),
 
     notes: z
       .string()
-      .max(COMPLETION_NOTES_MAX_LENGTH, COPY.completionNotesTooLong(COMPLETION_NOTES_MAX_LENGTH)),
+      .max(COMPLETION_NOTES_MAX_LENGTH, {
+        error: () => COPY.completionNotesTooLong(COMPLETION_NOTES_MAX_LENGTH),
+      }),
   })
   /*
     Beside the method field, not the status: it is the method that is missing.
@@ -185,7 +194,9 @@ export function buildCompletionInput(
  * the method — required, with the completion form's own message.
  */
 export const recordPaymentSchema = z.object({
-  paymentMethodId: z.string().refine(value => value.length > 0, COPY.paymentMethodRequired),
+  paymentMethodId: z.string().refine(value => value.length > 0, {
+    error: () => COPY.paymentMethodRequired,
+  }),
 });
 
 export type RecordPaymentForm = z.infer<typeof recordPaymentSchema>;

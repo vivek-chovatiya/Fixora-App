@@ -7,8 +7,9 @@
  *   that is then swapped for the other one.
  * - The remembered number is in the hidden phone field before the face can be
  *   tapped. The probe below stands in for that tap: the skyline at the foot of
- *   the screen is replaced by a component whose passive effect types a code and
- *   presses Sign in in the very commit that first draws the face. A child's
+ *   the screen is replaced by a component whose passive effect presses Send
+ *   code in the very commit that first draws the face (there is no code to type
+ *   since the auth code was retired, 28/11/2026). A child's
  *   passive effects run before its parent's, so a number filled by the screen's
  *   own passive effect would not be there yet — exactly the gap between the
  *   paint and that effect on a device.
@@ -27,16 +28,14 @@ import { AUTH_COPY } from '@/features/auth/constants/authCopy';
 import { authReducer } from '@/features/auth/state/authSlice';
 import { setRememberedVendorStorage } from '@/features/auth/state/rememberedVendorStorage';
 import { VendorLoginScreen } from '@/features/auth/screens/VendorLoginScreen';
-import type { SessionPayload } from '@/features/auth/types';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
-import type { AuthService } from '@/shared/services/types/AuthService';
+import type { AuthService, OtpChallenge } from '@/shared/services/types/AuthService';
 import { ToastProvider } from '@/shared/components';
 import { ThemeProvider } from '@/shared/theme';
 
 const COPY = AUTH_COPY.vendorLogin;
 
 const REMEMBERED_PHONE = '9000000001';
-const CODE = '482913';
 
 /** Runs after every commit the screen's foot is part of; set by a test. */
 let mockOnCommit: (() => void) | null = null;
@@ -55,15 +54,11 @@ jest.mock('@/features/auth/components/AuthCityscape', () => {
   };
 });
 
-const SESSION: SessionPayload = {
-  token: 'token_vendor',
-  user: {
-    id: 'usr_vendor_1',
-    firstName: 'Ravi',
-    lastName: 'Kumar',
-    phone: REMEMBERED_PHONE,
-    role: 'vendor',
-  },
+const CHALLENGE: OtpChallenge = {
+  maskedDestination: '••••••0001',
+  expiresAt: '2026-11-28T10:05:00.000Z',
+  resendAfterSeconds: 30,
+  deliveryChannel: 'NONE',
 };
 
 function stubAuthService(): AuthService {
@@ -73,12 +68,11 @@ function stubAuthService(): AuthService {
     });
 
   return {
-    signInVendor: jest.fn(async () => SESSION),
+    requestVendorSignInOtp: jest.fn(async () => CHALLENGE),
+    verifyVendorSignInOtp: unexpected('verifyVendorSignInOtp'),
     registerVendor: unexpected('registerVendor'),
     requestVendorOtp: unexpected('requestVendorOtp'),
     verifyVendorOtp: unexpected('verifyVendorOtp'),
-    verifyVendorAuthCode: unexpected('verifyVendorAuthCode'),
-    regenerateVendorAuthCode: unexpected('regenerateVendorAuthCode'),
     requestCustomerOtp: unexpected('requestCustomerOtp'),
     verifyCustomerOtp: unexpected('verifyCustomerOtp'),
     signOut: unexpected('signOut'),
@@ -225,17 +219,13 @@ describe('VendorLoginScreen — the moment the remembered number arrives', () =>
     // scheduled after the paint has run.
     let tapped = false;
     mockOnCommit = () => {
-      const [codeField] = screen.renderer.root.findAll(
-        node =>
-          typeof node.type === 'string' &&
-          node.props.testID === 'vendor-login-code' &&
-          typeof node.props.onChangeText === 'function',
+      const [rememberedCard] = screen.renderer.root.findAll(
+        node => typeof node.type === 'string' && node.props.testID === 'vendor-login-remembered',
       );
-      if (tapped || !codeField) {
+      if (tapped || !rememberedCard) {
         return;
       }
       tapped = true;
-      codeField.props.onChangeText(CODE);
       screen.renderer.root.findByProps({ accessibilityLabel: COPY.submit }).props.onPress();
     };
 
@@ -243,6 +233,7 @@ describe('VendorLoginScreen — the moment the remembered number arrives', () =>
     await act(async () => {});
 
     expect(tapped).toBe(true);
-    expect(service.signInVendor).toHaveBeenCalledWith(REMEMBERED_PHONE, CODE);
+    // The remembered number, not an empty field the vendor cannot see.
+    expect(jest.mocked(service.requestVendorSignInOtp).mock.calls).toEqual([[REMEMBERED_PHONE]]);
   });
 });

@@ -80,7 +80,12 @@ export function createTabScreenOptions(theme: AppTheme) {
       tabBarActiveTintColor: theme.colors.primary,
       tabBarInactiveTintColor: theme.colors.textTertiary,
 
-      tabBarLabel: ({ focused }) => <TabLabel focused={focused}>{route.name}</TabLabel>,
+      // The tab's `title` — its name in the app's language (`navigationCopy`) —
+      // which the bar passes as `children`; the route name only if a tab set
+      // none. Drawing `route.name` itself kept every tab in English (Phase 5).
+      tabBarLabel: ({ focused, children }) => (
+        <TabLabel focused={focused}>{children || route.name}</TabLabel>
+      ),
     };
   };
 }

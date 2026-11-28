@@ -1,3 +1,14 @@
 <resources>
     <string name="app_name">Fixora</string>
+
+    <!--
+      The one notification channel push messages arrive on (phase5-contract.md
+      section 6). The id is not text anyone reads: it must match the backend's
+      `channelId`, the manifest's default and MainApplication.kt, so it is never
+      translated. The name and description are what Android shows under the
+      app's notification settings.
+    -->
+    <string name="notification_channel_default_id" translatable="false">fixora-default</string>
+    <string name="notification_channel_default_name">Request updates</string>
+    <string name="notification_channel_default_description">Updates about your service requests, such as a new request or one being accepted, started or completed.</string>
 </resources>

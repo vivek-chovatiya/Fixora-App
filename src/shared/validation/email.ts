@@ -6,16 +6,23 @@
  * Deliberately permissive. An address is proven by sending mail to it, not by a
  * regular expression, and an over-strict pattern rejects valid addresses — which
  * is a worse failure than accepting one the backend will bounce.
+ *
+ * The message is `VALIDATION_COPY.email`, read through a function each time the
+ * schema checks, so it is in the language of that moment (`validationCopy.ts`).
  */
 
 import { z } from 'zod';
+
+import { VALIDATION_COPY } from '@/shared/validation/validationCopy';
 
 /** Lowercased so the same address entered two ways reaches the backend once. */
 export const emailSchema = z
   .string()
   .trim()
   .toLowerCase()
-  .refine(value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value), 'Enter a valid email address.');
+  .refine(value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value), {
+    error: () => VALIDATION_COPY.email.invalid,
+  });
 
 /**
  * An optional address: blank is allowed, but anything typed must be valid.

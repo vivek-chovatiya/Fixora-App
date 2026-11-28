@@ -1,12 +1,18 @@
 /**
  * OtpVerificationForm
  *
- * The one-time code step, shared by customer sign in and vendor onboarding.
+ * The one-time code step, shared by customer sign in, vendor sign in and vendor
+ * registration.
  *
- * The two flows differ entirely in what verification *means* — a customer gets a
- * session, a vendor gets an auth code — but the step itself is the same: enter a
+ * The flows differ in which service is asked and what is sent with the code — a
+ * phone number, or a registration id — but the step itself is the same: enter a
  * code, verify, resend after a cooldown, or go back and change the number. This
  * component owns that behaviour so the rules live in one place.
+ *
+ * Where the code went is the backend's to say. A challenge whose
+ * `deliveryChannel` is `WHATSAPP` is worded with `copy.sentToWhatsApp`; any other
+ * value — `NONE`, or one the app does not know — keeps `copy.sentTo`, which
+ * names no channel (phase5-contract.md section 2).
  *
  * There is no verify button. The code is a known length, so the last digit is
  * an unambiguous statement that the user has finished, and asking them to
@@ -19,8 +25,7 @@
  *
  * It owns no service call and reaches no hook of its own. Callers pass the two
  * operations and their state, which is what keeps the flows' different outcomes
- * out of here — and keeps the auth code, which this component never sees, in the
- * screen that asked for it.
+ * out of here.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -39,10 +44,15 @@ import type { OtpChallenge } from '@/shared/services/types/AuthService';
 import { useTheme, type IconName } from '@/shared/theme';
 import type { AppError } from '@/shared/types/error';
 
-/** Copy each flow supplies. `sentTo` takes `{destination}`, `resendIn` `{seconds}`. */
+/**
+ * Copy each flow supplies. `sentTo` and `sentToWhatsApp` take `{destination}`,
+ * `resendIn` `{seconds}`.
+ */
 export interface OtpFormCopy {
   /** Names the masked destination the code went to. */
   sentTo: string;
+  /** The same, for a code the backend says it sent on WhatsApp. */
+  sentToWhatsApp: string;
   codeLabel: string;
   /** Tells assistive technology that no confirming action is coming. */
   codeHint: string;
@@ -110,8 +120,8 @@ export function OtpVerificationForm({
   /**
    * Whether the code was accepted.
    *
-   * Held here because the caller's reaction to success — a session, an auth code
-   * — usually replaces this screen, and the verified state has to be something
+   * Held here because the caller's reaction to success — a session — usually
+   * replaces this screen, and the verified state has to be something
    * this component can show on its own rather than something it waits to be told.
    */
   const [isVerified, setIsVerified] = useState(false);
@@ -124,6 +134,12 @@ export function OtpVerificationForm({
    * the *latest* code went. Seeded from the challenge this attempt started from.
    */
   const [destination, setDestination] = useState(challenge.maskedDestination);
+
+  /**
+   * How the code currently in play was sent — held, and replaced on a resend,
+   * for the reason `destination` is: a replacement may go by another channel.
+   */
+  const [deliveryChannel, setDeliveryChannel] = useState(challenge.deliveryChannel);
 
   // Every failure, from either operation, leaves as a toast.
   useErrorToast(error);
@@ -225,9 +241,10 @@ export function OtpVerificationForm({
         // A replacement may carry a different cooldown, so it comes from the
         // response rather than being assumed.
         startCooldown(next.resendAfterSeconds);
-        // And it may name a different destination. Taking it from the response
-        // for the same reason.
+        // And it may name a different destination, or travel by another
+        // channel. Taking both from the response for the same reason.
         setDestination(next.maskedDestination);
+        setDeliveryChannel(next.deliveryChannel);
       }
     })();
   }, [onResend, startCooldown]);
@@ -241,7 +258,9 @@ export function OtpVerificationForm({
         number and not enough to learn one.
       */}
       <Text variant="body" color="textSecondary" testID={`${testIDPrefix}-destination`}>
-        {formatCopy(copy.sentTo, { destination })}
+        {formatCopy(deliveryChannel === 'WHATSAPP' ? copy.sentToWhatsApp : copy.sentTo, {
+          destination,
+        })}
       </Text>
 
       <Controller

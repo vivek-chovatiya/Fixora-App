@@ -6,6 +6,11 @@
  * by the owner on 2026-09-22), so an empty box and a box of spaces are both "no
  * comment" rather than errors. Section 24 sets no minimum length, and none is
  * invented here.
+ *
+ * ⚠️ Every message is read through a function (`{ error: () => … }`). The
+ * schema is built once, when this module loads; a string read then would stay
+ * in that moment's language after the app's language changes (Phase 5,
+ * 28/11/2026).
  */
 
 import { z } from 'zod';
@@ -34,8 +39,8 @@ export const reviewSchema = z.object({
   rating: z
     .number()
     .int()
-    .min(REVIEW_RATING_MIN, COPY.ratingRequired)
-    .max(REVIEW_RATING_MAX, COPY.ratingRequired),
+    .min(REVIEW_RATING_MIN, { error: () => COPY.ratingRequired })
+    .max(REVIEW_RATING_MAX, { error: () => COPY.ratingRequired }),
 
   /**
    * Bounded, never altered — the customer's own words, as a request's notes
@@ -43,10 +48,9 @@ export const reviewSchema = z.object({
    */
   comment: z
     .string()
-    .max(
-      REVIEW_COMMENT_MAX_LENGTH,
-      COPY.commentTooLong.replace('{count}', String(REVIEW_COMMENT_MAX_LENGTH)),
-    ),
+    .max(REVIEW_COMMENT_MAX_LENGTH, {
+      error: () => COPY.commentTooLong.replace('{count}', String(REVIEW_COMMENT_MAX_LENGTH)),
+    }),
 });
 
 export type ReviewForm = z.infer<typeof reviewSchema>;

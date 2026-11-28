@@ -14,15 +14,22 @@
  * sends counts per star, and turning them into percentages that add up to 100
  * is a rule about ratings, not about one screen — so it sits beside the words,
  * pure and tested on its own. The words for each row are the vendor's copy.
+ *
+ * The words are in English, Hindi and Gujarati since Phase 5 (28/11/2026):
+ * `RATING_COPY_EN` is the source, `rating.hi.ts` / `rating.gu.ts` translate it,
+ * and `RATING_COPY` answers in the current language.
  */
 
+import { localized } from '@/core/i18n';
+import { RATING_COPY_GU } from '@/shared/presentation/rating.gu';
+import { RATING_COPY_HI } from '@/shared/presentation/rating.hi';
 import {
   REVIEW_RATING_MAX,
   REVIEW_RATING_MIN,
   type VendorRatingCount,
 } from '@/shared/services/types/ReviewService';
 
-export const RATING_COPY = Object.freeze({
+export const RATING_COPY_EN = Object.freeze({
   /** Names the group of stars for assistive technology. */
   label: 'Rating',
   /**
@@ -35,6 +42,8 @@ export const RATING_COPY = Object.freeze({
   /** On each star of a rating input. */
   hint: 'Sets your rating',
 });
+
+export const RATING_COPY = localized({ en: RATING_COPY_EN, hi: RATING_COPY_HI, gu: RATING_COPY_GU });
 
 /**
  * A rating as it is said: "4 out of 5 stars".

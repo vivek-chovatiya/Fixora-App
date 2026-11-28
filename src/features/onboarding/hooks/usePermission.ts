@@ -15,6 +15,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import { createLogger } from '@/core/logger/Logger';
+import { noteNotificationPermissionAsked } from '@/shared/services/pushRegistration';
 import { getService } from '@/shared/services/ServiceRegistry';
 import type { PermissionKind, PermissionStatus } from '@/shared/services/types/PermissionService';
 
@@ -81,6 +82,13 @@ export function usePermission(kind: PermissionKind): UsePermissionResult {
       if (current === 'granted' || current === 'blocked' || current === 'unavailable') {
         setPhase(current);
         return;
+      }
+
+      if (kind === 'notifications') {
+        // Noted before the dialog, so the ask after the first sign in
+        // (phase5-contract.md section 6.3) is never a second one: whatever the
+        // answer here, the system is not asked again automatically.
+        await noteNotificationPermissionAsked();
       }
 
       setPhase(await service.request(kind));

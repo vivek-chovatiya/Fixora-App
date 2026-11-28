@@ -12,11 +12,23 @@
  * ⚠️ Nothing here may name a service category. Categories are backend data
  * (PROJECT_BIBLE.md section 11), so a heading that mentioned one would hardcode
  * the catalogue into the app by the back door.
+ *
+ * In English, Hindi and Gujarati since Phase 5 (28/11/2026, phase5-contract.md
+ * section 7): `CUSTOMER_COPY_EN` is the source, `customerCopy.hi.ts` and
+ * `customerCopy.gu.ts` translate it, and `CUSTOMER_COPY` answers in the current
+ * language, key by key, falling back to English (`core/i18n`).
+ *
+ * ⚠️ Read it in render. A string taken from `CUSTOMER_COPY` while a module loads
+ * keeps the language of that moment; a section (`CUSTOMER_COPY.home`) may be
+ * held anywhere.
  */
 
-import { RATING_COPY } from '@/shared/presentation/rating';
+import { localized } from '@/core/i18n';
+import { CUSTOMER_COPY_GU } from '@/features/customer/constants/customerCopy.gu';
+import { CUSTOMER_COPY_HI } from '@/features/customer/constants/customerCopy.hi';
+import { RATING_COPY_EN } from '@/shared/presentation/rating';
 
-export const CUSTOMER_COPY = Object.freeze({
+export const CUSTOMER_COPY_EN = Object.freeze({
   home: Object.freeze({
     /**
      * Three greetings rather than one.
@@ -244,6 +256,12 @@ export const CUSTOMER_COPY = Object.freeze({
     notesLabel: 'Anything else we should know?',
     notesPlaceholder: 'The fan makes a noise and stops after ten minutes.',
     notesSupport: 'Optional.',
+
+    /** The form's refusals (`validation/requestSchemas.ts`). `{count}` is the notes limit. */
+    priorityRequired: 'Choose how urgent this is.',
+    dateInvalid: 'Choose a date from the list.',
+    timeInvalid: 'Choose a time from the list.',
+    notesTooLong: 'Please keep this to {count} characters or fewer.',
 
     /**
      * Not "Submit". PROJECT_BIBLE.md section 13 puts vendor selection between
@@ -612,7 +630,13 @@ export const CUSTOMER_COPY = Object.freeze({
      * has no way to get in touch (21/10/2026).
      */
     referenceHint: 'Your reference for this request. It is also shown in My Requests.',
-    copy: 'Copy',
+    /**
+     * The copy button's spoken name. It is a glyph on screen (T135,
+     * 28/11/2026), so the name says what it copies — a bare "Copy" beside a
+     * number is a puzzle to somebody who cannot see which number.
+     */
+    copyReference: (reference: string) => `Copy reference ${reference}`,
+    /** Shown beside the button for a moment once the reference is on the clipboard. */
     copied: 'Copied',
     copyHint: 'Copies the reference to the clipboard',
     copyFailed: 'We could not copy it. You can write it down instead.',
@@ -918,12 +942,13 @@ export const CUSTOMER_COPY = Object.freeze({
       The stars' own words, shared with the vendor's reviews since Phase 3E-6
       (`shared/presentation/rating.ts`), so a rating reads the same to both.
       Kept under these names so the review screens and their tests are
-      untouched.
+      untouched. Filled from the raw English table, never the localized one:
+      each translation fills them from its own language's rating words.
     */
-    ratingLabel: RATING_COPY.label,
-    ratingValue: RATING_COPY.value,
-    ratingNone: RATING_COPY.none,
-    ratingHint: RATING_COPY.hint,
+    ratingLabel: RATING_COPY_EN.label,
+    ratingValue: RATING_COPY_EN.value,
+    ratingNone: RATING_COPY_EN.none,
+    ratingHint: RATING_COPY_EN.hint,
     ratingRequired: 'Choose a rating from 1 to 5 stars.',
 
     commentTitle: 'Comment',
@@ -1056,6 +1081,10 @@ export const CUSTOMER_COPY = Object.freeze({
     /** Heads the inline failure above Save, never inside a dialog. */
     saveFailedTitle: 'We could not save your profile',
 
+    /** The form's refusals (`validation/profileSchemas.ts`). `{count}` is the name limit. */
+    firstNameRequired: 'First name is required.',
+    nameTooLong: 'Please keep this to {count} characters or fewer.',
+
     /** Leaving with edits that were never saved. */
     discardTitle: 'Discard changes?',
     discardMessage: 'Your changes have not been saved yet.',
@@ -1163,4 +1192,10 @@ export const CUSTOMER_COPY = Object.freeze({
  * number rather than sentences, and mixing the two invites a translator to
  * treat a fragment as a sentence.
  */
+export const CUSTOMER_COPY = localized({
+  en: CUSTOMER_COPY_EN,
+  hi: CUSTOMER_COPY_HI,
+  gu: CUSTOMER_COPY_GU,
+});
+
 export { RELATIVE_TIME_COPY } from '@/shared/presentation/requestTokens';

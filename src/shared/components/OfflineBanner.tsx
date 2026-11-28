@@ -33,26 +33,33 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ERROR_PRESENTATION } from '@/shared/components/errorPresentation';
+import { COMPONENT_COPY } from '@/shared/components/componentCopy';
 import { Icon } from '@/shared/components/Icon';
 import { Text } from '@/shared/components/Text';
 import { useNetworkStatus } from '@/shared/hooks/useNetworkStatus';
 import { useTheme } from '@/shared/theme';
 
 /**
- * What the banner says, frozen as a feature's copy file is. It lives here
- * because it belongs to no feature.
+ * What the banner says. It belongs to no feature, so its words are the shared
+ * components' (`componentCopy.ts`, in English, Hindi and Gujarati since Phase 5);
+ * the export keeps its name.
  *
  * It claims nothing it cannot know: not that nothing works, not when the
  * connection will return. "Some things" is exact — whatever is already on
  * screen stays usable.
  */
-export const OFFLINE_BANNER_COPY = Object.freeze({
-  title: "You're offline.",
-  message: 'Some things may not load until you reconnect.',
-});
+export const OFFLINE_BANNER_COPY = COMPONENT_COPY.offlineBanner;
 
-/** The whole banner as one sentence pair, for a screen reader. */
-const SPOKEN = `${OFFLINE_BANNER_COPY.title} ${OFFLINE_BANNER_COPY.message}`;
+/**
+ * The whole banner as one sentence pair, for a screen reader.
+ *
+ * ⚠️ A function, called in render. It was a module-scope string, which froze the
+ * two sentences in the language the module loaded in — the banner would have
+ * gone on announcing English after the app switched to Hindi (Phase 5).
+ */
+function spokenBanner(): string {
+  return `${OFFLINE_BANNER_COPY.title} ${OFFLINE_BANNER_COPY.message}`;
+}
 
 export interface OfflineBannerProps {
   testID?: string;
@@ -84,7 +91,7 @@ function OfflineBannerComponent({ testID = 'offline-banner' }: OfflineBannerProp
         accessible
         accessibilityRole="alert"
         accessibilityLiveRegion="polite"
-        accessibilityLabel={SPOKEN}
+        accessibilityLabel={spokenBanner()}
         style={[styles.row, { gap: theme.spacing.sm, maxWidth: theme.maxContentWidth }]}>
         {/* The tint's own ink, words and glyph (3G-4): `warning` is 2.9:1 here in light. */}
         <Icon name={presentation.icon} size="md" color="onWarningSubtle" />

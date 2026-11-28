@@ -57,6 +57,8 @@ const COPY = CUSTOMER_COPY.requestDetails;
 const CANCEL = CUSTOMER_COPY.cancelRequest;
 const SUMMARY = CUSTOMER_COPY.confirmation;
 const REFERENCE = CUSTOMER_COPY.requestSubmitted;
+/** The copy button's spoken name for the fixture's reference (T135: it names what it copies). */
+const COPY_REFERENCE = REFERENCE.copyReference('REQ-7001');
 const STATUS = CUSTOMER_COPY.requestStatus;
 const REVIEW = CUSTOMER_COPY.review;
 
@@ -483,10 +485,23 @@ describe('RequestDetailsScreen — status and reference', () => {
 
     expect(labelOf('request-details-reference')).toBe(`${REFERENCE.referenceLabel}: REQ-7001`);
 
-    await press(REFERENCE.copy);
+    await press(COPY_REFERENCE);
 
     expect(copiedValue).toBe('REQ-7001');
     expect(text()).toContain(REFERENCE.copied);
+  });
+
+  it('names its copy button for the reference it copies, as a button beside it (T135)', async () => {
+    const { renderer } = await render();
+
+    const [button] = renderer.root.findAll(
+      node =>
+        node.props?.testID === 'request-details-reference-copy' &&
+        typeof node.props?.onPress === 'function',
+    );
+    expect(button.props.accessibilityRole).toBe('button');
+    expect(button.props.accessibilityLabel).toBe(COPY_REFERENCE);
+    expect(button.props.accessibilityHint).toBe(REFERENCE.copyHint);
   });
 
   it('shows and copies the backend’s quotable reference, never its database id', async () => {
@@ -497,7 +512,7 @@ describe('RequestDetailsScreen — status and reference', () => {
     expect(labelOf('request-details-reference')).toBe(`${REFERENCE.referenceLabel}: REQ-0031002405`);
     expect(text()).not.toContain('6afc3ea3c2951ec40c9a177a');
 
-    await press(REFERENCE.copy);
+    await press(REFERENCE.copyReference('REQ-0031002405'));
 
     expect(copiedValue).toBe('REQ-0031002405');
   });
@@ -877,7 +892,7 @@ describe('RequestDetailsScreen — read-only', () => {
     // The fixture is waiting on the professional it was sent to.
     const { buttons, text } = await render();
 
-    expect(new Set(buttons())).toEqual(new Set([COPY.back, REFERENCE.copy, CANCEL.action]));
+    expect(new Set(buttons())).toEqual(new Set([COPY.back, COPY_REFERENCE, CANCEL.action]));
     // No edit, no change, no submit — the request has gone.
     expect(text()).not.toContain(SUMMARY.edit);
     expect(text()).not.toContain(SUMMARY.submit);
@@ -952,10 +967,10 @@ describe('RequestDetailsScreen — customer actions', () => {
 
   for (const status of STATUSES) {
     const expected = REVIEWABLE.has(status)
-      ? [COPY.back, REFERENCE.copy, REVIEW.detailsAction]
+      ? [COPY.back, COPY_REFERENCE, REVIEW.detailsAction]
       : CANCELLABLE.has(status)
-        ? [COPY.back, REFERENCE.copy, CANCEL.action]
-        : [COPY.back, REFERENCE.copy];
+        ? [COPY.back, COPY_REFERENCE, CANCEL.action]
+        : [COPY.back, COPY_REFERENCE];
 
     it(`offers only ${expected.join(', ')} for ${status}, whichever way it was sent`, async () => {
       for (const record of [DETAILS, OPEN]) {
@@ -1190,7 +1205,7 @@ describe('RequestDetailsScreen — a request raised before a restart', () => {
   it('still copies its reference', async () => {
     const { created, screen } = await raiseThenRestart();
 
-    await screen.press(REFERENCE.copy);
+    await screen.press(REFERENCE.copyReference(created.id));
 
     expect(copiedValue).toBe(created.id);
   });

@@ -7,8 +7,11 @@
  * - the kind comes from the status, the copy from the `code`, and the backend's
  *   English never becomes `userMessage`;
  * - field names survive, Joi's sentences do not;
- * - a 401 ends the session through the handler — except a refused credential,
- *   and a call that asked not to;
+ * - a 401 ends the session through the handler — except on a call that carried
+ *   no token or another session's, and a call that asked not to; a refused
+ *   one-time code is a 400 and never reaches it (the auth code's 401
+ *   `AUTH_CODE_INVALID`, and the exception it needed, were retired on
+ *   28/11/2026 — phase5-contract.md section 1.3);
  * - nothing the request carried — a code, the token — reaches the error or the
  *   log;
  * - a 4xx is the backend answering and is logged below error level, so an
@@ -216,10 +219,11 @@ describe('a failed response', () => {
       'conflict',
       'An account already exists for this number. Try signing in instead.',
     ],
-    ['AUTH_CODE_INVALID', 401, 'unauthorized', 'Those sign-in details were not recognised.'],
-    // At `/auth/vendor/auth-code/confirm` (ApiAuthService rewords it there).
-    ['AUTH_CODE_INVALID', 400, 'validation', 'Those sign-in details were not recognised.'],
-    ['SIGNIN_TOO_MANY_ATTEMPTS', 429, 'unknown', 'Too many attempts. Try again in 15 minutes.'],
+    // phase5-contract.md section 2: the provider refused or timed out.
+    ['OTP_DELIVERY_FAILED', 503, 'server', 'We could not send your code just now. Please try again.'],
+    // Retired with the vendor auth code (section 1.3): no sentence of their own.
+    ['AUTH_CODE_INVALID', 401, 'unauthorized', 'Your session has expired. Please sign in again.'],
+    ['SIGNIN_TOO_MANY_ATTEMPTS', 429, 'unknown', 'Something went wrong. Please try again.'],
     [
       'ACCOUNT_SUSPENDED',
       403,
@@ -251,11 +255,11 @@ describe('a failed response', () => {
     ])('words %s seconds as the time left', async (header, seconds, copy) => {
       backendAnswers({
         status: 429,
-        body: failure('SIGNIN_TOO_MANY_ATTEMPTS'),
+        body: failure('RATE_LIMITED'),
         headers: { 'retry-after': header },
       });
 
-      const error = await rejectionOf(Http.post('/auth/vendor/signin', {}));
+      const error = await rejectionOf(Http.post('/auth/vendor/signin/otp/request', {}));
 
       expect(error.retryAfterSeconds).toBe(seconds);
       expect(error.userMessage).toBe(copy);
@@ -289,11 +293,11 @@ describe('a failed response', () => {
     it('reads the header whatever its case', async () => {
       backendAnswers({
         status: 429,
-        body: failure('SIGNIN_TOO_MANY_ATTEMPTS'),
+        body: failure('RATE_LIMITED'),
         headers: { 'Retry-After': '300' },
       });
 
-      const error = await rejectionOf(Http.post('/auth/vendor/signin', {}));
+      const error = await rejectionOf(Http.post('/auth/vendor/signin/otp/request', {}));
 
       expect(error.userMessage).toBe('Too many attempts. Try again in 5 minutes.');
     });
@@ -305,14 +309,14 @@ describe('a failed response', () => {
     ])('falls back to the fixed sentence for %s', async (_case, header) => {
       backendAnswers({
         status: 429,
-        body: failure('SIGNIN_TOO_MANY_ATTEMPTS'),
+        body: failure('RATE_LIMITED'),
         headers: { 'retry-after': header },
       });
 
-      const error = await rejectionOf(Http.post('/auth/vendor/signin', {}));
+      const error = await rejectionOf(Http.post('/auth/vendor/signin/otp/request', {}));
 
       expect(error.retryAfterSeconds).toBeUndefined();
-      expect(error.userMessage).toBe('Too many attempts. Try again in 15 minutes.');
+      expect(error.userMessage).toBe('Too many attempts. Please wait a little and try again.');
     });
 
     it('leaves the copy of a code with no worded wait alone', async () => {
@@ -363,16 +367,16 @@ describe('a failed response', () => {
       status: 400,
       body: failure('VALIDATION_FAILED', 'Validation Failed', [
         { field: 'phone', message: '"phone" length must be at least 7 characters long' },
-        { field: 'authCode', message: '"authCode" with value "482913" fails to match the pattern' },
+        { field: 'code', message: '"code" with value "482913" fails to match the pattern' },
         { message: 'no field, so nothing to attach it to' },
       ]),
     });
 
-    const error = await rejectionOf(Http.post('/auth/vendor/signin', {}));
+    const error = await rejectionOf(Http.post('/auth/vendor/signin/otp/verify', {}));
 
     expect(error.fieldErrors).toEqual({
       phone: AppError.defaultMessage('validation'),
-      authCode: AppError.defaultMessage('validation'),
+      code: AppError.defaultMessage('validation'),
     });
     expect(JSON.stringify(error.fieldErrors)).not.toContain('482913');
   });
@@ -489,24 +493,20 @@ describe('the unauthorized handler', () => {
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 
-  it('does not run for a refused vendor auth code — there is no session to end', async () => {
+  it('does not run for a refused one-time code — a 400, with no session to end', async () => {
     setTokenProvider(() => 'token-current');
-    backendAnswers({ status: 401, body: failure('AUTH_CODE_INVALID') });
+    backendAnswers({ status: 400, body: failure('OTP_INVALID') });
 
-    await rejectionOf(Http.post('/auth/vendor/signin', {}));
+    await rejectionOf(Http.post('/auth/vendor/signin/otp/verify', {}));
 
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 
-  it('does not run for a locked vendor sign in', async () => {
+  it('does not run for too many wrong codes', async () => {
     setTokenProvider(() => 'token-current');
-    backendAnswers({
-      status: 429,
-      body: failure('SIGNIN_TOO_MANY_ATTEMPTS'),
-      headers: { 'retry-after': '900' },
-    });
+    backendAnswers({ status: 429, body: failure('OTP_TOO_MANY_ATTEMPTS') });
 
-    await rejectionOf(Http.post('/auth/vendor/signin', {}));
+    await rejectionOf(Http.post('/auth/vendor/signin/otp/verify', {}));
 
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
@@ -531,11 +531,11 @@ describe('the unauthorized handler', () => {
 });
 
 describe('what an error may carry', () => {
-  const AUTH_CODE = '482913';
+  const CODE = '482913';
   const TOKEN = 'secret-session-token';
 
   it.each([
-    ['a refusal', { status: 401, body: failure('AUTH_CODE_INVALID') }],
+    ['a refusal', { status: 400, body: failure('OTP_INVALID') }],
     ['a network failure', 'network'],
     ['a timeout', 'timeout'],
   ] as [string, Reply][])('holds neither the request body nor the token after %s', async (_case, reply) => {
@@ -543,27 +543,31 @@ describe('what an error may carry', () => {
     backendAnswers(reply);
 
     const error = await rejectionOf(
-      Http.post('/auth/vendor/signin', { phone: '9000000001', authCode: AUTH_CODE }),
+      Http.post('/auth/vendor/signin/otp/verify', { phone: '9000000001', code: CODE }),
     );
 
     // Everything the error holds, the cause included.
     const everything = JSON.stringify({ ...error, message: error.message, cause: error.cause });
-    expect(everything).not.toContain(AUTH_CODE);
+    expect(everything).not.toContain(CODE);
     expect(everything).not.toContain(TOKEN);
     expect(error.cause).not.toBeInstanceOf(Error);
-    expect(error.cause).toEqual(expect.objectContaining({ method: 'post', url: '/auth/vendor/signin' }));
+    expect(error.cause).toEqual(
+      expect.objectContaining({ method: 'post', url: '/auth/vendor/signin/otp/verify' }),
+    );
   });
 
   it('logs neither the request body nor the token', async () => {
     setTokenProvider(() => TOKEN);
-    backendAnswers({ status: 401, body: failure('AUTH_CODE_INVALID') });
+    backendAnswers({ status: 400, body: failure('OTP_INVALID') });
 
-    await rejectionOf(Http.post('/auth/vendor/signin', { phone: '9000000001', authCode: AUTH_CODE }));
+    await rejectionOf(
+      Http.post('/auth/vendor/signin/otp/verify', { phone: '9000000001', code: CODE }),
+    );
 
     const logged = JSON.stringify(consoleCalls);
     // The failure was logged — so the search below is looking at something.
-    expect(logged).toContain('AUTH_CODE_INVALID');
-    expect(logged).not.toContain(AUTH_CODE);
+    expect(logged).toContain('OTP_INVALID');
+    expect(logged).not.toContain(CODE);
     expect(logged).not.toContain(TOKEN);
   });
 });

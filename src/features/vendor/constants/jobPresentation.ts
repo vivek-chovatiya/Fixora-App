@@ -27,6 +27,12 @@
  * show it is the only answer that invents nothing, and it is what the
  * customer's side already says. The raw value stays on the record for whoever
  * is debugging; it is never drawn.
+ *
+ * ⚠️ `CANCELLED` is known, though no list shows it (`vendorWork.ts` puts a
+ * cancelled request in no group): a vendor still reaches one by opening it —
+ * the push sent when the customer cancels opens its details. It offers nothing
+ * and shows no customer, which the four questions below already answer for a
+ * status that is in none of their lists.
  */
 
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
@@ -66,6 +72,11 @@ export function presentJobStatus(job: Pick<VendorJobSummary, 'status' | 'dispatc
     // The vendor's own answer, not a fault: neutral, and said in a word (3E-4).
     case 'REJECTED':
       return { label: COPY.statusRejected, tone: 'neutral', icon: 'reject' };
+    // The customer withdrew it. Neutral, with the glyph the customer sees for it
+    // (`requestStatus.ts`): nobody's fault, and nothing left to do. It read
+    // "Status unavailable" until 28/11/2026, opened from its push.
+    case 'CANCELLED':
+      return { label: COPY.statusCancelled, tone: 'neutral', icon: 'close' };
     default:
       return { label: COPY.statusUnknown, tone: 'neutral', icon: 'help' };
   }

@@ -18,26 +18,23 @@ import type { OtpChallenge } from '@/shared/services/types/AuthService';
 /**
  * Pre-authentication flow (PROJECT_BIBLE.md sections 7A, 9, 28).
  *
- * Routes are named by role. Customer and vendor authentication are different
- * mechanisms — a one-time code versus a permanent auth code — so a shared
- * "Login" route would have had to branch on something the screen should not be
- * deciding.
+ * Routes are named by role. Both roles now sign in with a phone and a one-time
+ * code (owner decision 28/11/2026, phase5-contract.md section 1), but through
+ * different services with different outcomes, so a shared "Login" route would
+ * still have to branch on something the screen should not be deciding.
  *
- * There is no password reset route. Neither role has a password: customers use a
- * one-time code, and a vendor uses the auth code they saved.
+ * There is no password reset route. Neither role has a password: both use a
+ * one-time code.
  *
  * There is no customer signup route either. A customer account is created by the
  * backend on first successful phone verification, so signing up and signing in
  * are the same three taps — a separate screen would collect details nobody has
  * yet asked for and add a step to the shortest path in the product.
  *
- * There is no vendor recovery route either, and its absence is deliberate.
- * `regenerateVendorAuthCode` is keyed by `registrationId`, which a returning
- * vendor does not have — so the current contract cannot express "I lost my
- * code" safely. Inventing a phone-only regeneration would turn a lost phone into
- * account takeover. It needs a backend operation before it can need a route.
- *
- * The remaining vendor routes are added with their screens, not ahead of them.
+ * There is no vendor recovery route, and no auth-code route of any kind: the
+ * permanent vendor auth code was retired on 28/11/2026, so there is nothing to
+ * show, confirm, regenerate or recover. A vendor who can receive a code can
+ * sign in.
  */
 export type AuthStackParamList = {
   /**
@@ -68,27 +65,35 @@ export type AuthStackParamList = {
   CustomerOtp: { phone: string; challenge: OtpChallenge };
 
   /**
-   * Returning vendors. Separate from CustomerLogin because the mechanisms
-   * differ — a one-time code versus a permanent auth code — and a single screen
-   * branching on role would have to decide something it should not.
+   * Returning vendors. Separate from CustomerLogin because the services differ,
+   * and a single screen branching on role would have to decide something it
+   * should not.
    */
   VendorLogin: undefined;
+  /**
+   * The code step of vendor sign in, shaped as `CustomerOtp` for the same
+   * reason: `verifyVendorSignInOtp(phone, code)` needs the number, and the
+   * challenge carries no identifier of its own. The challenge holds only the
+   * masked destination, timings and the delivery channel; the code itself never
+   * appears in navigation params.
+   */
+  VendorSignInOtp: { phone: string; challenge: OtpChallenge };
   VendorRegistration: undefined;
   /**
-   * Typed ahead of its screen so registration has a contract to hand off to.
+   * The code step of vendor registration; verifying it signs the vendor in.
    *
    * `registrationId` is the onboarding identity — never the phone number, so a
    * half-finished registration cannot be resumed by anyone who merely knows the
    * number. Every onboarding call is keyed by it alone. The challenge carries
-   * only the masked destination and timings; no one-time code and no auth code
-   * ever travels in params.
+   * only the masked destination, timings and the delivery channel; no one-time
+   * code ever travels in params.
    *
    * `phone` travels beside it for one job, never as an identity: once
    * onboarding finishes, it is the number remembered on this device for the
    * next sign in — the digits the vendor typed, as sign in remembers the digits
    * typed there. The account's own `phone` has no format contract, and a
-   * backend that answered "+919000000001" would have the next code-only sign
-   * in send twelve digits and fail as a wrong code. It is the vendor's own
+   * backend that answered "+919000000001" would have the next sign in send
+   * twelve digits and fail as a wrong code. It is the vendor's own
    * number, not a credential, like `CustomerOtp`'s.
    */
   VendorOtp: { registrationId: string; phone: string; challenge: OtpChallenge };
@@ -276,6 +281,13 @@ export type CustomerStackParamList = {
    * stack's own `RequestDetails`.
    */
   Notifications: undefined;
+  /**
+   * The language chooser, pushed from the Profile tab's Language row
+   * (phase5-contract.md section 7). The same screen and name both stacks register.
+   *
+   * ⚠️ No params: the only thing it needs, the current language, is the app's own.
+   */
+  Language: undefined;
 };
 
 /** Vendor bottom tabs (PROJECT_BIBLE.md section 43). */
@@ -388,6 +400,13 @@ export type VendorStackParamList = {
    * `VendorProfileService`, so no route can open or change another vendor's.
    */
   WorkingHours: undefined;
+  /**
+   * The language chooser, pushed from the Profile tab's Language row
+   * (phase5-contract.md section 7). The same screen and name both stacks register.
+   *
+   * ⚠️ No params: the only thing it needs, the current language, is the app's own.
+   */
+  Language: undefined;
 };
 
 /**

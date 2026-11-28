@@ -13,9 +13,9 @@
  * write in the app, so forms get the loading and error handling the Definition
  * of Done requires without inventing anything auth-specific.
  *
- * Only the two hooks that establish a session dispatch anything. The vendor
- * onboarding steps return their results to the calling screen, which is what
- * keeps the generated auth code out of Redux.
+ * Only the hooks that establish a session dispatch anything — customer sign in,
+ * vendor sign in, and the code that ends vendor registration. Asking for a code
+ * and registering return their results to the calling screen.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -29,7 +29,7 @@ import {
   selectUserRole,
 } from '@/features/auth/state/authSlice';
 import {
-  confirmVendorAuthCode,
+  completeVendorRegistration,
   signInCustomer,
   signInVendor,
   signOut as signOutThunk,
@@ -40,7 +40,6 @@ import { useServiceMutation } from '@/shared/hooks/useServiceMutation';
 import { getService } from '@/shared/services/ServiceRegistry';
 import type {
   OtpChallenge,
-  VendorAuthCode,
   VendorRegistration,
   VendorRegistrationDetails,
 } from '@/shared/services/types/AuthService';
@@ -110,78 +109,46 @@ export function useRequestVendorOtp() {
 }
 
 /**
- * The auth code is a standing credential, so the hooks that produce one do not
- * retain it. `mutate` resolves with the code and the calling screen becomes its
- * single owner, for exactly as long as it needs it — rather than the screen and
- * the hook each holding a copy.
- */
-const CREDENTIAL_RESULT = { retainResult: false } as const;
-
-/**
- * Verifies the onboarding code, which activates the vendor and issues their
- * permanent auth code.
- *
- * ⚠️ The resolved value contains the auth code. Hold it in screen state only,
- * long enough for the vendor to save it. It must not be dispatched, persisted or
- * logged. This hook deliberately does not sign the vendor in — confirming the
- * code does that.
- */
-export function useVerifyVendorOtp() {
-  const verify = useCallback(
-    (registrationId: string, code: string): Promise<VendorAuthCode> =>
-      getService('auth').verifyVendorOtp(registrationId, code),
-    [],
-  );
-
-  return useServiceMutation<[string, string], VendorAuthCode>(verify, CREDENTIAL_RESULT);
-}
-
-/**
- * Issues a replacement auth code and revokes the previous one.
- *
- * Same handling rules as `useVerifyVendorOtp`: the resolved value is sensitive.
- */
-export function useRegenerateVendorAuthCode() {
-  const regenerate = useCallback(
-    (registrationId: string): Promise<VendorAuthCode> =>
-      getService('auth').regenerateVendorAuthCode(registrationId),
-    [],
-  );
-
-  return useServiceMutation<[string], VendorAuthCode>(regenerate, CREDENTIAL_RESULT);
-}
-
-/**
- * Confirms the vendor saved their auth code, and signs them in.
- *
- * The only onboarding step that creates a session. Copying the code must not
- * call this — the vendor has to enter it.
+ * Verifies the onboarding code, which creates the vendor and signs them in
+ * (phase5-contract.md section 1.2).
  *
  * `phone` is the number typed at registration, remembered for the next sign in
  * once the session exists; the service is called with the registration id and
  * the code only.
  */
-export function useConfirmVendorAuthCode() {
+export function useCompleteVendorRegistration() {
   const dispatch = useAppDispatch();
 
-  const confirm = useCallback(
-    (registrationId: string, phone: string, authCode: string): Promise<SessionPayload> =>
-      confirmVendorAuthCode(dispatch, registrationId, phone, authCode),
+  const verify = useCallback(
+    (registrationId: string, phone: string, code: string): Promise<SessionPayload> =>
+      completeVendorRegistration(dispatch, registrationId, phone, code),
     [dispatch],
   );
 
-  return useServiceMutation<[string, string, string], SessionPayload>(confirm);
+  return useServiceMutation<[string, string, string], SessionPayload>(verify);
 }
 
 /* Vendor sign in ---------------------------------------------------------- */
 
-/** Signs a returning vendor in with phone and permanent auth code. */
+/**
+ * Asks for a returning vendor's one-time code. Establishes no session, so it
+ * dispatches nothing — the challenge belongs to the screen that asked for it.
+ */
+export function useRequestVendorSignInOtp() {
+  const request = useCallback(
+    (phone: string): Promise<OtpChallenge> => getService('auth').requestVendorSignInOtp(phone),
+    [],
+  );
+
+  return useServiceMutation<[string], OtpChallenge>(request);
+}
+
+/** Verifies the code and signs the returning vendor in. */
 export function useVendorSignIn() {
   const dispatch = useAppDispatch();
 
   const submit = useCallback(
-    (phone: string, authCode: string): Promise<SessionPayload> =>
-      signInVendor(dispatch, phone, authCode),
+    (phone: string, code: string): Promise<SessionPayload> => signInVendor(dispatch, phone, code),
     [dispatch],
   );
 
@@ -205,7 +172,7 @@ export interface RememberedVendorPhone {
  *
  * ⚠️ Never in the way of signing in. A read that fails — even one that throws
  * despite the storage module promising not to — settles as "nothing
- * remembered", which is the full phone-and-code form every vendor already knows.
+ * remembered", which is the phone form every vendor already knows.
  */
 export function useRememberedVendorPhone(): RememberedVendorPhone {
   const [state, setState] = useState<{ phone: string | null; isReading: boolean }>({

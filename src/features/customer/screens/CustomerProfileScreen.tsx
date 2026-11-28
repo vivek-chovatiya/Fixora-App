@@ -43,6 +43,7 @@ import { CUSTOMER_COPY } from '@/features/customer/constants/customerCopy';
 import { useCustomerLogout } from '@/features/customer/hooks/useCustomerLogout';
 import { useCustomerProfile } from '@/features/customer/hooks/useCustomerProfile';
 import { useProfileImage } from '@/features/customer/hooks/useProfileImage';
+import { LanguageRow } from '@/features/language/components/LanguageRow';
 import type { CustomerStackParamList, CustomerTabParamList } from '@/navigation/types';
 import {
   Avatar,
@@ -81,6 +82,8 @@ export function CustomerProfileScreen({ navigation }: Props) {
   const editProfile = useCallback(() => navigation.navigate('EditProfile'), [navigation]);
 
   const manageAddresses = useCallback(() => navigation.navigate('Addresses'), [navigation]);
+
+  const changeLanguage = useCallback(() => navigation.navigate('Language'), [navigation]);
 
   const takePhoto = useCallback(() => photo.choose('camera'), [photo]);
   const choosePhoto = useCallback(() => photo.choose('gallery'), [photo]);
@@ -259,6 +262,9 @@ export function CustomerProfileScreen({ navigation }: Props) {
           fullWidth
           accessibilityHint={COPY.addressesHint}
         />
+
+        {/* The way back to the first launch's language chooser (phase5-contract.md section 7). */}
+        <LanguageRow onPress={changeLanguage} disabled={photo.isBusy || isLoggingOut} />
 
         <Button
           label={COPY.logout}

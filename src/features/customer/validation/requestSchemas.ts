@@ -13,10 +13,16 @@
  * 14 marks preferred date and time as available only if the backend supports
  * them and section 17 marks notes optional, so requiring either would be the app
  * inventing an obligation the product does not have.
+ *
+ * ⚠️ Every message is read through a function (`{ error: () => … }`). The
+ * schema is built once, when this module loads; a string read then would stay
+ * in that moment's language after the app's language changes (Phase 5,
+ * 28/11/2026).
  */
 
 import { z } from 'zod';
 
+import { CUSTOMER_COPY } from '@/features/customer/constants/customerCopy';
 import { SELECTABLE_PRIORITIES } from '@/features/customer/constants/requestPresentation';
 import { NO_PREFERENCE } from '@/features/customer/constants/requestScheduling';
 
@@ -45,20 +51,22 @@ export const createRequestSchema = z.object({
    */
   priority: z
     .string()
-    .refine(value => SELECTABLE_PRIORITIES.includes(value), 'Choose how urgent this is.'),
+    .refine(value => SELECTABLE_PRIORITIES.includes(value), {
+      error: () => CUSTOMER_COPY.createRequest.priorityRequired,
+    }),
 
   preferredDate: z
     .string()
     .refine(
       value => value === NO_PREFERENCE || DATE_VALUE.test(value),
-      'Choose a date from the list.',
+      { error: () => CUSTOMER_COPY.createRequest.dateInvalid },
     ),
 
   preferredTime: z
     .string()
     .refine(
       value => value === NO_PREFERENCE || TIME_VALUE.test(value),
-      'Choose a time from the list.',
+      { error: () => CUSTOMER_COPY.createRequest.timeInvalid },
     ),
 
   /**
@@ -70,10 +78,10 @@ export const createRequestSchema = z.object({
    */
   notes: z
     .string()
-    .max(
-      REQUEST_NOTES_MAX_LENGTH,
-      `Please keep this to ${REQUEST_NOTES_MAX_LENGTH} characters or fewer.`,
-    ),
+    .max(REQUEST_NOTES_MAX_LENGTH, {
+      error: () =>
+        CUSTOMER_COPY.createRequest.notesTooLong.replace('{count}', String(REQUEST_NOTES_MAX_LENGTH)),
+    }),
 });
 
 export type CreateRequestForm = z.infer<typeof createRequestSchema>;

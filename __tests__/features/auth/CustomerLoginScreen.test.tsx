@@ -36,6 +36,7 @@ const CHALLENGE = {
   maskedDestination: '••••••3210',
   expiresAt: new Date(Date.now() + 300_000).toISOString(),
   resendAfterSeconds: 30,
+  deliveryChannel: 'NONE' as const,
 };
 
 /** Only the operation this screen uses is implemented; the rest must not be called. */
@@ -51,9 +52,8 @@ function stubAuthService(overrides: Partial<AuthService> = {}): AuthService {
     registerVendor: unexpected('registerVendor'),
     requestVendorOtp: unexpected('requestVendorOtp'),
     verifyVendorOtp: unexpected('verifyVendorOtp'),
-    verifyVendorAuthCode: unexpected('verifyVendorAuthCode'),
-    regenerateVendorAuthCode: unexpected('regenerateVendorAuthCode'),
-    signInVendor: unexpected('signInVendor'),
+    requestVendorSignInOtp: unexpected('requestVendorSignInOtp'),
+    verifyVendorSignInOtp: unexpected('verifyVendorSignInOtp'),
     signOut: unexpected('signOut'),
     ...overrides,
   } as AuthService;

@@ -19,6 +19,7 @@
 
 import { AppConfig } from '@/core/config/AppConfig';
 import type { ImageAsset, ImageValidationResult } from '@/shared/services/types/ImageService';
+import { VALIDATION_COPY } from '@/shared/validation/validationCopy';
 
 export function validateImageAsset(
   asset: Pick<ImageAsset, 'mimeType' | 'sizeBytes'>,
@@ -29,7 +30,7 @@ export function validateImageAsset(
     return {
       valid: false,
       reason: 'type',
-      message: 'Only JPG, PNG and WebP images are supported.',
+      message: VALIDATION_COPY.image.type,
     };
   }
 
@@ -38,7 +39,7 @@ export function validateImageAsset(
     return {
       valid: false,
       reason: 'size',
-      message: `Images must be smaller than ${maxMb} MB.`,
+      message: VALIDATION_COPY.image.size.replace('{count}', String(maxMb)),
     };
   }
 

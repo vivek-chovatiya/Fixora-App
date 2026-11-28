@@ -136,6 +136,34 @@ export const AppConfig = Object.freeze({
     live: liveServices,
   }),
 
+  /**
+   * Push notifications (phase5-contract.md section 6, owner-approved
+   * 28/11/2026). Whether push is on is not configured here: it is on when the
+   * build carries Firebase's config file, and `FirebasePushService` finds that
+   * out for itself.
+   */
+  push: Object.freeze({
+    /**
+     * Longest a sign-out waits for this device to be unregistered before it
+     * carries on to `/auth/logout` without it. Signing out must never be held
+     * hostage by a slow network: the person asked to leave, and a token left
+     * registered is moved by the next account that signs in on this phone.
+     */
+    unregisterTimeoutMs: 5000,
+  }),
+
+  /** The app's language (phase5-contract.md section 7). */
+  locale: Object.freeze({
+    /**
+     * Longest the start of the app waits for the saved language to be read.
+     * Nothing is drawn until it is (`AppRoot`), so a read that never answers
+     * would leave a blank screen for ever; past this the app starts in English
+     * with the chooser, exactly as on a first launch. A device read normally
+     * answers in a few milliseconds, so this only ever ends a stuck one.
+     */
+    restoreTimeoutMs: 1500,
+  }),
+
   storage: Object.freeze({
     /** Namespace for every persisted key, so clearing Fixora data is unambiguous. */
     keyPrefix: '@fixora',
@@ -148,13 +176,18 @@ export const AppConfig = Object.freeze({
      */
     onboardingKey: '@fixora/onboarding',
     /**
+     * The language chosen on this device — `en`, `hi` or `gu` (phase5-contract.md
+     * section 7). Its own key, like onboarding's: signing out does not forget it,
+     * and nobody should have to choose their language again to sign back in.
+     */
+    localeKey: '@fixora/locale',
+    /**
      * The phone number of the last vendor to sign in on this device, so the
-     * next vendor sign in asks for the auth code alone.
+     * next vendor sign in only has to ask for a code to be sent to it.
      *
-     * ⚠️ The phone and nothing else — never the auth code, which is a standing
-     * credential that must not be persisted (PROJECT_BIBLE.md section 7A.2).
-     * Separate from the session because it outlives it: signing out keeps it,
-     * which is the point of it.
+     * ⚠️ The phone and nothing else — never a one-time code, which must not be
+     * persisted (PROJECT_BIBLE.md section 7A). Separate from the session because
+     * it outlives it: signing out keeps it, which is the point of it.
      */
     rememberedVendorKey: '@fixora/remembered-vendor',
     /**
@@ -165,6 +198,14 @@ export const AppConfig = Object.freeze({
      * and no personal record — only what was typed into one unfinished form.
      */
     requestDraftKey: '@fixora/request-draft',
+    /**
+     * Records that this device has asked for permission to show notifications —
+     * from onboarding or after a sign in — so it is asked once and a refusal is
+     * never met with a second dialog (phase5-contract.md section 6.3). Device-wide
+     * and outliving the session, like onboarding's: signing out and back in is
+     * not a reason to ask again.
+     */
+    notificationPermissionAskedKey: '@fixora/notification-permission-asked',
     /**
      * Requests the mock backend accepted, one key per customer beneath this
      * prefix, so they survive a restart until a real backend holds them.
@@ -273,22 +314,6 @@ export const AppConfig = Object.freeze({
     length: 6,
   }),
 
-  /**
-   * The vendor's permanent auth code (PROJECT_BIBLE.md section 7A.2): exactly
-   * this many digits, always handled as a string so a leading zero survives.
-   *
-   * The one place the length is written. Validation, the input's ceiling, the
-   * copy that names the length and the mock's generator all read it from here,
-   * so the day the backend issues a different length this is the only edit.
-   *
-   * ⚠️ Shape only, like `otp`. The backend generates the code and is the only
-   * judge of whether one is right (section 7A.4); this stops an entry that
-   * cannot be a code from costing a round trip.
-   */
-  vendorAuthCode: Object.freeze({
-    length: 6,
-  }),
-
   image: Object.freeze({
     maxSizeBytes: 5 * 1024 * 1024,
     maxUploadsPerRequest: 5,
@@ -309,8 +334,10 @@ export const AppConfig = Object.freeze({
   logging: Object.freeze({
     level: (isDev ? 'debug' : 'error') as LogLevel,
     /**
-     * Keys whose values Logger must never emit. The vendor auth code is a
-     * standing credential, so it must not reach logs or crash reports.
+     * Keys whose values Logger must never emit, so a credential or a code never
+     * reaches logs or crash reports. `authCode` and `vendorCode` outlived the
+     * vendor auth code (retired 28/11/2026) on purpose: a stale field from an
+     * old backend response must still be masked if one is ever logged.
      */
     redactedKeys: [
       'password',

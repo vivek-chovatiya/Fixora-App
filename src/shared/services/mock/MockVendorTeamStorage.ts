@@ -35,6 +35,9 @@
  * having one, and decodes exactly as before. When one is there it must be an
  * http(s) URL, or the member does not decode — the phone's rule: a value the
  * service would never have stored means the record is not one this app wrote.
+ * The role became optional the same way (phase5-contract.md section 4,
+ * 28/11/2026): every saved member has one and still decodes; a member saved
+ * without one has no `role` key, and one that is there must not be blank.
  *
  * The device is reached through `core/storage`'s `KeyValueStorage`, never
  * AsyncStorage directly (CLAUDE.md section 4) — the same keys and JSON as
@@ -105,7 +108,7 @@ function decodeMember(value: unknown, version: number): TeamMember | null {
   if (
     !isFilled(id) ||
     !isFilled(name, TEAM_MEMBER_NAME_MAX_LENGTH) ||
-    !isFilled(role, TEAM_MEMBER_ROLE_MAX_LENGTH) ||
+    !(role === undefined || isFilled(role, TEAM_MEMBER_ROLE_MAX_LENGTH)) ||
     !(phone === undefined || (typeof phone === 'string' && /^\d+$/.test(phone))) ||
     !(photoUrl === undefined || isPhotoUrl(photoUrl)) ||
     !isFilled(status)
@@ -117,7 +120,7 @@ function decodeMember(value: unknown, version: number): TeamMember | null {
   return {
     id,
     name,
-    role,
+    ...(role === undefined ? {} : { role }),
     ...(phone === undefined ? {} : { phone }),
     ...(photoUrl === undefined ? {} : { photoUrl }),
     status,

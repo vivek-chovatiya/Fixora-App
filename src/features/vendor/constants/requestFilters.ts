@@ -39,6 +39,11 @@ import type { VendorRequestList } from '@/shared/services/types/VendorRequestSer
 
 const COPY = VENDOR_COPY.requests;
 
+/** The keys of `VENDOR_COPY.requests` that hold a sentence rather than a function. */
+type RequestsWord = {
+  [K in keyof typeof COPY]: (typeof COPY)[K] extends string ? K : never;
+}[keyof typeof COPY];
+
 export type VendorRequestGroup = keyof VendorRequestList;
 export type VendorRequestFilter = 'all' | VendorRequestGroup;
 
@@ -48,31 +53,61 @@ type WorkGroup = Exclude<VendorRequestGroup, 'rejected'>;
 /** What All lists, in the order it lists them. */
 export const VENDOR_REQUEST_GROUPS: readonly WorkGroup[] = ['pending', 'active', 'completed'];
 
-/** The chips, in the order they are drawn: All, the work in order, then what was declined. */
-export const VENDOR_REQUEST_FILTERS: ReadonlyArray<{ value: VendorRequestFilter; label: string }> = [
-  { value: 'all', label: COPY.filterAll },
-  { value: 'pending', label: COPY.filterPending },
-  { value: 'active', label: COPY.filterActive },
-  { value: 'completed', label: COPY.filterCompleted },
-  { value: 'rejected', label: COPY.filterRejected },
-];
+/*
+  ⚠️ The tables below hold copy keys and getters, never the words themselves.
+  They held strings read when this module loaded, which froze the chips, the
+  group headings and the empty states in that moment's language: after a
+  switch to Hindi the vendor's request filters stayed English (Phase 5,
+  28/11/2026). Each word is now read when it is drawn; the arrays and objects
+  stay the same objects, as the chip rail and the list expect.
+*/
 
-const GROUP_TITLES: Readonly<Record<WorkGroup, string>> = {
-  pending: COPY.groupPending,
-  active: COPY.groupActive,
-  completed: COPY.groupCompleted,
+function filterOption(value: VendorRequestFilter, word: RequestsWord) {
+  return Object.freeze({
+    value,
+    get label(): string {
+      return COPY[word];
+    },
+  });
+}
+
+/** The chips, in the order they are drawn: All, the work in order, then what was declined. */
+export const VENDOR_REQUEST_FILTERS: ReadonlyArray<{ value: VendorRequestFilter; label: string }> =
+  Object.freeze([
+    filterOption('all', 'filterAll'),
+    filterOption('pending', 'filterPending'),
+    filterOption('active', 'filterActive'),
+    filterOption('completed', 'filterCompleted'),
+    filterOption('rejected', 'filterRejected'),
+  ]);
+
+const GROUP_TITLES: Readonly<Record<WorkGroup, RequestsWord>> = {
+  pending: 'groupPending',
+  active: 'groupActive',
+  completed: 'groupCompleted',
 };
+
+function emptyView(title: RequestsWord, message: RequestsWord) {
+  return Object.freeze({
+    get title(): string {
+      return COPY[title];
+    },
+    get message(): string {
+      return COPY[message];
+    },
+  });
+}
 
 /** What a view with nothing in it says. */
 export const VENDOR_REQUEST_EMPTY: Readonly<
   Record<VendorRequestFilter, { title: string; message: string }>
-> = {
-  all: { title: COPY.emptyAllTitle, message: COPY.emptyAllMessage },
-  pending: { title: COPY.emptyPendingTitle, message: COPY.emptyPendingMessage },
-  active: { title: COPY.emptyActiveTitle, message: COPY.emptyActiveMessage },
-  completed: { title: COPY.emptyCompletedTitle, message: COPY.emptyCompletedMessage },
-  rejected: { title: COPY.emptyRejectedTitle, message: COPY.emptyRejectedMessage },
-};
+> = Object.freeze({
+  all: emptyView('emptyAllTitle', 'emptyAllMessage'),
+  pending: emptyView('emptyPendingTitle', 'emptyPendingMessage'),
+  active: emptyView('emptyActiveTitle', 'emptyActiveMessage'),
+  completed: emptyView('emptyCompletedTitle', 'emptyCompletedMessage'),
+  rejected: emptyView('emptyRejectedTitle', 'emptyRejectedMessage'),
+});
 
 /** One line of the list: a group's heading, or a request. */
 export type VendorRequestLine =
@@ -105,7 +140,7 @@ export function vendorRequestLinesFor(
         kind: 'heading' as const,
         key: `heading:${group}`,
         group,
-        title: GROUP_TITLES[group],
+        title: COPY[GROUP_TITLES[group]],
         count: jobs.length,
       },
       ...requestLines(group, jobs),

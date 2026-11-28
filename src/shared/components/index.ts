@@ -46,6 +46,7 @@ export { Screen, type ScreenProps } from './Screen';
 export { Card, type CardProps } from './Card';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { ConfirmDialog, type ConfirmDialogProps } from './ConfirmDialog';
+export { OptionsSheet, type OptionsSheetOption, type OptionsSheetProps } from './OptionsSheet';
 export { useDialogBackdropPadding, type DialogBackdropPadding } from './dialogBackdrop';
 export { ErrorState, type ErrorStateProps } from './ErrorState';
 export { ERROR_PRESENTATION, type ErrorPresentation } from './errorPresentation';
@@ -72,6 +73,12 @@ export {
 } from './ServiceCategoryField';
 export { Skeleton, type SkeletonProps } from './Skeleton';
 export { SelectionChip, type SelectionChipProps } from './SelectionChip';
+export {
+  SelectionChipRail,
+  type SelectionChipRailOption,
+  type SelectionChipRailProps,
+} from './SelectionChipRail';
+export { CopyButton, type CopyButtonProps } from './CopyButton';
 export { StarRating, type StarRatingProps } from './StarRating';
 export { ContentSection, type ContentSectionProps } from './ContentSection';
 export { StaleNotice, type StaleNoticeProps } from './StaleNotice';

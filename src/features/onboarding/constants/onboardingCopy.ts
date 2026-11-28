@@ -15,8 +15,17 @@
  *
  * Promising either would have the introduction advertising features the launch
  * build cannot show, which is worse than a plainer sentence.
+ *
+ * In English, Hindi and Gujarati since Phase 5 (28/11/2026, phase5-contract.md
+ * section 7): `ONBOARDING_COPY_EN` is the source, `onboardingCopy.hi.ts` and
+ * `.gu.ts` translate it, and `ONBOARDING_COPY` answers in the current language.
+ * `pages` translates position by position; a page's id, kind and icon are not
+ * words and always come from here.
  */
 
+import { localized } from '@/core/i18n';
+import { ONBOARDING_COPY_GU } from '@/features/onboarding/constants/onboardingCopy.gu';
+import { ONBOARDING_COPY_HI } from '@/features/onboarding/constants/onboardingCopy.hi';
 import type { IconName } from '@/shared/theme';
 import type { PermissionKind } from '@/shared/services/types/PermissionService';
 
@@ -45,7 +54,7 @@ export interface OnboardingPageCopy {
   permission: PermissionCopy;
 }
 
-export const ONBOARDING_COPY = Object.freeze({
+export const ONBOARDING_COPY_EN = Object.freeze({
   skip: 'Skip',
   skipHint: 'Skips the introduction and goes to sign in',
   back: 'Back',
@@ -128,4 +137,10 @@ export const ONBOARDING_COPY = Object.freeze({
       }),
     }),
   ] as readonly OnboardingPageCopy[]),
+});
+
+export const ONBOARDING_COPY = localized({
+  en: ONBOARDING_COPY_EN,
+  hi: ONBOARDING_COPY_HI,
+  gu: ONBOARDING_COPY_GU,
 });

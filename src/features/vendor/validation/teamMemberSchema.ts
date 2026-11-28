@@ -1,13 +1,21 @@
 /**
  * Team member form schema (Phase 3E-7).
  *
- * The form's rules are the service's rules said to a person: a name and a role
- * are required (owner decision, 2026-10-08) and bounded by the contract's
- * ceilings; the phone is optional, and when one is given it must pass the app's
- * one phone rule (`shared/validation/phone`) — the same messages a vendor saw
- * when they registered, rather than a second rule that could drift from it.
+ * The form's rules are the service's rules said to a person: a name is
+ * required and bounded by the contract's ceiling; the role is optional
+ * (phase5-contract.md section 4, T137, 28/11/2026 — it was required by the
+ * owner's decision of 2026-10-08) but still bounded when given; the phone is
+ * optional, and when one is given it must pass the app's one phone rule
+ * (`shared/validation/phone`) — the same messages a vendor saw when they
+ * registered, rather than a second rule that could drift from it.
  *
  * Values are trimmed here, so what is validated is what is sent.
+ *
+ * ⚠️ Every message is read through a function (`{ error: () => … }`): the schema
+ * is built once, when this module loads, and a string read then kept the
+ * name and role messages in that moment's language after the app switched
+ * (Phase 5, 28/11/2026). The phone's message is the shared rule's, already
+ * read when it is checked.
  */
 
 import { z } from 'zod';
@@ -27,13 +35,17 @@ export const teamMemberSchema = z.object({
   name: z
     .string()
     .trim()
-    .min(1, COPY.memberNameRequired)
-    .max(TEAM_MEMBER_NAME_MAX_LENGTH, COPY.memberNameTooLong(TEAM_MEMBER_NAME_MAX_LENGTH)),
+    .min(1, { error: () => COPY.memberNameRequired })
+    .max(TEAM_MEMBER_NAME_MAX_LENGTH, {
+      error: () => COPY.memberNameTooLong(TEAM_MEMBER_NAME_MAX_LENGTH),
+    }),
+  // Optional: blank is no role. Anything typed is held to the ceiling.
   role: z
     .string()
     .trim()
-    .min(1, COPY.memberRoleRequired)
-    .max(TEAM_MEMBER_ROLE_MAX_LENGTH, COPY.memberRoleTooLong(TEAM_MEMBER_ROLE_MAX_LENGTH)),
+    .max(TEAM_MEMBER_ROLE_MAX_LENGTH, {
+      error: () => COPY.memberRoleTooLong(TEAM_MEMBER_ROLE_MAX_LENGTH),
+    }),
   // Optional: blank is no phone. Anything typed is held to the shared rule, with its own words.
   phone: z
     .string()
@@ -63,9 +75,10 @@ export function teamMemberFormValues(member?: TeamMember): TeamMemberForm {
 /**
  * The form's values as the service's input.
  *
- * A blank phone is sent as absent — the vendor gave none, or cleared it —
- * rather than as an empty string the backend would have to interpret. A phone
- * is sent as digits, as every phone number leaving the app is.
+ * A blank role or phone is handed on as absent — the vendor gave none, or
+ * cleared it — and the service says "none" in its backend's own way (the role
+ * as `designation: ""`, `ApiVendorTeamService`). A phone is sent as digits, as
+ * every phone number leaving the app is.
  *
  * ⚠️ The photo is not one of the form's fields: it is uploaded when chosen and
  * held beside the form (the business picture's way, `buildVendorProfileUpdate`),
@@ -77,7 +90,7 @@ export function teamMemberFormValues(member?: TeamMember): TeamMemberForm {
 export function buildTeamMemberInput(values: TeamMemberForm, photoUrl?: string): TeamMemberInput {
   return {
     name: values.name,
-    role: values.role,
+    ...(values.role ? { role: values.role } : {}),
     ...(values.phone ? { phone: normalisePhone(values.phone) } : {}),
     ...(photoUrl ? { photoUrl } : {}),
   };

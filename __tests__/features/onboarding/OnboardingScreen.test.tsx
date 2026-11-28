@@ -16,6 +16,8 @@ import {
   setOnboardingStorage,
   type OnboardingStorage,
 } from '@/core/storage/OnboardingStorage';
+import { AppConfig } from '@/core/config/AppConfig';
+import { getKeyValueStorage } from '@/core/storage/KeyValueStorage';
 import { ONBOARDING_COPY } from '@/features/onboarding/constants/onboardingCopy';
 import { OnboardingScreen } from '@/features/onboarding/screens/OnboardingScreen';
 import { registerService, resetServices } from '@/shared/services/ServiceRegistry';
@@ -305,6 +307,28 @@ describe('OnboardingScreen — permissions', () => {
     await pressIn('services', PAGES[0].permission.allow);
 
     expect(permissions.request).toHaveBeenCalledWith<[PermissionKind]>('location');
+  });
+
+  /*
+    Push (phase5-contract.md section 6.3) asks for notifications once after the
+    first sign in. An ask here is that one ask: it is noted on the device, so
+    a refusal given here is never met with a second dialog. Asking for anything
+    else notes nothing.
+  */
+  it('notes a notifications ask, so the one after sign in is never a second', async () => {
+    const key = AppConfig.storage.notificationPermissionAskedKey;
+    await getKeyValueStorage().removeItem(key);
+    const permissions = stubPermissions({ request: jest.fn(async () => 'denied') });
+    const { pressIn } = await render({ permissions });
+
+    await pressIn('services', PAGES[0].permission.allow);
+    expect(await getKeyValueStorage().getItem(key)).toBeNull();
+
+    await pressIn('compare', PAGES[1].permission.decline);
+    await pressIn('track', PAGES[2].permission.allow);
+
+    expect(permissions.request).toHaveBeenLastCalledWith<[PermissionKind]>('notifications');
+    expect(await getKeyValueStorage().getItem(key)).toBe('asked');
   });
 
   it('reports a grant, and stops offering to ask', async () => {

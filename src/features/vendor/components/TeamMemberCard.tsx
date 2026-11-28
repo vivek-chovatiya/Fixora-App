@@ -17,8 +17,10 @@
  *
  * ⚠️ Long names and roles wrap to two lines and are then cut short on screen,
  * never in what is spoken. A member with no phone has no phone line — not an
- * empty one, and not "Not added". A phone is written as the owner chose on
- * 21/10/2026, "+91 90000 00101" (`formatPhone`), on the card and in the
+ * empty one, and not "Not added" — and since the role became optional
+ * (phase5-contract.md section 4, T137, 28/11/2026) one with no role has no
+ * role line either, and is spoken without one. A phone is written as the
+ * owner chose on 21/10/2026, "+91 90000 00101" (`formatPhone`), on the card and in the
  * spoken block alike, so what is heard is what is seen; display only — the
  * member's stored number is never changed by it.
  *
@@ -117,13 +119,15 @@ function TeamMemberCardComponent({
               testID={testID ? `${testID}-name` : undefined}>
               {member.name}
             </Text>
-            <Text
-              variant="body"
-              color="textSecondary"
-              numberOfLines={2}
-              testID={testID ? `${testID}-role` : undefined}>
-              {member.role}
-            </Text>
+            {member.role ? (
+              <Text
+                variant="body"
+                color="textSecondary"
+                numberOfLines={2}
+                testID={testID ? `${testID}-role` : undefined}>
+                {member.role}
+              </Text>
+            ) : null}
             {phone ? (
               <View style={[styles.phone, { gap: theme.spacing.xs }]}>
                 <Icon name="call" size="sm" color="textTertiary" />

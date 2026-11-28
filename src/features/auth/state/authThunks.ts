@@ -18,11 +18,11 @@
  * never from a screen, which could send one twice or not at all.
  *
  * ⚠️ Those events carry the role and nothing else. Never the phone number, the
- * name, the one-time code or the vendor auth code (section 7A.2).
+ * name or the one-time code.
  *
  * The two vendor thunks also remember the vendor's phone number on this device
- * once their session exists, so the next vendor sign in asks for the code alone.
- * The phone only: the code they were just given is passed to the service and
+ * once their session exists, so the next vendor sign in can send a code to it
+ * in one tap. The phone only: the one-time code is passed to the service and
  * nowhere else (`rememberedVendorStorage` refuses anything that is not a phone
  * number as a second line).
  */
@@ -38,6 +38,7 @@ import {
   userUpdated,
 } from '@/features/auth/state/authSlice';
 import type { AuthUser, SessionPayload } from '@/features/auth/types';
+import { unregisterPushDevice } from '@/shared/services/pushRegistration';
 import { getService } from '@/shared/services/ServiceRegistry';
 import { identifyUser, trackEvent } from '@/shared/services/telemetry';
 import { duration } from '@/shared/theme';
@@ -163,7 +164,8 @@ export async function signInCustomer(
 }
 
 /**
- * Signs a returning vendor in with their phone and permanent auth code.
+ * Completes a returning vendor's sign in with the one-time code they received
+ * (phase5-contract.md section 1.1).
  *
  * The code is passed straight to the service and never retained here, logged, or
  * attached to any error.
@@ -171,13 +173,13 @@ export async function signInCustomer(
 export async function signInVendor(
   dispatch: Dispatch,
   phone: string,
-  authCode: string,
+  code: string,
 ): Promise<SessionPayload> {
-  const session = await getService('auth').signInVendor(phone, authCode);
+  const session = await getService('auth').verifyVendorSignInOtp(phone, code);
 
-  // No pause: this is a plain form with no verified state to hold on, and a
-  // delay with nothing on screen is just a slower sign in.
-  await establishSession(dispatch, session);
+  // Checked on the code screen's verification animation, as the customer's is,
+  // so the publish waits for its verified state to have been seen.
+  await establishSession(dispatch, session, duration.verifiedHold);
 
   // The number the vendor signed in with, not `session.user.phone`: it has just
   // been proven to work with this call, which is what it will be used for.
@@ -188,47 +190,60 @@ export async function signInVendor(
 }
 
 /**
- * Final step of vendor onboarding: the vendor confirms the auth code they were
- * shown, and only then is a session created.
+ * Final step of vendor onboarding: the registration code is verified, which
+ * creates the vendor and signs them in (phase5-contract.md section 1.2). There
+ * is no auth code to show or confirm any more.
  *
- * The earlier onboarding calls — register, request code, verify code, regenerate
- * — deliberately have no thunk. None of them establishes a session, so they stay
- * screen-local through their hooks. In particular the generated auth code must
- * never reach Redux, so nothing that returns it is dispatched.
+ * The earlier onboarding calls — register, resend the code — deliberately have
+ * no thunk. Neither establishes a session, so they stay screen-local through
+ * their hooks.
  *
  * `phone` is the number the vendor typed at registration, normalised as it was
  * sent. It is not sent here — the service is keyed by the registration id — and
  * is only remembered once the session exists.
  */
-export async function confirmVendorAuthCode(
+export async function completeVendorRegistration(
   dispatch: Dispatch,
   registrationId: string,
   phone: string,
-  authCode: string,
+  code: string,
 ): Promise<SessionPayload> {
-  const session = await getService('auth').verifyVendorAuthCode(registrationId, authCode);
+  const session = await getService('auth').verifyVendorOtp(registrationId, code);
 
-  // Confirmation runs the same animation as the one-time code, and earns the
-  // same pause before the vendor application replaces it.
+  // Verified on the code screen's animation, and earns the same pause before
+  // the vendor application replaces it.
   await establishSession(dispatch, session, duration.verifiedHold);
 
   // ⚠️ The number typed at registration, not `session.user.phone`, for the
-  // reason sign in gives: the remembered number is what the next code-only
-  // sign in sends, and the account's number has no format contract. A backend
+  // reason sign in gives: the remembered number is what the next sign in sends
+  // a code to, and the account's number has no format contract. A backend
   // answering "+919000000001" would be remembered as twelve digits, and that
-  // next sign in would fail as a wrong code.
+  // next sign in would be refused as a wrong code.
   await rememberVendorPhone(phone);
 
   // Section 54's `vendor_signup`, sent here because this is where onboarding is
-  // finished: a vendor who stops before confirming their code has no account to
-  // count. Not `login_completed` as well — that counts returning vendors
-  // signing in with a code they already hold.
+  // finished: a vendor who stops before verifying has no account to count. Not
+  // `login_completed` as well — that counts returning vendors signing in.
   trackEvent('vendor_signup', { role: session.user.role });
   return session;
 }
 
 /** The sign out running now, which a second request for one joins. */
 let signOutInFlight: Promise<void> | null = null;
+
+export interface SignOutOptions {
+  /**
+   * True when the person did not ask to leave: the server refused the session
+   * (the unauthorized handler in `bootstrap.ts`), or anything else that ends it
+   * on their behalf. False — the default — for the Log out they pressed.
+   *
+   * ⚠️ Every end of a session the person did not ask for must say so. Left
+   * false, a forced end waits up to `AppConfig.push.unregisterTimeoutMs` for a
+   * call the dead session can no longer authorise, with the app still showing
+   * screens whose every request is being refused.
+   */
+  forced?: boolean;
+}
 
 /**
  * Ends the session.
@@ -240,18 +255,43 @@ let signOutInFlight: Promise<void> | null = null;
  * Single-flight (Phase 4A): a sign out asked for while one is running joins it.
  * Several requests can be refused at once when a session dies, each one telling
  * the unauthorized handler, and the person may tap "Log out" in the same
- * moment; one session ends once, with one call to the server.
+ * moment; one session ends once, with one call to the server. A joiner takes
+ * the running one as it is, forced or not: either way the session ends.
  */
-export function signOut(dispatch: Dispatch): Promise<void> {
+export function signOut(dispatch: Dispatch, options: SignOutOptions = {}): Promise<void> {
   if (!signOutInFlight) {
-    signOutInFlight = endSession(dispatch).finally(() => {
+    signOutInFlight = endSession(dispatch, options.forced === true).finally(() => {
       signOutInFlight = null;
     });
   }
   return signOutInFlight;
 }
 
-async function endSession(dispatch: Dispatch): Promise<void> {
+async function endSession(dispatch: Dispatch, forced: boolean): Promise<void> {
+  // This device stops receiving the account's push notifications first, while
+  // the session's token can still authorise the call (phase5-contract.md
+  // section 6.1: before `/auth/logout`). It never rejects and gives up after a
+  // few seconds, so a failure here changes nothing below; with push off it
+  // sends nothing at all.
+  //
+  // ⚠️ Waited for only when the person asked to leave. A forced end starts it
+  // and carries straight on (reviewer finding, 28/11/2026): the server has
+  // already refused this session, so the call can at best fail, and waiting
+  // for it kept a dead session on screen for up to the full timeout. A token
+  // it leaves registered is moved by the next account to sign in on this phone
+  // (contract section 6.1). The catch is a belt — it never rejects — so that
+  // nothing it does can surface as an unhandled rejection.
+  const unregistering = unregisterPushDevice();
+  if (forced) {
+    unregistering.catch(caught => {
+      log.warn('Push unregister failed during a forced sign out', {
+        kind: AppError.from(caught).kind,
+      });
+    });
+  } else {
+    await unregistering;
+  }
+
   try {
     await getService('auth').signOut();
   } catch (caught) {

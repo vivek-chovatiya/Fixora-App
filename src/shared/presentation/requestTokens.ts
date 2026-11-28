@@ -9,21 +9,43 @@
  *
  * Nothing here decides anything. A value the app has never seen is tidied and
  * shown, never dropped and never guessed at.
+ *
+ * In English, Hindi and Gujarati since Phase 5 (28/11/2026): the `_EN` tables
+ * are the source, `requestTokens.hi.ts` / `.gu.ts` translate them. A priority's
+ * label is read when it is presented, never stored in the table, and dates are
+ * formatted in the interface's language (`intlLocaleTag`). A priority the app
+ * does not know is shown as the backend's own value, tidied — in English, as
+ * the backend wrote it.
  */
 
+import { intlLocaleTag, localized } from '@/core/i18n';
 import type { StatusTone } from '@/shared/components/StatusBadge';
+import {
+  PRIORITY_COPY_GU,
+  RELATIVE_TIME_COPY_GU,
+} from '@/shared/presentation/requestTokens.gu';
+import {
+  PRIORITY_COPY_HI,
+  RELATIVE_TIME_COPY_HI,
+} from '@/shared/presentation/requestTokens.hi';
 import type { IconName } from '@/shared/theme';
 
 /**
  * Words for "how long ago". Numbers and units rather than sentences, so a
  * translator is never handed a fragment to treat as one.
  */
-export const RELATIVE_TIME_COPY = Object.freeze({
+export const RELATIVE_TIME_COPY_EN = Object.freeze({
   justNow: 'Just now',
   minute: '{count} min ago',
   hour: '{count} hr ago',
   day: '{count} day ago',
   days: '{count} days ago',
+});
+
+export const RELATIVE_TIME_COPY = localized({
+  en: RELATIVE_TIME_COPY_EN,
+  hi: RELATIVE_TIME_COPY_HI,
+  gu: RELATIVE_TIME_COPY_GU,
 });
 
 export interface TokenPresentation {
@@ -33,12 +55,28 @@ export interface TokenPresentation {
 }
 
 /** Priorities as PROJECT_BIBLE.md section 15 lists them, with its own labels. */
-const PRIORITY: Readonly<Record<string, TokenPresentation>> = Object.freeze({
-  LOW: { label: 'Low', tone: 'neutral', icon: 'priority' },
-  MEDIUM: { label: 'Medium', tone: 'info', icon: 'priority' },
-  HIGH: { label: 'High', tone: 'warning', icon: 'priority' },
-  EMERGENCY: { label: 'Emergency', tone: 'danger', icon: 'warning' },
+export const PRIORITY_COPY_EN = Object.freeze({
+  LOW: 'Low',
+  MEDIUM: 'Medium',
+  HIGH: 'High',
+  EMERGENCY: 'Emergency',
 });
+
+const PRIORITY_COPY = localized({ en: PRIORITY_COPY_EN, hi: PRIORITY_COPY_HI, gu: PRIORITY_COPY_GU });
+
+type KnownPriority = keyof typeof PRIORITY_COPY_EN;
+
+/** How each priority looks. The words are `PRIORITY_COPY`'s, read when one is presented. */
+const PRIORITY: Readonly<Record<KnownPriority, Omit<TokenPresentation, 'label'>>> = Object.freeze({
+  LOW: { tone: 'neutral', icon: 'priority' },
+  MEDIUM: { tone: 'info', icon: 'priority' },
+  HIGH: { tone: 'warning', icon: 'priority' },
+  EMERGENCY: { tone: 'danger', icon: 'warning' },
+});
+
+function isKnownPriority(value: string): value is KnownPriority {
+  return Object.prototype.hasOwnProperty.call(PRIORITY, value);
+}
 
 /**
  * Makes a backend constant readable without pretending to understand it.
@@ -54,13 +92,11 @@ export function humaniseToken(token: string): string {
 }
 
 export function presentPriority(priority: string): TokenPresentation {
-  return (
-    PRIORITY[priority.trim().toUpperCase()] ?? {
-      label: humaniseToken(priority),
-      tone: 'neutral',
-      icon: 'priority',
-    }
-  );
+  const key = priority.trim().toUpperCase();
+  if (isKnownPriority(key)) {
+    return { label: PRIORITY_COPY[key], ...PRIORITY[key] };
+  }
+  return { label: humaniseToken(priority), tone: 'neutral', icon: 'priority' };
 }
 
 const MS_PER_MINUTE = 60_000;
@@ -116,7 +152,7 @@ export function formatRequestDate(iso: string, now: Date = new Date()): string {
     return fill(days === 1 ? RELATIVE_TIME_COPY.day : RELATIVE_TIME_COPY.days, days);
   }
 
-  return created.toLocaleDateString(undefined, {
+  return created.toLocaleDateString(intlLocaleTag(), {
     day: 'numeric',
     month: 'short',
     year: created.getFullYear() === now.getFullYear() ? undefined : 'numeric',

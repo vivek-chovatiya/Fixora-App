@@ -203,7 +203,13 @@ npx react-native bundle --platform android --dev false \
 cd android && ./gradlew assembleDebug -q      # exit 0
 ```
 
-**Known lint baseline:** 30 warnings, 0 errors. They are all
+**Lint baseline since 28/11/2026:** 26 `no-void` warnings (four went with code
+removed in Phase 5: the auth-code components and `RequestReference`'s copy); the
+whole run also shows Vivek's web views (abea621: 6 errors, 163
+`react-native/no-inline-styles`, 2 `dot-notation`) — not ours, leave them to that
+merge. The history below explains the 30 that stood until then.
+
+**Known lint baseline (until 28/11/2026):** 30 warnings, 0 errors. They are all
 `no-void` on the deliberate `void promise` idiom used by the shared hooks. Do not
 "fix" them piecemeal; the idiom is consistent across the codebase. It is one per
 hook that starts work from a synchronous handler — the 29th is `useAddressBook`
@@ -4382,16 +4388,121 @@ accepting, the photo and preferred time show, no name/phone/address → Accept �
 Start → Complete ₹650, Paid, Cash, notes → "Paid · Cash" with the notes; the
 customer's JSON holds the payment without the notes. Backend log: no errors.
 
+### Phase 5 — the owner's nine requests of 28/11/2026 (tasks T129–T137)
+
+One contract, `D:\kano\Fixora-local-backups\contracts\phase5-contract.md` (§1–§7
+plus the builders' "Deviations" and "Review notes"), built by parallel agents
+(backend and app separately), each side reviewed independently, then fixed.
+Push and language selection are Phase 2 items **the owner approved on 28/11**
+(bible §72 and §75 carry the note); the auth-code removal amends bible §7A.2.
+
+- **Vendor sign-in by one-time code every time (T131).** The permanent auth code
+  is gone from both sides (screens, service methods, `/auth/vendor/signin`,
+  `/auth/vendor/auth-code/*`, `/vendors/auth-code/regenerate`, the auth-code
+  lockout, `AUTH_CODE_INVALID`, `SIGNIN_TOO_MANY_ATTEMPTS`). Sign-in is
+  `/auth/vendor/signin/otp/request` → `/verify`; registration's verify now
+  returns the session. Unknown numbers get a decoy challenge (same answers as a
+  wrong code). Demo vendors: phone + the development static code (`123456`).
+- **WhatsApp codes (T130).** `otpdelivery.js` has a Meta WhatsApp Cloud API
+  adapter, env-only (`OTP_DELIVERY_CHANNEL=none|whatsapp`, `WHATSAPP_*`), off by
+  default. Every challenge carries `deliveryChannel`; the code screens say "on
+  WhatsApp" only for `WHATSAPP`. A refused send is 503 `OTP_DELIVERY_FAILED`
+  (10 refused sends per phone per day, then 429). Outside development, channel
+  `none` logs a start-up error (nobody could sign in by phone).
+- **Notifications (T133).** 3-dot menu (`OptionsSheet`, new shared component) with
+  Mark all as read / Clear all (confirmed), swipe left to delete plus a
+  screen-reader Delete action; optimistic with rollback.
+  `POST /notifications/read-all` and `/delete-all`.
+- **Requests (T134, T135).** Status filters are one sideways-scrolling row
+  (`SelectionChipRail`, shared — the customer's date/time rails use it too);
+  `CopyButton` beside every request reference (new token `duration.copiedHold`).
+- **Team (T136, T137).** One photo button → gallery / camera / remove sheet;
+  role (`designation`) optional on both sides.
+- **Push (T129).** Firebase project `fixora-7a884`: the app's
+  `google-services.json` is committed (the Gradle plugin applies only when the
+  file exists); the backend key lives OUTSIDE git in `D:\kano\Fixora-secrets\`,
+  pointed to by `FIREBASE_SERVICE_ACCOUNT_PATH` — never commit it. App:
+  `@react-native-firebase/app` + `messaging` 27.1.1, lazy-loaded in
+  `FirebasePushService` (no Firebase app → no-op), permission asked once after a
+  real sign-in, token registered (`/devices/register`) and removed before logout
+  (`/devices/unregister`), foreground push → toast + inbox/badge refresh, tap →
+  the request's details for the role (`onReady`/`onStateChange`, not ref
+  listeners — they die on a re-mount). Backend: `firebase-admin`, every stored
+  notification is pushed after it is saved, never awaited; dead tokens pruned.
+  Android channel `fixora-default` created in `MainApplication.kt`.
+- **Languages (T132).** `src/core/i18n`: `localized({ en, hi, gu })` (getters,
+  per-key English fallback), `.hi.ts`/`.gu.ts` beside every copy file, choice
+  stored by `LocaleStorage`, first-launch chooser in `AuthNavigator`, Profile →
+  Language (new icon token `language`), the tree re-mounts on a change keeping
+  the navigation state, `Accept-Language` on every call. Copy must be read at
+  render, never at module scope (`__tests__/i18n/moduleScopeCopy`). Backend text
+  stays English.
+
+**Gates, 28/11/2026 (after the review fixes):** tsc 0 · eslint 6 errors, all in
+Vivek's untouched web views (abea621), warnings 191 (`no-void` 26) · jest
+4292/4293 — the one failure is still `importBoundaries` on Vivek's
+`FixoraApiClient.ts` · release bundle OK · assembleDebug exit 0 (with
+`google-services.json`, push on; the later fixes were JS only) · backend 364/364.
+Review fixes: a forced sign-out no longer waits for the push unregister; swipe
+deletes only past ~60% of the row; the saved-language read gives up after
+`AppConfig.locale.restoreTimeoutMs` (1.5 s) and shows the chooser; `OptionsSheet`
+runs one choice per opening; refused WhatsApp sends have their own daily cap;
+channel `none` outside development logs a start-up error. A debug LogBox read over
+Metro's inspector (`/json/list` + CDP, Origin `http://localhost:8085`) was React
+Navigation 7's "Passing an object to navigate is deprecated" from the push tap —
+fixed (`CommonActions.navigate(name, params)`).
+
+**Device pass, 28/11/2026, the owner's phone (vivo I2304, 1260×2800, Dark) over
+Wi-Fi, against `fixora_dev` with push on:** fresh install → "Choose your
+language" → Gujarati → onboarding and auth entry in Gujarati → vendor: phone
+only, Send code → code screen "sent to ••••••0001" (no WhatsApp wording, channel
+`none`) with "New vendor? Register your business" → 123456 → Android's
+notification permission asked once after sign-in → device token stored
+(`VENDOR/android`) → a cancelled direct request pushed: in the foreground the bell
+went to "2 unread" by itself; in the background the tray showed "Request
+cancelled …" on `fixora-default`; tapping it opened that request's details →
+copy button → tick + "કૉપિ થઈ ગયું" → Requests: All / Pending / In progress /
+Completed / Rejected in one row → Notifications: 3-dot sheet → Mark all as read →
+swipe deleted a row ("Notification deleted.") → Clear all asked first → empty
+state, menu hidden → Team: role marked Optional, photo sheet gallery/camera (no
+Remove without a photo), Suresh saved with no role, card shows the name only →
+Profile → Language → English applied at once on the same screen. Found and fixed
+after the pass: the vendor's status chip for a CANCELLED request read "status
+not available"; a debug-only LogBox warning.
+
 ---
 
 ## 10. Open items
+
+**Phase 5 (28/11/2026), for the owner:**
+
+- **WhatsApp codes** need a Meta WhatsApp Business account: access token, phone
+  number id, an approved AUTHENTICATION template (name + language), then
+  `OTP_DELIVERY_CHANNEL=whatsapp`. Confirm Graph `v27.0`.
+- **Vendors get no notification (so no push) for a new open request** — the
+  backend only notifies a vendor when a request sent to them is cancelled.
+  Notifying matching vendors of new requests would make push useful for vendors.
+- **iOS push** is not set up (needs a Mac): bundle id, `GoogleService-Info.plist`,
+  `FirebaseApp.configure()` guarded, Podfile `use_frameworks! :linkage =>
+  :dynamic`, Push + Background Modes capabilities, an APNs key in Firebase.
+- **Hindi and Gujarati** need a native speaker's check (the agents' lists are in
+  the 28/11 reports: e.g. Accept/Reject, "पेंडिंग", "ટીમ મેમ્બર", payment
+  wording). Backend text (notifications, categories) stays English.
+- With WhatsApp on, a vendor number can be told from an unknown one by timing or a
+  503 (and `/auth/vendor/register` answers 409 for one anyway); ten wrong codes
+  lock a phone for an hour. Accepted for now (contract "Review notes").
+- New shared tokens accepted by the lead on the owner's behalf: `duration.copiedHold`
+  (2000 ms) and icon `language`.
+- People already signed in when the language feature arrives stay in English and
+  are not shown the chooser (they can change it in Profile).
 
 **Phase 4B (24/11/2026), for the owner:**
 
 - Uploaded photos are readable by anyone who has the exact link (long random
   names); authorised reads later. Unattached uploads are never cleaned up and
   there is no per-account upload quota yet.
-- No screen offers deleting a notification (the service and endpoint exist).
+- ~~No screen offers deleting a notification (the service and endpoint exist).~~
+  Closed 28/11/2026 (T133): swipe to delete, Clear all, Mark all as read.
 - Payment methods are a code constant in the backend, not admin-editable.
 - A job completed before 4B cannot have a payment recorded later.
 - Shop images the app cannot display (old relative values) are kept and sent

@@ -21,6 +21,7 @@
  * `clockTime`): the vendor reads the same preference the customer chose.
  */
 
+import { intlLocaleTag } from '@/core/i18n';
 import { formatDayLabel } from '@/shared/presentation/calendarDate';
 
 /** How far ahead a preference may be expressed. */
@@ -104,7 +105,8 @@ export function buildTimeOptions(copy: ScheduleCopy): ScheduleOption[] {
     reference.setHours(hour, 0, 0, 0);
     options.push({
       value: `${String(hour).padStart(2, '0')}:00`,
-      label: reference.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }),
+      // The interface's language for Hindi and Gujarati, the device's own clock in English.
+      label: reference.toLocaleTimeString(intlLocaleTag(), { hour: 'numeric', minute: '2-digit' }),
     });
   }
 

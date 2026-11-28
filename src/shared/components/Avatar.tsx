@@ -15,6 +15,7 @@
 import React, { memo, useCallback, useEffect, useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 
+import { COMPONENT_COPY } from '@/shared/components/componentCopy';
 import { Icon } from '@/shared/components/Icon';
 import { Text } from '@/shared/components/Text';
 import { spacing, useTheme, type IconName } from '@/shared/theme';
@@ -88,7 +89,9 @@ function AvatarComponent({
     backgroundColor: theme.colors.primarySubtle,
   };
 
-  const accessibilityLabel = name ? `${name} profile picture` : 'Profile picture';
+  const accessibilityLabel = name
+    ? COMPONENT_COPY.avatar.named.replace('{name}', name)
+    : COMPONENT_COPY.avatar.unnamed;
 
   if (showImage && uri) {
     return (

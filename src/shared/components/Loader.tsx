@@ -9,6 +9,7 @@
 import React, { memo } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
+import { COMPONENT_COPY } from '@/shared/components/componentCopy';
 import { Text } from '@/shared/components/Text';
 import { useTheme, type ColorTokens } from '@/shared/theme';
 
@@ -35,7 +36,7 @@ function LoaderComponent({
         fullScreen && styles.fullScreen,
       ]}
       accessibilityRole="progressbar"
-      accessibilityLabel={label ?? 'Loading'}>
+      accessibilityLabel={label ?? COMPONENT_COPY.loader.label}>
       <ActivityIndicator size={size} color={theme.colors[color]} />
       {label ? (
         <Text variant="caption" color="textSecondary" align="center">

@@ -41,10 +41,10 @@ export interface AuthUser {
  * There is deliberately no vendor approval status here.
  *
  * Vendor onboarding no longer involves manual administrator approval: verifying
- * the registration code activates the vendor automatically, and a session only
- * exists once the vendor has confirmed their permanent auth code. A vendor
- * holding a session is therefore always active, so a status field could only
- * ever hold one value.
+ * the registration code creates the vendor, active, and signs them in
+ * (phase5-contract.md section 1.2); a suspended vendor is refused a session at
+ * sign in. A vendor holding a session is therefore always active, so a status
+ * field could only ever hold one value.
  *
  * Onboarding progress is screen-local state during registration, not session
  * state — see PROJECT_BIBLE.md section 7A.

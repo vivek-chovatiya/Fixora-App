@@ -14,7 +14,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 
 import { setSessionStorage, type PersistedSession } from '@/core/storage/SessionStorage';
-import { AUTH_COPY } from '@/features/auth/constants/authCopy';
+import { AUTH_COPY, formatCopy } from '@/features/auth/constants/authCopy';
 import { authReducer } from '@/features/auth/state/authSlice';
 import { CustomerOtpScreen } from '@/features/auth/screens/CustomerOtpScreen';
 import type { SessionPayload } from '@/features/auth/types';
@@ -32,6 +32,7 @@ const CHALLENGE: OtpChallenge = {
   maskedDestination: '••••••3210',
   expiresAt: new Date(Date.now() + 300_000).toISOString(),
   resendAfterSeconds: 0,
+  deliveryChannel: 'NONE',
 };
 
 const SESSION: SessionPayload = {
@@ -56,9 +57,8 @@ function stubAuthService(overrides: Partial<AuthService> = {}): AuthService {
     registerVendor: unexpected('registerVendor'),
     requestVendorOtp: unexpected('requestVendorOtp'),
     verifyVendorOtp: unexpected('verifyVendorOtp'),
-    verifyVendorAuthCode: unexpected('verifyVendorAuthCode'),
-    regenerateVendorAuthCode: unexpected('regenerateVendorAuthCode'),
-    signInVendor: unexpected('signInVendor'),
+    requestVendorSignInOtp: unexpected('requestVendorSignInOtp'),
+    verifyVendorSignInOtp: unexpected('verifyVendorSignInOtp'),
     signOut: unexpected('signOut'),
     ...overrides,
   } as AuthService;
@@ -268,6 +268,64 @@ describe('CustomerOtpScreen — what the user sees', () => {
     // showing a code it was never given.
     expect(renderer.root.findByProps({ testID: 'customer-otp-code' }).props.value).toBe('');
     expect(text()).not.toMatch(/\b\d{6}\b/);
+  });
+});
+
+/**
+ * Where the code went is the backend's answer (phase5-contract.md section 2):
+ * WhatsApp is named only when the challenge says `WHATSAPP`, and never assumed.
+ */
+describe('CustomerOtpScreen — where the code went (deliveryChannel)', () => {
+  const whatsAppLine = formatCopy(AUTH_COPY.customerOtp.sentToWhatsApp, {
+    destination: CHALLENGE.maskedDestination,
+  });
+  const plainLine = formatCopy(AUTH_COPY.customerOtp.sentTo, {
+    destination: CHALLENGE.maskedDestination,
+  });
+
+  it('says the code was sent on WhatsApp when the challenge says WHATSAPP', async () => {
+    const { text } = await render(stubAuthService(), {
+      ...CHALLENGE,
+      deliveryChannel: 'WHATSAPP',
+    });
+
+    expect(text()).toContain(whatsAppLine);
+    expect(whatsAppLine).toContain('WhatsApp');
+  });
+
+  it('keeps today’s wording, and names no channel, for NONE', async () => {
+    const { text } = await render(stubAuthService());
+
+    expect(text()).toContain(plainLine);
+    expect(text()).not.toContain('WhatsApp');
+  });
+
+  it('switches the line when a resend comes back on WhatsApp', async () => {
+    const service = stubAuthService({
+      requestCustomerOtp: jest.fn(async () => ({
+        ...CHALLENGE,
+        deliveryChannel: 'WHATSAPP' as const,
+      })),
+    });
+    const { press, text } = await render(service);
+    expect(text()).not.toContain('WhatsApp');
+
+    await press('Resend code');
+
+    expect(text()).toContain(whatsAppLine);
+  });
+
+  it('goes back to the plain line when a resend comes back with no channel', async () => {
+    const service = stubAuthService({
+      requestCustomerOtp: jest.fn(async () => CHALLENGE),
+    });
+    const { press, text } = await render(service, { ...CHALLENGE, deliveryChannel: 'WHATSAPP' });
+    expect(text()).toContain(whatsAppLine);
+
+    await press('Resend code');
+
+    expect(text()).toContain(plainLine);
+    expect(text()).not.toContain('WhatsApp');
   });
 });
 

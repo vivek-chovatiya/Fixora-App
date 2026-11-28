@@ -6,10 +6,12 @@
  * - each event is sent exactly once, at the moment a session exists, and never
  *   when sign in fails — not again when the delayed publish lands;
  * - an event carries the role and nothing else — asserted as the exact key
- *   set — and no phone number, name, one-time code or vendor auth code appears
- *   anywhere either service was handed (section 7A.2);
+ *   set — and no phone number, name or one-time code appears anywhere either
+ *   service was handed (section 7A);
  * - the user is identified before the event, so the event is theirs;
- * - a vendor finishing onboarding is a sign up, not a login as well;
+ * - a vendor finishing onboarding — the registration code, which signs them in
+ *   since 28/11/2026 (phase5-contract.md section 1.2) — is a sign up, not a
+ *   login as well;
  * - restoring a session identifies without sending anything, and signing out
  *   clears both services;
  * - analytics failing never fails a sign in (section 54).
@@ -27,7 +29,7 @@ import {
 } from '@/core/storage/SessionStorage';
 import { authReducer } from '@/features/auth/state/authSlice';
 import {
-  confirmVendorAuthCode,
+  completeVendorRegistration,
   restoreSession,
   signInCustomer,
   signInVendor,
@@ -45,7 +47,8 @@ const settlePublish = () =>
 const CUSTOMER_PHONE = '9876543210';
 const VENDOR_PHONE = '9000000001';
 const OTP = '123456';
-const VENDOR_AUTH_CODE = '482913';
+/** A vendor's one-time code, distinct from the customer's `OTP`. */
+const VENDOR_OTP = '482913';
 
 const CUSTOMER_SESSION: SessionPayload = {
   token: 'token_customer',
@@ -75,7 +78,7 @@ const NEVER_SENT = [
   CUSTOMER_PHONE,
   VENDOR_PHONE,
   OTP,
-  VENDOR_AUTH_CODE,
+  VENDOR_OTP,
   'Asha',
   'Patel',
   'Ravi',
@@ -108,18 +111,17 @@ function createStubAuthService(overrides: Partial<AuthService> = {}): AuthServic
     maskedDestination: '••••••3210',
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     resendAfterSeconds: 30,
+    deliveryChannel: 'NONE' as const,
   };
-  const issuedCode = { code: VENDOR_AUTH_CODE, issuedAt: new Date().toISOString() };
 
   return {
     requestCustomerOtp: jest.fn(async () => challenge),
     verifyCustomerOtp: jest.fn(async () => CUSTOMER_SESSION),
     registerVendor: jest.fn(async () => ({ registrationId: 'reg_1', challenge })),
     requestVendorOtp: jest.fn(async () => challenge),
-    verifyVendorOtp: jest.fn(async () => issuedCode),
-    regenerateVendorAuthCode: jest.fn(async () => issuedCode),
-    verifyVendorAuthCode: jest.fn(async () => VENDOR_SESSION),
-    signInVendor: jest.fn(async () => VENDOR_SESSION),
+    verifyVendorOtp: jest.fn(async () => VENDOR_SESSION),
+    requestVendorSignInOtp: jest.fn(async () => challenge),
+    verifyVendorSignInOtp: jest.fn(async () => VENDOR_SESSION),
     signOut: jest.fn(async () => undefined),
     ...overrides,
   };
@@ -226,13 +228,15 @@ describe('customer sign in', () => {
 });
 
 describe('vendor sign in', () => {
-  it('sends login_completed once, with the role alone, and never the auth code', async () => {
+  it('sends login_completed once, with the role alone, and never the code', async () => {
     setSessionStorage(createMemoryStorage());
     registerService('auth', createStubAuthService());
     const { analytics, crashReporter } = registerTelemetry();
     const store = createStore();
 
-    await signInVendor(store.dispatch, VENDOR_PHONE, VENDOR_AUTH_CODE);
+    await signInVendor(store.dispatch, VENDOR_PHONE, VENDOR_OTP);
+    // Not again when the delayed publish lands.
+    await settlePublish();
 
     expect(analytics.track).toHaveBeenCalledTimes(1);
     const [event, properties] = analytics.track.mock.calls[0];
@@ -245,9 +249,9 @@ describe('vendor sign in', () => {
     expectNothingPersonal(analytics.track, analytics.identify, crashReporter.setUser);
   });
 
-  it('sends nothing when the auth code is wrong', async () => {
+  it('sends nothing when the code is wrong', async () => {
     setSessionStorage(createMemoryStorage());
-    registerService('auth', createStubAuthService({ signInVendor: wrongCode() }));
+    registerService('auth', createStubAuthService({ verifyVendorSignInOtp: wrongCode() }));
     const { analytics } = registerTelemetry();
     const store = createStore();
 
@@ -261,13 +265,13 @@ describe('vendor sign in', () => {
 });
 
 describe('vendor onboarding', () => {
-  it('sends vendor_signup once when the auth code is confirmed — and not login_completed', async () => {
+  it('sends vendor_signup once when the registration code is verified — and not login_completed', async () => {
     setSessionStorage(createMemoryStorage());
     registerService('auth', createStubAuthService());
     const { analytics, crashReporter } = registerTelemetry();
     const store = createStore();
 
-    await confirmVendorAuthCode(store.dispatch, 'reg_1', VENDOR_PHONE, VENDOR_AUTH_CODE);
+    await completeVendorRegistration(store.dispatch, 'reg_1', VENDOR_PHONE, VENDOR_OTP);
     await settlePublish();
 
     expect(analytics.track.mock.calls.map(call => call[0])).toEqual(['vendor_signup']);
@@ -282,14 +286,14 @@ describe('vendor onboarding', () => {
     expectNothingPersonal(analytics.track, analytics.identify, crashReporter.setUser);
   });
 
-  it('sends nothing when the confirmation fails', async () => {
+  it('sends nothing when the registration code is refused', async () => {
     setSessionStorage(createMemoryStorage());
-    registerService('auth', createStubAuthService({ verifyVendorAuthCode: wrongCode() }));
+    registerService('auth', createStubAuthService({ verifyVendorOtp: wrongCode() }));
     const { analytics } = registerTelemetry();
     const store = createStore();
 
     await expect(
-      confirmVendorAuthCode(store.dispatch, 'reg_1', VENDOR_PHONE, '111111'),
+      completeVendorRegistration(store.dispatch, 'reg_1', VENDOR_PHONE, '111111'),
     ).rejects.toBeInstanceOf(AppError);
 
     expect(analytics.track).not.toHaveBeenCalled();

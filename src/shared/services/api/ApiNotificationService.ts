@@ -7,7 +7,9 @@
  *
  * Endpoints: `POST /notifications/list` `{ page, limit }` (newest first, scoped
  * by the token to the caller's own account and role), `POST
- * /notifications/read` `{ id }` and `POST /notifications/delete` `{ id }`.
+ * /notifications/read` `{ id }`, `POST /notifications/delete` `{ id }`, and
+ * — phase5-contract.md section 3 (T133, 28/11/2026) — `POST
+ * /notifications/read-all` `{}` and `POST /notifications/delete-all` `{}`.
  * `GET /notifications` is the same handler as the list but reads its paging
  * from a body a GET does not carry, so it is not used.
  *
@@ -29,22 +31,31 @@
  *   that is counted in its newest part only, so the answer is a lower bound
  *   (`{ atLeast }`) and the bell says "at least", never a figure that may be
  *   wrong.
- * - **No mark-all endpoint** (backend gap): the unread ones are found the same
- *   way and marked one at a time, in order (newest first) — one request each.
- *   One that has gone in the meantime is skipped. It says nothing false about
- *   the result: every unread one marked → nothing; only the newest marked — the
- *   inbox was too long to read whole, or a mark failed after some had succeeded
- *   — → `{ complete: false }`; a failure before anything was marked rejects.
- *   Running it again finishes the rest (marking is idempotent).
+ * - **Mark all and clear all are one request each** (contract §3), the
+ *   backend's own bulk updates of the caller's inbox — every page, loaded or
+ *   not. They answer `{ updated }` and `{ deleted }`; the app reads neither
+ *   figure, because the inbox read afterwards is what it shows. ⚠️ Mark all
+ *   used to be the app reading the inbox and marking the unread ones one at a
+ *   time, which could stop part way and had to say "only the newest"; with
+ *   the endpoint it cannot, so it either did everything or rejects.
  * - **Removing one** is the backend's soft delete (Phase 4B contract §8,
  *   24/11/2026): gone from the list after. One that is not in this inbox —
  *   another account's, the same id under the other role, already removed — is
  *   404 `NOTIFICATION_NOT_FOUND`, kind `notFound`, as the interface says; it is
- *   never confirmed to exist. Nothing in Phase 1 offers it yet.
- * - Push registration is Phase 2 (section 72): inert, exactly as the mock is.
+ *   never confirmed to exist. Clearing all is the same soft delete for the
+ *   whole inbox (contract §3).
+ * - **The device's push token** (phase5-contract.md section 6.1, owner-approved
+ *   28/11/2026) is `POST /devices/register` `{ token, platform }` and `POST
+ *   /devices/unregister` `{ token }`, exactly those keys. They sit under
+ *   `/devices`, not `/notifications`, so they go through `DeviceTokens`, a
+ *   BaseApiService of their own, rather than this one's base path. Neither
+ *   answer is read: `registered` and `removed` change nothing the app does, and
+ *   unregistering a token that is not this account's is `removed: false`, never
+ *   an error. Unregistering is part of signing out, so its 401 — a session the
+ *   server already ended — is kept from the unauthorized handler, as
+ *   `/auth/logout`'s is.
  */
 
-import { createLogger } from '@/core/logger/Logger';
 import { BaseApiService } from '@/shared/services/api/BaseApiService';
 import {
   optionalString,
@@ -54,14 +65,11 @@ import {
 } from '@/shared/services/api/apiResponse';
 import type {
   AppNotification,
-  MarkAllIncomplete,
   NotificationService,
+  PushDeviceRegistration,
   UnreadLowerBound,
 } from '@/shared/services/types/NotificationService';
-import { AppError } from '@/shared/types/error';
 import type { Page, PageRequest } from '@/shared/types/pagination';
-
-const log = createLogger('ApiNotificationService');
 
 /** The backend's type for a notification about a service request. */
 const REQUEST_NOTIFICATION_TYPE = 'SERVICE_REQUEST';
@@ -89,7 +97,25 @@ function toNotification(raw: unknown): AppNotification {
   };
 }
 
+/** `/devices`: the push token endpoints, beside the inbox's own. */
+class DeviceTokens extends BaseApiService {
+  constructor() {
+    super('/devices');
+  }
+
+  async register({ token, platform }: PushDeviceRegistration): Promise<void> {
+    // The two keys the contract names and nothing else: whose device it is, is the token's.
+    await this.post<unknown>('/register', { token, platform });
+  }
+
+  async unregister(token: string): Promise<void> {
+    await this.post<unknown>('/unregister', { token }, { skipUnauthorizedHandler: true });
+  }
+}
+
 export class ApiNotificationService extends BaseApiService implements NotificationService {
+  private readonly devices = new DeviceTokens();
+
   constructor() {
     super('/notifications');
   }
@@ -109,34 +135,9 @@ export class ApiNotificationService extends BaseApiService implements Notificati
     await this.post<unknown>('/read', { id });
   }
 
-  async markAllAsRead(): Promise<void | MarkAllIncomplete> {
-    const { notifications, truncated } = await this.readInbox();
-    const unread = notifications.filter(notification => !notification.read);
-    let marked = 0;
-
-    // One at a time, in order: a burst of parallel writes is the backend's to
-    // invite with a bulk endpoint, not the app's to improvise.
-    for (const notification of unread) {
-      try {
-        await this.markAsRead(notification.id);
-        marked += 1;
-      } catch (error) {
-        if (error instanceof AppError && error.kind === 'notFound') {
-          // Gone since it was listed: nothing left to mark.
-          continue;
-        }
-        if (marked === 0) {
-          // Nothing changed, so "not marked" is the truth.
-          throw error;
-        }
-        // Some were marked: saying none were would be false, and so would "all".
-        log.warn('Mark all stopped part way', { marked, of: unread.length, kind: AppError.from(error).kind });
-        return { complete: false };
-      }
-    }
-
-    log.info('Notifications marked read', { count: marked, truncated });
-    return truncated ? { complete: false } : undefined;
+  async markAllAsRead(): Promise<void> {
+    // An empty body, as the contract says: whose inbox it is, is the token's.
+    await this.post<unknown>('/read-all', {});
   }
 
   async remove(id: string): Promise<void> {
@@ -144,13 +145,16 @@ export class ApiNotificationService extends BaseApiService implements Notificati
     await this.post<unknown>('/delete', { id });
   }
 
-  async registerDevice(deviceToken: string): Promise<void> {
-    // Intentionally inert. Push is Phase 2 (section 72); FCM lands with its backend contract.
-    log.debug('registerDevice is not connected yet', { hasToken: Boolean(deviceToken) });
+  async removeAll(): Promise<void> {
+    await this.post<unknown>('/delete-all', {});
   }
 
-  async unregisterDevice(): Promise<void> {
-    log.debug('unregisterDevice is not connected yet');
+  registerDevice(device: PushDeviceRegistration): Promise<void> {
+    return this.devices.register(device);
+  }
+
+  unregisterDevice(token: string): Promise<void> {
+    return this.devices.unregister(token);
   }
 
   /**

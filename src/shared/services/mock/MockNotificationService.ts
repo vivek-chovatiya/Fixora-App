@@ -20,16 +20,21 @@
  * honest about whose it is.
  *
  * ⚠️ Memory only, deliberately. Each inbox starts from `mockNotificationData`
- * the first time its account asks, and what is marked read stays read for the
- * life of the app — a restart brings the fixtures back unread. Nothing here is
+ * the first time its account asks, and what is marked read stays read — and
+ * what is removed, one or all (phase5-contract.md section 3), stays removed —
+ * for the life of the app; a restart brings the fixtures back. Nothing here is
  * the account's own record the way an address book or a team is, so it is not
  * worth a storage key and a schema that go when the mock does. A change is one
  * synchronous step after the session is known, so two calls in flight cannot
  * lose each other's marks.
  *
- * ⚠️ The push surface stays a seam. `registerDevice` and `unregisterDevice` are
- * inert: they resolve and do nothing, because there is no push in Phase 1 and
- * nothing calls them. FCM arrives in an `ApiNotificationService`, not here.
+ * The push token calls (phase5-contract.md section 6.1, owner-approved
+ * 28/11/2026) answer as the backend does, in memory: a token belongs to one
+ * account at a time and registering it from another moves it; unregistering
+ * removes only the caller's own and succeeds either way; nobody signed in is
+ * `unauthorized`; a blank or over-long token, or a platform other than
+ * android/ios, is `validation`. Nothing is pushed — there is nothing here to
+ * push from — so it only proves the app calls them when it should.
  *
  * Replacing this with an ApiNotificationService requires no change to any screen.
  */
@@ -42,6 +47,7 @@ import { NO_LATENCY, simulateNetwork, type MockLatency } from '@/shared/services
 import type {
   AppNotification,
   NotificationService,
+  PushDeviceRegistration,
 } from '@/shared/services/types/NotificationService';
 import { AppError } from '@/shared/types/error';
 import { toPage, type Page, type PageRequest } from '@/shared/types/pagination';
@@ -62,6 +68,11 @@ export interface MockNotificationServiceOptions {
   now?: () => number;
 }
 
+/** The backend's ceiling for a token (contract section 6.1). */
+const MAX_TOKEN_LENGTH = 4096;
+
+const PUSH_PLATFORMS: readonly string[] = ['android', 'ios'];
+
 /** Newest first; by id when two arrived in the same instant, so the order never wobbles. */
 function byNewest(a: AppNotification, b: AppNotification): number {
   return Date.parse(b.createdAt) - Date.parse(a.createdAt) || a.id.localeCompare(b.id);
@@ -69,6 +80,15 @@ function byNewest(a: AppNotification, b: AppNotification): number {
 
 function copied(notification: AppNotification): AppNotification {
   return { ...notification };
+}
+
+/** The token as the backend keeps it (trimmed), or `validation` when it is blank or too long. */
+function requireToken(token: string): string {
+  const trimmed = typeof token === 'string' ? token.trim() : '';
+  if (trimmed.length === 0 || trimmed.length > MAX_TOKEN_LENGTH) {
+    throw new AppError({ kind: 'validation', message: 'Mock devices: invalid token' });
+  }
+  return trimmed;
 }
 
 /** What an endpoint does with a page that cannot exist. */
@@ -92,6 +112,9 @@ export class MockNotificationService implements NotificationService {
 
   /** Inboxes per account, made the first time each account asks. */
   private readonly inboxes = new Map<string, AppNotification[]>();
+
+  /** Push tokens by the account they belong to — one account per token, as on the backend. */
+  private readonly deviceOwners = new Map<string, string>();
 
   constructor(options: MockNotificationServiceOptions = {}) {
     this.latency = options.latency ?? NO_LATENCY;
@@ -171,13 +194,49 @@ export class MockNotificationService implements NotificationService {
     }, this.latency);
   }
 
-  async registerDevice(deviceToken: string): Promise<void> {
-    // Intentionally inert. Push is Phase 2 (section 72); FCM lands with the backend contract.
-    log.debug('registerDevice called in mock mode', { hasToken: Boolean(deviceToken) });
+  async removeAll(): Promise<void> {
+    return simulateNetwork(async () => {
+      const user = await this.requireUser();
+      const removed = this.inboxOf(user.id).length;
+
+      // Emptied, not forgotten: the next read is this empty inbox, never the fixtures again.
+      this.inboxes.set(user.id, []);
+      log.info('Mock notifications all removed', { removed });
+    }, this.latency);
   }
 
-  async unregisterDevice(): Promise<void> {
-    log.debug('unregisterDevice called in mock mode');
+  async registerDevice({ token, platform }: PushDeviceRegistration): Promise<void> {
+    return simulateNetwork(async () => {
+      const user = await this.requireUser();
+      const key = requireToken(token);
+      if (!PUSH_PLATFORMS.includes(platform)) {
+        throw new AppError({ kind: 'validation', message: 'Mock devices: unknown platform' });
+      }
+
+      // Moved, not shared: the token now belongs to whoever registered it last.
+      this.deviceOwners.set(key, user.id);
+      // Never the token: it is a credential for the device.
+      log.info('Mock device registered', { platform });
+    }, this.latency);
+  }
+
+  async unregisterDevice(token: string): Promise<void> {
+    return simulateNetwork(async () => {
+      const user = await this.requireUser();
+      const key = requireToken(token);
+
+      // Somebody else's, or nobody's, succeeds and changes nothing — as `removed: false`.
+      const removed = this.deviceOwners.get(key) === user.id;
+      if (removed) {
+        this.deviceOwners.delete(key);
+      }
+      log.info('Mock device unregistered', { removed });
+    }, this.latency);
+  }
+
+  /** Whether `token` is paired with `userId` now. For tests; the backend has no such read. */
+  isDeviceRegistered(token: string, userId: string): boolean {
+    return this.deviceOwners.get(token.trim()) === userId;
   }
 
   /** What an authenticated endpoint does to nobody. Either role has an inbox. */

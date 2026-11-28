@@ -17,14 +17,22 @@
  * has never seen (`jobPresentation`) — rather than a tidied backend constant
  * passed off as a Fixora word, and with no method beside it, because "how they
  * paid" means nothing under a status nobody worded.
+ *
+ * In English, Hindi and Gujarati since Phase 5 (28/11/2026): `PAYMENT_COPY_EN`
+ * is the source, `payment.hi.ts` / `payment.gu.ts` translate it. The status table
+ * holds keys, not words, so a label is read in the language of the moment it is
+ * shown rather than the one this module loaded in.
  */
 
+import { localized } from '@/core/i18n';
+import { PAYMENT_COPY_GU } from '@/shared/presentation/payment.gu';
+import { PAYMENT_COPY_HI } from '@/shared/presentation/payment.hi';
 import {
   PAYMENT_STATUS_PAID,
   PAYMENT_STATUS_UNPAID,
 } from '@/shared/services/types/VendorRequestService';
 
-export const PAYMENT_COPY = Object.freeze({
+export const PAYMENT_COPY_EN = Object.freeze({
   paid: 'Paid',
   /** "Yet": the record is a moment in the job, and paying later is normal. */
   unpaid: 'Not paid yet',
@@ -33,9 +41,12 @@ export const PAYMENT_COPY = Object.freeze({
   methodSeparator: ' · ',
 });
 
-const STATUS_LABELS: Readonly<Record<string, string>> = Object.freeze({
-  [PAYMENT_STATUS_PAID]: PAYMENT_COPY.paid,
-  [PAYMENT_STATUS_UNPAID]: PAYMENT_COPY.unpaid,
+export const PAYMENT_COPY = localized({ en: PAYMENT_COPY_EN, hi: PAYMENT_COPY_HI, gu: PAYMENT_COPY_GU });
+
+/** Which word each recorded status takes — a key, looked up when the status is shown. */
+const STATUS_LABELS: Readonly<Record<string, 'paid' | 'unpaid'>> = Object.freeze({
+  [PAYMENT_STATUS_PAID]: 'paid',
+  [PAYMENT_STATUS_UNPAID]: 'unpaid',
 });
 
 function normalise(status: string): string {
@@ -60,7 +71,8 @@ export function isUnpaidStatus(status: string): boolean {
 
 /** A payment status in words: "Paid", "Not paid yet", or that it cannot be shown. */
 export function presentPaymentStatus(status: string): string {
-  return STATUS_LABELS[normalise(status)] ?? PAYMENT_COPY.unavailable;
+  const key = STATUS_LABELS[normalise(status)];
+  return key ? PAYMENT_COPY[key] : PAYMENT_COPY.unavailable;
 }
 
 /**

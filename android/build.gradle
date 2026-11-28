@@ -15,6 +15,11 @@ buildscript {
         classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+        // Push notifications (phase5-contract.md section 6, owner-approved 28/11/2026).
+        // On the classpath always, applied by app/build.gradle only when
+        // app/google-services.json exists. 4.5.0 is the version React Native
+        // Firebase 27.1.1 is built and documented against.
+        classpath("com.google.gms:google-services:4.5.0")
     }
 }
 

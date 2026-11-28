@@ -12,8 +12,8 @@
  * React Native's deprecated built-in Clipboard to
  * `@react-native-clipboard/clipboard` without a single caller changing.
  *
- * Nothing copied here is ever logged. The vendor auth code passes through this
- * module, and a log line is exactly the leak the credential rules forbid.
+ * Nothing copied here is ever logged. What a person copies is theirs, and a log
+ * line is exactly the leak the credential rules forbid.
  */
 
 import ReactNativeClipboardModule from '@react-native-clipboard/clipboard';

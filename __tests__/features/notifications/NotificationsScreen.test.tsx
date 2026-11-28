@@ -15,16 +15,29 @@
  * - pressing marks read at once and opens a request link in the role's own
  *   details route, by reference only; an unknown link or none opens nothing;
  *   a failed mark puts the row back and says so; two taps send one mark
- * - "Mark all as read": busy while out, five presses one call, nothing changes
- *   on failure, disabled once nothing is unread
+ * - the menu (T133): only over notifications; "Mark all as read" and "Clear
+ *   all" in its sheet, each disabled when it cannot apply or while either is
+ *   in the air
+ * - "Mark all as read": every row read at once, one call, rolled back with
+ *   the error's own words on failure, disabled once nothing is unread
+ * - "Clear all": asks first and sends nothing until answered; the list empties
+ *   at once, one call with an empty body, rolled back on failure; the badge
+ * - one row: swiped away or deleted by its accessibility action (present on
+ *   every row, button or not); gone at once, its id exactly, back with the
+ *   error's words on failure, gone for good when the service no longer has it
  * - loading, empty, a failed first read and its retry, a failed pull, the
  *   next page on scroll and its own failure and retry
  * - one role never reaches the other's routes, and one account never sees
  *   another's notifications
+ *
+ * The sheet runs a choice when iOS has finished dismissing it (the Modal's
+ * `onDismiss`, `OptionsSheet`); the test renderer never fires that itself, and
+ * tests run as iOS, so `choose` fires it.
  */
 
 import React from 'react';
 import { StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 import {
   NavigationContainer,
@@ -204,11 +217,14 @@ async function render(user: AuthUser, { open = true }: { open?: boolean } = {}) 
     renderer = ReactTestRenderer.create(
       <Provider store={store}>
         <ThemeProvider>
-          <ToastProvider>
-            <NavigationContainer ref={navigation}>
-              {user.role === 'vendor' ? <VendorNavigator /> : <CustomerNavigator />}
-            </NavigationContainer>
-          </ToastProvider>
+          {/* As App.tsx: a row's swipe is a gesture, and gestures need a root. */}
+          <GestureHandlerRootView>
+            <ToastProvider>
+              <NavigationContainer ref={navigation}>
+                {user.role === 'vendor' ? <VendorNavigator /> : <CustomerNavigator />}
+              </NavigationContainer>
+            </ToastProvider>
+          </GestureHandlerRootView>
         </ThemeProvider>
       </Provider>,
     );
@@ -336,7 +352,72 @@ async function render(user: AuthUser, { open = true }: { open?: boolean } = {}) 
       });
       await flush();
     },
-    markAll: () => pressable(COPY.markAll)[0],
+    /** The three dots in the bar. */
+    menuButton: () => pressable(COPY.menu)[0] as Instance | undefined,
+    openMenu: async () => {
+      await screen.press(COPY.menu);
+    },
+    /** An option in the open sheet, as the button it is. */
+    option: (label: string) => {
+      if (!has('notifications-menu-sheet')) {
+        throw new Error('The menu is not open');
+      }
+      return pressable(label, host('notifications-menu-sheet'))[0];
+    },
+    /** iOS's end of the sheet's fade, which runs the choice (the Modal's `onDismiss`). */
+    sheetGone: async () => {
+      await act(async () => {
+        renderer.root
+          .findAll(node => typeof node.props?.onDismiss === 'function')
+          .forEach(node => node.props.onDismiss());
+      });
+      await flush();
+    },
+    /** Presses an option in the open sheet and lets the sheet go, as a person would. */
+    choose: async (label: string) => {
+      const target = screen.option(label);
+      if (!target) {
+        throw new Error(`No option "${label}" in the menu`);
+      }
+      await act(async () => {
+        target.props.onPress();
+      });
+      await screen.sheetGone();
+    },
+    markAll: async () => {
+      await screen.openMenu();
+      await screen.choose(COPY.markAll);
+    },
+    /** Asks to clear all; the question is then open. */
+    askToClear: async () => {
+      await screen.openMenu();
+      await screen.choose(COPY.clearAll);
+    },
+    /** A row's swipe, as it reports opening — the only way it opens is to the left. */
+    swipe: async (id: string) => {
+      const [swipeable] = renderer.root.findAll(
+        node =>
+          node.props?.testID === `notification-${id}-swipe` &&
+          typeof node.props?.onSwipeableOpen === 'function',
+      );
+      if (!swipeable) {
+        throw new Error(`Notification ${id} cannot be swiped`);
+      }
+      await act(async () => {
+        swipeable.props.onSwipeableOpen('left');
+      });
+      await flush();
+    },
+    /** The element a screen reader stops on for a row: the card when it is a button, else its block. */
+    focusOf: (id: string): Instance => screen.card(id) ?? host(`notification-${id}-content`),
+    /** A screen reader's "Delete" on a row. */
+    deleteByAction: async (id: string) => {
+      const stop = screen.focusOf(id);
+      await act(async () => {
+        stop.props.onAccessibilityAction({ nativeEvent: { actionName: 'delete' } });
+      });
+      await flush();
+    },
     endReached: async () => {
       await act(async () => {
         list().props.onEndReached();
@@ -693,39 +774,113 @@ describe('Notifications — pressing one', () => {
   });
 });
 
-describe('Notifications — mark all as read', () => {
-  it('marks every one read once the service agrees, and says so', async () => {
+describe('Notifications — the menu', () => {
+  it('sits in the bar over notifications, and opens a sheet with the two options', async () => {
     const screen = await render(ASHA);
 
-    await screen.press(COPY.markAll);
+    const button = screen.menuButton() as Instance;
+    expect(button.props.accessibilityRole).toBe('button');
+    expect(button.props.accessibilityHint).toBe(COPY.menuHint);
+    // In the bar, beside Back — not in the list, which it must never move.
+    expect(screen.has('notifications-menu')).toBe(true);
+    expect(screen.list().findAll(node => node.props?.testID === 'notifications-menu')).toHaveLength(0);
+    // The old button in the heading is gone: nothing marks all without the menu.
+    expect(screen.pressable(COPY.markAll)).toHaveLength(0);
 
+    await screen.openMenu();
+
+    expect(screen.has('notifications-menu-sheet')).toBe(true);
+    expect(screen.host('notifications-menu-sheet').props.accessibilityLabel).toBe(COPY.menuTitle);
+    expect(screen.option(COPY.markAll).props.accessibilityState).toEqual({ disabled: false });
+    expect(screen.option(COPY.markAll).props.accessibilityHint).toBe(COPY.markAllHint);
+    expect(screen.option(COPY.clearAll).props.accessibilityState).toEqual({ disabled: false });
+    expect(screen.option(COPY.clearAll).props.accessibilityHint).toBe(COPY.clearAllHint);
+  });
+
+  it('closes on Cancel and sends nothing', async () => {
+    const markAll = jest.spyOn(notifications, 'markAllAsRead');
+    const removeAll = jest.spyOn(notifications, 'removeAll');
+    const screen = await render(ASHA);
+
+    await screen.openMenu();
+    await screen.press(COPY.menuCancel, screen.host('notifications-menu-sheet'));
+    await screen.sheetGone();
+
+    expect(screen.has('notifications-menu-sheet')).toBe(false);
+    expect(markAll).not.toHaveBeenCalled();
+    expect(removeAll).not.toHaveBeenCalled();
+  });
+
+  it('is not there while loading, nor over an empty inbox', async () => {
+    const page = held<Page<AppNotification>>();
+    jest.spyOn(notifications, 'list').mockImplementationOnce(() => page.promise);
+    const loading = await render(ASHA);
+    expect(loading.menuButton()).toBeUndefined();
+    await act(async () => {
+      page.fail(offline());
+    });
+    await loading.flush();
+    // Nor over a failure with nothing behind it.
+    expect(loading.menuButton()).toBeUndefined();
+
+    const empty = await render(NAMELESS);
+    expect(empty.menuButton()).toBeUndefined();
+  });
+
+  it('disables "Mark all as read" when nothing is unread, and keeps "Clear all"', async () => {
+    const screen = await render(ASHA);
+    await screen.markAll();
+
+    await screen.openMenu();
+
+    expect(screen.option(COPY.markAll).props.accessibilityState).toEqual({ disabled: true });
+    expect(screen.option(COPY.clearAll).props.accessibilityState).toEqual({ disabled: false });
+    // A disabled option does nothing, however it is reached.
+    const markAll = jest.spyOn(notifications, 'markAllAsRead');
+    await screen.choose(COPY.markAll);
+    expect(markAll).not.toHaveBeenCalled();
+  });
+});
+
+describe('Notifications — mark all as read', () => {
+  it('marks every one read, sends one call, and says so', async () => {
+    const markAll = jest.spyOn(notifications, 'markAllAsRead');
+    const screen = await render(ASHA);
+
+    await screen.markAll();
+
+    expect(markAll).toHaveBeenCalledTimes(1);
+    expect(markAll).toHaveBeenCalledWith();
     expect(screen.listed().every(item => item.read)).toBe(true);
     expect(screen.isUnread(ASHA_ACCEPTED)).toBe(false);
     expect(screen.said(COPY.markedAll).length).toBeGreaterThan(0);
-    expect(screen.markAll().props.accessibilityState).toEqual({ disabled: true, busy: false });
     expect(await notifications.getUnreadCount()).toBe(0);
   });
 
-  it('is busy while the call is out, changes nothing until it answers, and sends one call for five presses', async () => {
+  it('marks them at once, before the service answers, and locks both options while it is out', async () => {
     const answer = held<void>();
     const real = notifications.markAllAsRead.bind(notifications);
     const markAll = jest.spyOn(notifications, 'markAllAsRead').mockImplementationOnce(async () => {
       await answer.promise;
       return real();
     });
+    const removeAll = jest.spyOn(notifications, 'removeAll');
     const screen = await render(ASHA);
 
-    const button = screen.markAll();
-    await act(async () => {
-      for (let i = 0; i < 5; i += 1) {
-        button.props.onPress();
-      }
-    });
-    await screen.flush();
+    await screen.markAll();
+    expect(screen.isUnread(ASHA_ACCEPTED)).toBe(false);
+    expect(screen.listed().every(item => item.read)).toBe(true);
 
+    // Asked again while it is out: both options are disabled, and nothing more is sent.
+    await screen.openMenu();
+    expect(screen.option(COPY.markAll).props.accessibilityState).toEqual({ disabled: true });
+    expect(screen.option(COPY.clearAll).props.accessibilityState).toEqual({ disabled: true });
+    await screen.choose(COPY.markAll);
+    await screen.openMenu();
+    await screen.choose(COPY.clearAll);
     expect(markAll).toHaveBeenCalledTimes(1);
-    expect(screen.markAll().props.accessibilityState).toEqual({ disabled: true, busy: true });
-    expect(screen.isUnread(ASHA_ACCEPTED)).toBe(true);
+    expect(removeAll).not.toHaveBeenCalled();
+    expect(screen.has('notifications-clear-dialog')).toBe(false);
 
     await act(async () => {
       answer.land();
@@ -734,43 +889,28 @@ describe('Notifications — mark all as read', () => {
     expect(screen.isUnread(ASHA_ACCEPTED)).toBe(false);
   });
 
-  it('claims neither "all" nor "none" when only the newest could be marked, and reads the list again', async () => {
-    const list = jest.spyOn(notifications, 'list');
-    // The mock always finishes; the Api service answers this for a long inbox.
-    jest.spyOn(notifications, 'markAllAsRead').mockResolvedValueOnce({ complete: false } as never);
-    const screen = await render(ASHA);
-    const readsBefore = list.mock.calls.length;
-
-    await screen.press(COPY.markAll);
-    await screen.flush();
-
-    expect(screen.said(COPY.markedSome).length).toBeGreaterThan(0);
-    expect(screen.said(COPY.markedAll)).toHaveLength(0);
-    expect(screen.said(COPY.markAllFailed)).toHaveLength(0);
-    // What is shown is the service's answer, never assumed read.
-    expect(list.mock.calls.length).toBeGreaterThan(readsBefore);
-    expect(screen.isUnread(ASHA_ACCEPTED)).toBe(true);
-  });
-
-  it('changes nothing and says so when it fails, and can be pressed again', async () => {
+  it('puts every row back as it was, in the error’s own words, when it fails — and can be asked again', async () => {
     jest.spyOn(notifications, 'markAllAsRead').mockRejectedValueOnce(offline());
     const screen = await render(ASHA);
 
-    await screen.press(COPY.markAll);
+    await screen.markAll();
 
     expect(screen.isUnread(ASHA_ACCEPTED)).toBe(true);
     expect(screen.listed().filter(item => !item.read)).toHaveLength(6);
     expect(screen.said(`${COPY.markAllFailed} No internet connection`).length).toBeGreaterThan(0);
-    expect(screen.markAll().props.accessibilityState).toEqual({ disabled: false, busy: false });
+    // Never the developer's message.
+    expect(screen.said('offline')).toHaveLength(0);
 
-    await screen.press(COPY.markAll);
+    await screen.openMenu();
+    expect(screen.option(COPY.markAll).props.accessibilityState).toEqual({ disabled: false });
+    await screen.choose(COPY.markAll);
     expect(screen.isUnread(ASHA_ACCEPTED)).toBe(false);
   });
 
   it('clears the badge on Home', async () => {
     const screen = await render(RAVI);
 
-    await screen.press(COPY.markAll);
+    await screen.markAll();
     await screen.back();
 
     expect(screen.badge()).toBeNull();
@@ -791,7 +931,7 @@ describe('Notifications — mark all as read', () => {
     jest.spyOn(notifications, 'list').mockImplementationOnce(() => page.promise);
 
     await screen.endReached();
-    await screen.press(COPY.markAll);
+    await screen.markAll();
     await act(async () => {
       page.land(stale);
     });
@@ -799,7 +939,228 @@ describe('Notifications — mark all as read', () => {
 
     expect(screen.listed()).toHaveLength(22);
     expect(screen.listed().every(item => item.read)).toBe(true);
-    expect(screen.markAll().props.accessibilityState).toEqual({ disabled: true, busy: false });
+    await screen.openMenu();
+    expect(screen.option(COPY.markAll).props.accessibilityState).toEqual({ disabled: true });
+  });
+});
+
+describe('Notifications — clear all', () => {
+  it('asks first, and sends nothing until it is answered', async () => {
+    const removeAll = jest.spyOn(notifications, 'removeAll');
+    const screen = await render(ASHA);
+
+    await screen.askToClear();
+
+    expect(screen.has('notifications-menu-sheet')).toBe(false);
+    expect(screen.has('notifications-clear-dialog')).toBe(true);
+    expect(screen.text('notifications-clear-dialog')).toContain(COPY.clearTitle);
+    expect(screen.text('notifications-clear-dialog')).toContain(COPY.clearMessage);
+    expect(removeAll).not.toHaveBeenCalled();
+    expect(screen.listed()).toHaveLength(AppConfig.pagination.defaultPageSize);
+  });
+
+  it('keeps everything when the answer is no', async () => {
+    const removeAll = jest.spyOn(notifications, 'removeAll');
+    const screen = await render(ASHA);
+
+    await screen.askToClear();
+    await screen.press(COPY.clearCancel);
+
+    expect(screen.has('notifications-clear-dialog')).toBe(false);
+    expect(removeAll).not.toHaveBeenCalled();
+    expect(screen.listed()).toHaveLength(AppConfig.pagination.defaultPageSize);
+  });
+
+  it('empties the list at once, sends one call that names nothing, and says so', async () => {
+    const answer = held<void>();
+    const real = notifications.removeAll.bind(notifications);
+    const removeAll = jest.spyOn(notifications, 'removeAll').mockImplementationOnce(async () => {
+      await answer.promise;
+      return real();
+    });
+    const screen = await render(ASHA);
+
+    await screen.askToClear();
+    await screen.press(COPY.clearConfirm, screen.host('notifications-clear-dialog'));
+
+    // Before the service has answered.
+    expect(screen.has('notifications-clear-dialog')).toBe(false);
+    expect(screen.listed()).toEqual([]);
+    expect(screen.has('notifications-empty')).toBe(true);
+    expect(screen.menuButton()).toBeUndefined();
+    expect(removeAll).toHaveBeenCalledTimes(1);
+    expect(removeAll).toHaveBeenCalledWith();
+
+    await act(async () => {
+      answer.land();
+    });
+    await screen.flush();
+
+    expect(screen.listed()).toEqual([]);
+    expect(screen.said(COPY.clearedAll).length).toBeGreaterThan(0);
+    expect(await notifications.list({ page: AppConfig.pagination.initialPage, pageSize: 50 })).toEqual(
+      expect.objectContaining({ items: [] }),
+    );
+  });
+
+  it('puts every notification back, in the error’s own words, when it fails', async () => {
+    jest.spyOn(notifications, 'removeAll').mockRejectedValueOnce(offline());
+    const screen = await render(ASHA);
+    const before = screen.listed().map(item => item.id);
+
+    await screen.askToClear();
+    await screen.press(COPY.clearConfirm, screen.host('notifications-clear-dialog'));
+
+    expect(screen.listed().map(item => item.id)).toEqual(before);
+    expect(screen.isUnread(ASHA_ACCEPTED)).toBe(true);
+    expect(screen.said(`${COPY.clearAllFailed} No internet connection`).length).toBeGreaterThan(0);
+    expect(screen.said(COPY.clearedAll)).toHaveLength(0);
+    expect(screen.menuButton()).toBeDefined();
+  });
+
+  it('clears pages never loaded too, and reads the inbox again rather than offer them', async () => {
+    const screen = await render(VENKATA);
+    expect(screen.listed()).toHaveLength(AppConfig.pagination.defaultPageSize);
+    const list = jest.spyOn(notifications, 'list');
+
+    await screen.askToClear();
+    await screen.press(COPY.clearConfirm, screen.host('notifications-clear-dialog'));
+
+    expect(screen.listed()).toEqual([]);
+    // The page counter behind the list was the old inbox's: it is read again.
+    expect(list).toHaveBeenCalledWith({
+      page: AppConfig.pagination.initialPage,
+      pageSize: AppConfig.pagination.defaultPageSize,
+    });
+    await screen.endReached();
+    expect(screen.listed()).toEqual([]);
+  });
+
+  it('clears the badge on Home', async () => {
+    const screen = await render(RAVI);
+
+    await screen.askToClear();
+    await screen.press(COPY.clearConfirm, screen.host('notifications-clear-dialog'));
+    await screen.back();
+
+    expect(screen.badge()).toBeNull();
+  });
+});
+
+describe('Notifications — deleting one', () => {
+  it('offers Delete to a screen reader on every row, button or not', async () => {
+    const screen = await render(RAVI);
+
+    // A button (unread, or opens a request) and a row that is only words.
+    expect(screen.card(RAVI_NEW_REQUEST)).toBeDefined();
+    expect(screen.card(RAVI_WELCOME)).toBeUndefined();
+    for (const id of [RAVI_NEW_REQUEST, RAVI_TAKEN, RAVI_WELCOME]) {
+      expect(screen.focusOf(id).props.accessibilityActions).toEqual([
+        { name: 'delete', label: COPY.deleteAction },
+      ]);
+      expect(typeof screen.focusOf(id).props.onAccessibilityAction).toBe('function');
+    }
+    // Once per row: the hidden parts of a button card carry none of their own.
+    expect(screen.host(`notification-${RAVI_NEW_REQUEST}-content`).props.accessibilityActions).toBeUndefined();
+  });
+
+  it('takes a swiped row away at once and deletes exactly that one', async () => {
+    const answer = held<void>();
+    const real = notifications.remove.bind(notifications);
+    const remove = jest.spyOn(notifications, 'remove').mockImplementationOnce(async id => {
+      await answer.promise;
+      return real(id);
+    });
+    const screen = await render(ASHA);
+
+    await screen.swipe(ASHA_ACCEPTED);
+
+    expect(screen.listed().map(item => item.id)).not.toContain(ASHA_ACCEPTED);
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith(ASHA_ACCEPTED);
+
+    await act(async () => {
+      answer.land();
+    });
+    await screen.flush();
+
+    expect(screen.listed().map(item => item.id)).not.toContain(ASHA_ACCEPTED);
+    expect(screen.said(COPY.deleted).length).toBeGreaterThan(0);
+    const inbox = await notifications.list({ page: AppConfig.pagination.initialPage, pageSize: 50 });
+    expect(inbox.items.map(item => item.id)).not.toContain(ASHA_ACCEPTED);
+  });
+
+  it('deletes through the screen reader’s action the same way', async () => {
+    const remove = jest.spyOn(notifications, 'remove');
+    const screen = await render(RAVI);
+
+    await screen.deleteByAction(RAVI_WELCOME);
+
+    expect(remove).toHaveBeenCalledWith(RAVI_WELCOME);
+    expect(screen.listed().map(item => item.id)).not.toContain(RAVI_WELCOME);
+  });
+
+  it('ignores any other accessibility action', async () => {
+    const remove = jest.spyOn(notifications, 'remove');
+    const screen = await render(RAVI);
+
+    await act(async () => {
+      screen.focusOf(RAVI_TAKEN).props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } });
+    });
+    await screen.flush();
+
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('puts the row back in its place, in the error’s own words, when the delete fails', async () => {
+    jest.spyOn(notifications, 'remove').mockRejectedValueOnce(offline());
+    const screen = await render(ASHA);
+    const before = screen.listed().map(item => item.id);
+
+    await screen.swipe(ASHA_LONG);
+
+    expect(screen.listed().map(item => item.id)).toEqual(before);
+    expect(screen.said(`${COPY.deleteFailed} No internet connection`).length).toBeGreaterThan(0);
+    expect(screen.said(COPY.deleted)).toHaveLength(0);
+  });
+
+  it('leaves it gone when the service no longer has it', async () => {
+    jest
+      .spyOn(notifications, 'remove')
+      .mockRejectedValueOnce(new AppError({ kind: 'notFound', code: 'NOTIFICATION_NOT_FOUND' }));
+    const screen = await render(ASHA);
+
+    await screen.swipe(ASHA_ACCEPTED);
+
+    expect(screen.listed().map(item => item.id)).not.toContain(ASHA_ACCEPTED);
+    expect(screen.said(COPY.deleteFailed)).toHaveLength(0);
+  });
+
+  it('sends one delete for a row swiped twice', async () => {
+    const answer = held<void>();
+    const remove = jest.spyOn(notifications, 'remove').mockImplementation(() => answer.promise);
+    const screen = await render(ASHA);
+    const stop = screen.focusOf(ASHA_ACCEPTED);
+
+    await act(async () => {
+      stop.props.onAccessibilityAction({ nativeEvent: { actionName: 'delete' } });
+      stop.props.onAccessibilityAction({ nativeEvent: { actionName: 'delete' } });
+    });
+    await screen.flush();
+
+    expect(remove).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      answer.land();
+    });
+  });
+
+  it('counts an unread one removed on the badge back on Home', async () => {
+    const screen = await render(ASHA);
+
+    await screen.swipe(ASHA_UNKNOWN_LINK);
+    await screen.back();
+
+    expect(screen.badge()).toBe('5');
   });
 });
 

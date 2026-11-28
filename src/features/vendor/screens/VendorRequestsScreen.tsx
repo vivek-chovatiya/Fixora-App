@@ -42,7 +42,9 @@
  * cannot fail.
  *
  * One list, and it owns the scrolling: the heading, the chips and any notice
- * are its header, so there is nothing nested to fight over a drag. Placeholders
+ * are its header, so there is nothing nested to fight over a drag. The chips'
+ * own row scrolls sideways only (T134), across the list's grain, so a drag is
+ * still never ambiguous. Placeholders
  * fill it while the first load runs; a failed first load puts the failure and
  * its retry where the requests would be; a failed pull keeps the list and says
  * above it that it may be out of date (section 31.2).
@@ -79,7 +81,7 @@ import {
   EmptyState,
   ErrorState,
   Screen,
-  SelectionChip,
+  SelectionChipRail,
   Skeleton,
   StaleNotice,
   Text,
@@ -103,6 +105,9 @@ type Props = CompositeScreenProps<
 
 /** One identity for "nothing to list", so the list is not handed a new array every render. */
 const NO_LINES: readonly VendorRequestLine[] = Object.freeze([]);
+
+/** Each filter chip's id, as the chips had before they moved onto the rail. */
+const filterTestID = (value: VendorRequestFilter) => `vendor-requests-filter-${value}`;
 
 export function VendorRequestsScreen({ navigation }: Props) {
   const theme = useTheme();
@@ -280,25 +285,20 @@ export function VendorRequestsScreen({ navigation }: Props) {
       </View>
 
       {/*
-        One of five, said as one of five. Wrapped rather than scrolled sideways,
-        so all five are always visible and none can be missed at 360dp.
+        One of five, said as one of five, on one row that scrolls sideways
+        (T134, 28/11/2026) — it used to wrap, and the fifth chip alone on a
+        second row read as a second control. The chosen one is always brought
+        into view.
       */}
-      <View
-        accessibilityRole="radiogroup"
+      <SelectionChipRail
+        options={VENDOR_REQUEST_FILTERS}
+        value={filter}
+        onChange={setFilter}
         accessibilityLabel={COPY.filtersLabel}
-        style={[styles.filters, { gap: theme.spacing.sm }]}
-        testID="vendor-requests-filters">
-        {VENDOR_REQUEST_FILTERS.map(option => (
-          <SelectionChip
-            key={option.value}
-            label={option.label}
-            selected={filter === option.value}
-            onPress={() => setFilter(option.value)}
-            accessibilityHint={COPY.filterHint}
-            testID={`vendor-requests-filter-${option.value}`}
-          />
-        ))}
-      </View>
+        accessibilityHint={COPY.filterHint}
+        testID="vendor-requests-filters"
+        chipTestID={filterTestID}
+      />
 
       {isStale ? (
         <StaleNotice
@@ -399,10 +399,6 @@ export function VendorRequestsScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  filters: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
   groupHeading: {
     flexDirection: 'row',
     alignItems: 'baseline',

@@ -2,16 +2,17 @@
  * RememberedVendorStorage
  *
  * Remembers which phone number a vendor last signed in with on this device, so
- * the next vendor sign in asks only for the auth code (PROJECT_BIBLE.md section
- * 7A.2, amended 21/10/2026: "remembers the phone number (never the code)").
+ * the next vendor sign in can send a one-time code to it in one tap
+ * (PROJECT_BIBLE.md section 7A.2, amended 21/10/2026: "remembers the phone
+ * number (never the code)"; the code is a one-time code since 28/11/2026).
  *
- * ⚠️ It holds a phone number and can hold nothing else. The vendor auth code is a
- * standing credential that must never be persisted beyond the request that uses
- * it (PROJECT_BIBLE.md section 7A.2), and this file is the most likely place for
- * someone to "helpfully" keep it. So `remember` takes one string, normalises it
- * to digits and refuses anything the shared phone rule would refuse — a code is
- * six digits, a phone number at least ten, so even a code passed here by mistake
- * is turned away rather than written.
+ * ⚠️ It holds a phone number and can hold nothing else. A code must never be
+ * persisted beyond the request that uses it (PROJECT_BIBLE.md section 7A), and
+ * this file is the most likely place for someone to "helpfully" keep one. So
+ * `remember` takes one string, normalises it to digits and refuses anything the
+ * shared phone rule would refuse — a code is six digits, a phone number at
+ * least ten, so even a code passed here by mistake is turned away rather than
+ * written.
  *
  * Feature-scoped and deliberately small, like `requestDraftStorage`: it is not
  * the auth module's general storage. Like that file it reaches the device

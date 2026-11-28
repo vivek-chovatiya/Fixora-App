@@ -21,8 +21,8 @@
  *
  * ⚠️ Properties are ids, counts, enums and flags — never personal data. No name,
  * phone number, email, address, location, note, review text or code of any
- * kind; the vendor auth code in particular must never be attached to an event
- * (section 7A.2). An analytics provider is a third party keeping its own copy
+ * kind; a one-time code in particular must never be attached to an event
+ * (section 7A). An analytics provider is a third party keeping its own copy
  * for years, and a phone number sent once cannot be called back. `trackEvent`
  * drops a key that looks personal, but that is a net under this rule, not the
  * rule.

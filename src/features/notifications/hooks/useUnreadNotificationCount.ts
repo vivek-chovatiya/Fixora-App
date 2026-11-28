@@ -10,8 +10,9 @@
  * Read when the screen first draws, again each time it comes back into focus —
  * which is how somebody returns from the inbox — and again whenever the inbox
  * says notifications were marked as read (`notificationSync`), so a mark still
- * in flight when they came back is counted once it lands. Whose count it is,
- * is the session's: the call takes nothing.
+ * in flight when they came back is counted once it lands — and when a push
+ * arrives with the app in front (phase5-contract.md section 6.3). Whose count
+ * it is, is the session's: the call takes nothing.
  *
  * ⚠️ A failed read is no badge, never an error. The count is a hint on a
  * screen that has its own work to show; a retry button or a warning in its
@@ -36,7 +37,10 @@
 
 import { useCallback, useEffect } from 'react';
 
-import { onNotificationsRead } from '@/features/notifications/state/notificationSync';
+import {
+  onNotificationsArrived,
+  onNotificationsRead,
+} from '@/features/notifications/state/notificationSync';
 import { useNavigationEvent } from '@/shared/hooks/useNavigationEvent';
 import { useServiceQuery } from '@/shared/hooks/useServiceQuery';
 import { getService } from '@/shared/services/ServiceRegistry';
@@ -70,6 +74,10 @@ export function useUnreadNotifications(): UnreadNotifications {
 
   // Whether or not this screen is in front: it is under the inbox that said so.
   useEffect(() => onNotificationsRead(refresh), [refresh]);
+
+  // And when a push arrives with the app in front: the backend has just stored
+  // one more (phase5-contract.md section 6.3).
+  useEffect(() => onNotificationsArrived(refresh), [refresh]);
 
   const answer = query.error !== null || query.data === undefined ? null : query.data;
   const count = answer === null ? null : typeof answer === 'number' ? answer : answer.atLeast;

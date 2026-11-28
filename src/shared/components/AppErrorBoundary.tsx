@@ -38,6 +38,7 @@ import React, { Component, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { PrimaryButton } from '@/shared/components/Button';
+import { COMPONENT_COPY } from '@/shared/components/componentCopy';
 import { ERROR_PRESENTATION } from '@/shared/components/errorPresentation';
 import { Icon } from '@/shared/components/Icon';
 import { Screen } from '@/shared/components/Screen';
@@ -46,17 +47,14 @@ import { recordError } from '@/shared/services/telemetry';
 import { useTheme } from '@/shared/theme';
 
 /**
- * What the fallback says, frozen as a feature's copy file is. It lives here
- * because it belongs to no feature.
+ * What the fallback says. It belongs to no feature, so its words are the shared
+ * components' (`componentCopy.ts`, in English, Hindi and Gujarati since Phase 5);
+ * the export keeps its name for every caller and test that reads it.
  *
  * The message tells the user what to do and claims nothing it cannot know —
  * not that their data is safe, not that anyone has been told.
  */
-export const APP_ERROR_FALLBACK_COPY = Object.freeze({
-  message:
-    'Sorry — the app hit a problem. Try again, and if it keeps happening, restart the app.',
-  retry: 'Try again',
-});
+export const APP_ERROR_FALLBACK_COPY = COMPONENT_COPY.errorBoundary;
 
 export interface AppErrorBoundaryProps {
   children: ReactNode;

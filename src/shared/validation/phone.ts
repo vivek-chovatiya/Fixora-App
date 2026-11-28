@@ -14,11 +14,17 @@
  * ⚠️ This validates shape, nothing more. Whether a number exists, is reachable,
  * or already belongs to an account is the backend's answer to give
  * (PROJECT_BIBLE.md section 7A.4).
+ *
+ * The messages are `VALIDATION_COPY.phone`, in the current language, read
+ * through a function each time the schema checks (`validationCopy.ts`).
  */
 
 import { z } from 'zod';
 
 import { AppConfig } from '@/core/config/AppConfig';
+import { VALIDATION_COPY } from '@/shared/validation/validationCopy';
+
+const COPY = VALIDATION_COPY.phone;
 
 /**
  * Reduces a typed number to digits, so '+91 98765-43210' and '9876543210' are
@@ -76,13 +82,11 @@ export function capPhoneInput(raw: string): string {
 export const phoneSchema = z
   .string()
   .trim()
-  .min(1, 'Enter your phone number.')
-  .refine(value => ALLOWED_CHARACTERS.test(value), 'Enter a phone number using digits only.')
-  .refine(
-    value => normalisePhone(value).length >= AppConfig.phone.minDigits,
-    'That number looks too short. Please check it.',
-  )
-  .refine(
-    value => normalisePhone(value).length <= AppConfig.phone.maxDigits,
-    'That number looks too long. Please check it.',
-  );
+  .min(1, { error: () => COPY.required })
+  .refine(value => ALLOWED_CHARACTERS.test(value), { error: () => COPY.digitsOnly })
+  .refine(value => normalisePhone(value).length >= AppConfig.phone.minDigits, {
+    error: () => COPY.tooShort,
+  })
+  .refine(value => normalisePhone(value).length <= AppConfig.phone.maxDigits, {
+    error: () => COPY.tooLong,
+  });

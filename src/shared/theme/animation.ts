@@ -70,6 +70,16 @@ export const duration = Object.freeze({
    * read once in surprise and once in earnest.
    */
   toast: 4000,
+  /**
+   * How long "Copied" stays beside a copy button before it goes back to rest
+   * (T135, 28/11/2026: "about two seconds").
+   *
+   * Shorter than `toast` on purpose. A toast carries a sentence that may be a
+   * failure; this is one word confirming something the person has just done
+   * and is still looking at, and a confirmation that outstays the act reads as
+   * the button being stuck.
+   */
+  copiedHold: 2000,
 });
 
 /**

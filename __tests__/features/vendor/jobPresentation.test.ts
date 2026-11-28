@@ -3,8 +3,9 @@
  * and 31.1), and the dashboard's greeting.
  *
  * Pinned: a waiting request is named by how it arrived; work under way and
- * finished work read as themselves; a status the app has never seen reads
- * "Status unavailable" — never hidden, never guessed at, and never the raw value.
+ * finished work read as themselves; a cancelled one reads "Cancelled" and offers
+ * nothing; a status the app has never seen reads "Status unavailable" — never
+ * hidden, never guessed at, and never the raw value.
  */
 
 import {
@@ -14,6 +15,7 @@ import {
   nextWorkStep,
   presentJobStatus,
 } from '@/features/vendor/constants/jobPresentation';
+import { updateLocaleState } from '@/core/i18n';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import { vendorGreetingFor } from '@/features/vendor/hooks/useVendorDashboard';
 
@@ -80,6 +82,34 @@ describe('presentJobStatus', () => {
       icon: 'reject',
     });
   });
+
+  /*
+    A request the customer cancelled read "Status unavailable" once opened —
+    from the push its cancelling sends (device test, 28/11/2026).
+  */
+  it('says a cancelled request is cancelled, as the customer sees it: neutral, with the close glyph', () => {
+    for (const status of ['CANCELLED', ' cancelled ']) {
+      expect(presentJobStatus({ status, dispatch: 'directed' })).toEqual({
+        label: COPY.statusCancelled,
+        tone: 'neutral',
+        icon: 'close',
+      });
+    }
+    expect(COPY.statusCancelled).toBe('Cancelled');
+    expect(COPY.statusCancelled).not.toBe(COPY.statusUnknown);
+  });
+
+  it('says cancelled in Hindi and Gujarati too, never the unavailable words', () => {
+    try {
+      updateLocaleState({ locale: 'hi' });
+      expect(presentJobStatus({ status: 'CANCELLED' }).label).toBe('रद्द');
+      updateLocaleState({ locale: 'gu' });
+      expect(presentJobStatus({ status: 'CANCELLED' }).label).toBe('રદ થયેલી');
+      expect(presentJobStatus({ status: 'CANCELLED' }).label).not.toBe('સ્થિતિ ઉપલબ્ધ નથી');
+    } finally {
+      updateLocaleState({ locale: 'en' });
+    }
+  });
 });
 
 describe('isAwaitingAnswer', () => {
@@ -116,7 +146,7 @@ describe('isFinishedWork (the offline payment record)', () => {
     expect(presentJobStatus({ status }).label).toBe(VENDOR_COPY.job.statusCompleted);
   });
 
-  it.each(['PENDING_VENDOR', 'ACCEPTED', 'IN_PROGRESS', 'REJECTED', 'AWAITING_PARTS', ''])(
+  it.each(['PENDING_VENDOR', 'ACCEPTED', 'IN_PROGRESS', 'REJECTED', 'CANCELLED', 'AWAITING_PARTS', ''])(
     'is not finished for %p, so no payment is shown on it',
     status => {
       expect(isFinishedWork({ status })).toBe(false);
@@ -152,7 +182,7 @@ describe('holdsWork (who and where, only for work the vendor holds)', () => {
     },
   );
 
-  it.each(['CREATED', 'PENDING_VENDOR', 'REJECTED', 'AWAITING_PARTS', ''])(
+  it.each(['CREATED', 'PENDING_VENDOR', 'REJECTED', 'CANCELLED', 'AWAITING_PARTS', ''])(
     'does not hold the work for %p, so nothing of the customer is shown',
     status => {
       expect(holdsWork({ status })).toBe(false);

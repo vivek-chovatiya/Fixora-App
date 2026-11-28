@@ -2,7 +2,7 @@
  * VerificationScene
  *
  * The verification visual, shared by every flow that checks a code: customer
- * sign in, vendor onboarding, and vendor auth-code confirmation.
+ * sign in, vendor sign in and vendor registration.
  *
  * The row of characters does not fade out and hand over to an unrelated
  * animation. The same elements curl from the row onto the ring and orbit there,

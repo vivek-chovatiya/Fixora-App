@@ -257,7 +257,9 @@ export class ApiImageService extends BaseApiService implements ImageService {
   /**
    * What the picker handed back, as the app's assets. Backing out is no photo,
    * not a failure; a picker error rejects by its code alone — the library's
-   * message names files and devices.
+   * message names files and devices. A camera the picker cannot use (none on
+   * the device, an emulator without one, or one another app holds) carries
+   * `CAMERA_UNAVAILABLE`, whose words point to the gallery (T136, 28/11/2026).
    */
   private readPicked(response: ImagePickerResponse, limit: number): ImageAsset[] {
     if (response.didCancel) {
@@ -266,6 +268,7 @@ export class ApiImageService extends BaseApiService implements ImageService {
     if (response.errorCode) {
       throw new AppError({
         kind: response.errorCode === 'permission' ? 'permission' : 'unknown',
+        ...(response.errorCode === 'camera_unavailable' ? { code: 'CAMERA_UNAVAILABLE' } : {}),
         message: `Image picker failed: ${response.errorCode}`,
       });
     }

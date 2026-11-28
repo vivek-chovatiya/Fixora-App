@@ -1,6 +1,7 @@
 /**
- * ApiAuthService is the shared sign-in contract of 17/11/2026 from the app's
- * side, so these tests pin the contract rather than the code:
+ * ApiAuthService is the shared sign-in contract of 17/11/2026, as amended by
+ * phase5-contract.md sections 1 and 2 (28/11/2026), from the app's side, so
+ * these tests pin the contract rather than the code:
  *
  * - each method's exact path, method and body — the key set, not just the
  *   values, so a field added by accident fails here before the backend's Joi
@@ -9,8 +10,13 @@
  *   (`_id`, the top-level role, `isNewAccount`) getting through;
  * - every error code the contract lists, read as the kind and copy the screens
  *   were built against;
- * - the vendor auth code in no error and no log, and a 401 that refuses it
- *   never mistaken for a dead session;
+ * - vendors by one-time code only: the retired auth-code routes
+ *   (`/auth/vendor/signin`, `/auth/vendor/auth-code/*`,
+ *   `/vendors/auth-code/regenerate`) are never called, and no method for them
+ *   is left;
+ * - every challenge's `deliveryChannel`, read leniently — `WHATSAPP` or `NONE`;
+ * - a one-time code in no error and no log, and a refused one never mistaken
+ *   for a dead session;
  * - the session's picture read through `toImageUrl` (Phase 4B, 24/11/2026): a
  *   stored `/uploads/...` path becomes an address this phone can load.
  *
@@ -89,6 +95,7 @@ const CHALLENGE = {
   maskedDestination: '••••••3210',
   expiresAt: '2026-11-17T10:05:00.000Z',
   resendAfterSeconds: 30,
+  deliveryChannel: 'NONE',
 };
 
 const CUSTOMER_SESSION = {
@@ -122,7 +129,8 @@ const VENDOR_SESSION = {
   },
 };
 
-const AUTH_CODE = '482913';
+/** A typed one-time code distinct from every other digit run in these fixtures. */
+const TYPED_CODE = '482913';
 const REGISTRATION_ID = 'reg_6aec5e3ad1f333d4534faf30';
 
 let service: ApiAuthService;
@@ -175,31 +183,24 @@ describe('what each method sends', () => {
     ],
     [
       'verifyVendorOtp',
-      () => service.verifyVendorOtp(REGISTRATION_ID, '123456'),
-      { code: AUTH_CODE, issuedAt: '2026-11-17T10:00:00.000Z' },
+      () => service.verifyVendorOtp(REGISTRATION_ID, ' 123456 '),
+      VENDOR_SESSION,
       '/auth/vendor/otp/verify',
       { registrationId: REGISTRATION_ID, code: '123456' },
     ],
     [
-      'verifyVendorAuthCode',
-      () => service.verifyVendorAuthCode(REGISTRATION_ID, AUTH_CODE),
-      VENDOR_SESSION,
-      '/auth/vendor/auth-code/confirm',
-      { registrationId: REGISTRATION_ID, authCode: AUTH_CODE },
+      'requestVendorSignInOtp',
+      () => service.requestVendorSignInOtp('90000 00001'),
+      CHALLENGE,
+      '/auth/vendor/signin/otp/request',
+      { phone: '9000000001' },
     ],
     [
-      'regenerateVendorAuthCode',
-      () => service.regenerateVendorAuthCode(REGISTRATION_ID),
-      { code: '573014', issuedAt: '2026-11-17T10:01:00.000Z' },
-      '/auth/vendor/auth-code/regenerate',
-      { registrationId: REGISTRATION_ID },
-    ],
-    [
-      'signInVendor',
-      () => service.signInVendor('9000000001', AUTH_CODE),
+      'verifyVendorSignInOtp',
+      () => service.verifyVendorSignInOtp('90000-00001', ' 123456 '),
       VENDOR_SESSION,
-      '/auth/vendor/signin',
-      { phone: '9000000001', authCode: AUTH_CODE },
+      '/auth/vendor/signin/otp/verify',
+      { phone: '9000000001', code: '123456' },
     ],
     ['signOut', () => service.signOut(), null, '/auth/logout', {}],
   ];
@@ -257,6 +258,38 @@ describe('what each method sends', () => {
     });
   });
 
+  it('never calls a retired auth-code route, from any method', async () => {
+    backendAnswers(succeeds(VENDOR_SESSION));
+    const calls: (() => Promise<unknown>)[] = [
+      () => service.verifyVendorOtp(REGISTRATION_ID, '123456'),
+      () => service.verifyVendorSignInOtp('9000000001', '123456'),
+    ];
+    for (const call of calls) {
+      await call();
+    }
+    backendAnswers(succeeds(CHALLENGE));
+    await service.requestVendorSignInOtp('9000000001');
+    await service.requestVendorOtp(REGISTRATION_ID);
+    await service.requestCustomerOtp('9876543210');
+
+    const urls = sent.map(config => config.url);
+    expect(urls).toHaveLength(5);
+    for (const url of urls) {
+      expect(url).not.toMatch(/auth-code/);
+      expect(url).not.toBe('/auth/vendor/signin');
+    }
+    // No body carries an auth code under any name.
+    expect(sent.map(config => String(config.data)).join(' ')).not.toMatch(/authCode/);
+  });
+
+  it('has no method left for the retired auth code', () => {
+    const methods = service as unknown as Record<string, unknown>;
+
+    for (const retired of ['verifyVendorAuthCode', 'regenerateVendorAuthCode', 'signInVendor']) {
+      expect(methods[retired]).toBeUndefined();
+    }
+  });
+
   it('signs out with the session’s bearer token', async () => {
     setTokenProvider(() => 'jwt-customer');
     backendAnswers(succeeds(null));
@@ -275,8 +308,52 @@ describe('what each method answers with', () => {
 
     expect(challenge).toEqual(CHALLENGE);
     expect(Object.keys(challenge).sort()).toEqual(
-      ['expiresAt', 'maskedDestination', 'resendAfterSeconds'],
+      ['deliveryChannel', 'expiresAt', 'maskedDestination', 'resendAfterSeconds'],
     );
+  });
+
+  it.each([
+    ['requestCustomerOtp', () => service.requestCustomerOtp('9876543210')],
+    ['requestVendorSignInOtp', () => service.requestVendorSignInOtp('9000000001')],
+    ['requestVendorOtp', () => service.requestVendorOtp(REGISTRATION_ID)],
+  ])('%s reads a code sent on WhatsApp as WHATSAPP', async (_name, call) => {
+    backendAnswers(succeeds({ ...CHALLENGE, deliveryChannel: 'WHATSAPP' }));
+
+    await expect(call()).resolves.toEqual({ ...CHALLENGE, deliveryChannel: 'WHATSAPP' });
+  });
+
+  it('reads the registration challenge’s channel too', async () => {
+    backendAnswers(
+      succeeds({
+        registrationId: REGISTRATION_ID,
+        challenge: { ...CHALLENGE, deliveryChannel: 'WHATSAPP' },
+      }),
+    );
+
+    const registration = await service.registerVendor({
+      businessName: 'B',
+      ownerFirstName: 'F',
+      ownerLastName: 'L',
+      phone: '9000000001',
+      serviceCategoryIds: ['c'],
+    });
+
+    expect(registration.challenge.deliveryChannel).toBe('WHATSAPP');
+  });
+
+  it.each([
+    ['missing (a backend not yet on the contract)', undefined],
+    ['NONE', 'NONE'],
+    ['a channel the app does not know', 'SMS'],
+    ['the right word in the wrong case', 'whatsapp'],
+    ['not a string', 1],
+    ['null', null],
+  ])('reads a channel that is %s as NONE, and still answers', async (_case, deliveryChannel) => {
+    backendAnswers(succeeds({ ...CHALLENGE, deliveryChannel }));
+
+    const challenge = await service.requestVendorSignInOtp('9000000001');
+
+    expect(challenge.deliveryChannel).toBe('NONE');
   });
 
   it('reads a customer session as the app’s, with nothing else getting through', async () => {
@@ -305,7 +382,7 @@ describe('what each method answers with', () => {
   it('keeps a vendor’s email and picture when they are there', async () => {
     backendAnswers(succeeds(VENDOR_SESSION));
 
-    const session = await service.signInVendor('9000000001', AUTH_CODE);
+    const session = await service.verifyVendorSignInOtp('9000000001', '123456');
 
     expect(session).toEqual({ token: 'jwt-vendor', user: VENDOR_SESSION.user });
   });
@@ -314,7 +391,7 @@ describe('what each method answers with', () => {
     const path = '/uploads/profile/0123456789abcdef0123456789abcdef.jpg';
     backendAnswers(succeeds({ ...VENDOR_SESSION, user: { ...VENDOR_SESSION.user, avatarUrl: path } }));
 
-    const session = await service.signInVendor('9000000001', AUTH_CODE);
+    const session = await service.verifyVendorSignInOtp('9000000001', '123456');
 
     expect(session.user.avatarUrl).toBe(`${AppConfig.api.baseUrl.replace(/\/api\/v1\/?$/, '')}${path}`);
   });
@@ -322,7 +399,7 @@ describe('what each method answers with', () => {
   it('reads a picture that is neither a path nor a URL as none', async () => {
     backendAnswers(succeeds({ ...VENDOR_SESSION, user: { ...VENDOR_SESSION.user, avatarUrl: 'ravi.jpg' } }));
 
-    const session = await service.signInVendor('9000000001', AUTH_CODE);
+    const session = await service.verifyVendorSignInOtp('9000000001', '123456');
 
     expect(session.user).not.toHaveProperty('avatarUrl');
   });
@@ -340,15 +417,16 @@ describe('what each method answers with', () => {
   it('falls back to the top-level role when the user carries none', async () => {
     backendAnswers(succeeds({ ...VENDOR_SESSION, user: { ...VENDOR_SESSION.user, role: undefined } }));
 
-    await expect(service.signInVendor('9000000001', AUTH_CODE)).resolves.toEqual(
+    await expect(service.verifyVendorSignInOtp('9000000001', '123456')).resolves.toEqual(
       expect.objectContaining({ user: expect.objectContaining({ role: 'vendor' }) }),
     );
   });
 
   it.each([
     ['a vendor session from the customer’s verification', () => service.verifyCustomerOtp('9876543210', '123456'), VENDOR_SESSION],
-    ['a customer session from a vendor sign in', () => service.signInVendor('9000000001', AUTH_CODE), CUSTOMER_SESSION],
-    ['an admin session', () => service.signInVendor('9000000001', AUTH_CODE), { ...VENDOR_SESSION, role: 'ADMIN', user: { ...VENDOR_SESSION.user, role: 'admin' } }],
+    ['a customer session from a vendor sign in', () => service.verifyVendorSignInOtp('9000000001', '123456'), CUSTOMER_SESSION],
+    ['a customer session from a vendor registration', () => service.verifyVendorOtp(REGISTRATION_ID, '123456'), CUSTOMER_SESSION],
+    ['an admin session', () => service.verifyVendorSignInOtp('9000000001', '123456'), { ...VENDOR_SESSION, role: 'ADMIN', user: { ...VENDOR_SESSION.user, role: 'admin' } }],
   ])('refuses %s', async (_case, call, data) => {
     backendAnswers(succeeds(data));
 
@@ -365,32 +443,29 @@ describe('what each method answers with', () => {
   ])('refuses a session with %s', async (_case, data) => {
     backendAnswers(succeeds(data));
 
-    const error = await rejectionOf(service.signInVendor('9000000001', AUTH_CODE));
+    const error = await rejectionOf(service.verifyVendorSignInOtp('9000000001', '123456'));
 
     expect(error.kind).toBe('server');
   });
 
-  it('keeps an auth code’s leading zero', async () => {
-    backendAnswers(succeeds({ code: '012345', issuedAt: '2026-11-17T10:00:00.000Z' }));
+  it('reads the registration code’s answer as the new vendor’s session', async () => {
+    backendAnswers(succeeds(VENDOR_SESSION));
 
     await expect(service.verifyVendorOtp(REGISTRATION_ID, '123456')).resolves.toEqual({
-      code: '012345',
-      issuedAt: '2026-11-17T10:00:00.000Z',
+      token: 'jwt-vendor',
+      user: VENDOR_SESSION.user,
     });
   });
 
-  it.each([
-    ['a number, which has lost any leading zero', 482913],
-    ['too short', '48291'],
-    ['not digits', '48a913'],
-  ])('refuses an auth code that is %s, without repeating it', async (_case, code) => {
-    backendAnswers(succeeds({ code, issuedAt: '2026-11-17T10:00:00.000Z' }));
+  it('refuses the retired auth-code answer from the registration code', async () => {
+    // What `/auth/vendor/otp/verify` answered before 28/11/2026. A backend
+    // still sending it has no session to give, and the app must not invent one.
+    backendAnswers(succeeds({ code: TYPED_CODE, issuedAt: '2026-11-17T10:00:00.000Z' }));
 
     const error = await rejectionOf(service.verifyVendorOtp(REGISTRATION_ID, '123456'));
 
     expect(error.kind).toBe('server');
-    const everything = JSON.stringify({ ...error, message: error.message });
-    expect(everything).not.toContain(String(code));
+    expect(JSON.stringify({ ...error, message: error.message })).not.toContain(TYPED_CODE);
   });
 
   it.each([
@@ -423,12 +498,18 @@ describe('every error code the contract lists', () => {
     ['verifyVendorOtp', () => service.verifyVendorOtp(REGISTRATION_ID, '123456'), 400, 'OTP_EXPIRED', 'validation'],
     ['verifyVendorOtp', () => service.verifyVendorOtp(REGISTRATION_ID, '000000'), 429, 'OTP_TOO_MANY_ATTEMPTS', 'unknown'],
     ['verifyVendorOtp', () => service.verifyVendorOtp(REGISTRATION_ID, '123456'), 404, 'REGISTRATION_NOT_FOUND', 'notFound'],
-    ['verifyVendorAuthCode', () => service.verifyVendorAuthCode(REGISTRATION_ID, AUTH_CODE), 404, 'REGISTRATION_NOT_FOUND', 'notFound'],
-    ['regenerateVendorAuthCode', () => service.regenerateVendorAuthCode(REGISTRATION_ID), 404, 'REGISTRATION_NOT_FOUND', 'notFound'],
-    ['signInVendor', () => service.signInVendor('9000000001', AUTH_CODE), 401, 'AUTH_CODE_INVALID', 'unauthorized'],
-    ['signInVendor', () => service.signInVendor('9000000001', AUTH_CODE), 403, 'ACCOUNT_SUSPENDED', 'forbidden'],
-    ['signInVendor', () => service.signInVendor('9000000001', AUTH_CODE), 429, 'SIGNIN_TOO_MANY_ATTEMPTS', 'unknown'],
-    ['verifyVendorAuthCode', () => service.verifyVendorAuthCode(REGISTRATION_ID, '111111'), 429, 'OTP_TOO_MANY_ATTEMPTS', 'unknown'],
+    ['requestVendorSignInOtp', () => service.requestVendorSignInOtp('9000000001'), 400, 'VALIDATION_FAILED', 'validation'],
+    ['requestVendorSignInOtp', () => service.requestVendorSignInOtp('9000000001'), 429, 'OTP_RESEND_TOO_SOON', 'unknown'],
+    ['requestVendorSignInOtp', () => service.requestVendorSignInOtp('9000000001'), 429, 'RATE_LIMITED', 'unknown'],
+    ['verifyVendorSignInOtp', () => service.verifyVendorSignInOtp('9000000001', '000000'), 400, 'OTP_INVALID', 'validation'],
+    ['verifyVendorSignInOtp', () => service.verifyVendorSignInOtp('9000000001', '123456'), 400, 'OTP_EXPIRED', 'validation'],
+    ['verifyVendorSignInOtp', () => service.verifyVendorSignInOtp('9000000001', '000000'), 429, 'OTP_TOO_MANY_ATTEMPTS', 'unknown'],
+    ['verifyVendorSignInOtp', () => service.verifyVendorSignInOtp('9000000001', '123456'), 403, 'ACCOUNT_SUSPENDED', 'forbidden'],
+    // phase5-contract.md section 2: the provider refused or timed out.
+    ['requestCustomerOtp', () => service.requestCustomerOtp('9876543210'), 503, 'OTP_DELIVERY_FAILED', 'server'],
+    ['requestVendorSignInOtp', () => service.requestVendorSignInOtp('9000000001'), 503, 'OTP_DELIVERY_FAILED', 'server'],
+    ['requestVendorOtp', () => service.requestVendorOtp(REGISTRATION_ID), 503, 'OTP_DELIVERY_FAILED', 'server'],
+    ['registerVendor', () => service.registerVendor({ businessName: 'B', ownerFirstName: 'F', ownerLastName: 'L', phone: '9000000001', serviceCategoryIds: ['c'] }), 503, 'OTP_DELIVERY_FAILED', 'server'],
   ];
 
   it.each(cases)('%s reads %i %s as %s, in the app’s words', async (_name, call, status, code, kind) => {
@@ -442,48 +523,47 @@ describe('every error code the contract lists', () => {
     expect(error.userMessage).not.toContain('English');
   });
 
-  it('reads a wrong code at confirmation as a wrong code, not a refused sign in', async () => {
-    backendAnswers(fails(401, 'AUTH_CODE_INVALID'));
+  it('says a code that could not be sent can be asked for again at once', async () => {
+    backendAnswers(fails(503, 'OTP_DELIVERY_FAILED'));
 
-    const error = await rejectionOf(service.verifyVendorAuthCode(REGISTRATION_ID, '111111'));
+    const error = await rejectionOf(service.requestVendorSignInOtp('9000000001'));
 
-    // The mock's sentence for the same mistake, which the screen was built on.
-    expect(error.userMessage).toBe('That code is not correct. Please check and try again.');
-    expect(error.code).toBe('AUTH_CODE_INVALID');
-    expect(error.kind).toBe('unauthorized');
-    expect(error.statusCode).toBe(401);
+    expect(error.userMessage).toBe('We could not send your code just now. Please try again.');
+    expect(error.isRetryable).toBe(true);
+    // Names no channel: the next attempt may not go the same way.
+    expect(error.userMessage).not.toMatch(/whatsapp/i);
   });
 
-  it('reads the confirm step’s 400 AUTH_CODE_INVALID as a wrong code too — by the code, not the status', async () => {
-    backendAnswers(fails(400, 'AUTH_CODE_INVALID'));
+  it.each([
+    ['AUTH_CODE_INVALID', 401, 'unauthorized'],
+    ['SIGNIN_TOO_MANY_ATTEMPTS', 429, 'unknown'],
+  ] as const)('reads the retired %s as its kind, with no sentence of its own', async (code, status, kind) => {
+    backendAnswers(fails(status, code));
 
-    const error = await rejectionOf(service.verifyVendorAuthCode(REGISTRATION_ID, '111111'));
+    const error = await rejectionOf(service.verifyVendorSignInOtp('9000000001', '123456'));
 
-    expect(error.userMessage).toBe('That code is not correct. Please check and try again.');
-    expect(error.code).toBe('AUTH_CODE_INVALID');
-    expect(error.kind).toBe('validation');
-    expect(error.statusCode).toBe(400);
-    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(AppError.messageForCode(code)).toBeUndefined();
+    expect(error.userMessage).toBe(AppError.defaultMessage(kind));
   });
 
-  it('tells a locked vendor how long is left, and signs nobody out', async () => {
-    backendAnswers({ ...fails(429, 'SIGNIN_TOO_MANY_ATTEMPTS'), headers: { 'retry-after': '600' } });
+  it('tells a rate-limited vendor how long is left, and signs nobody out', async () => {
+    backendAnswers({ ...fails(429, 'RATE_LIMITED'), headers: { 'retry-after': '600' } });
 
-    const error = await rejectionOf(service.signInVendor('9000000001', AUTH_CODE));
+    const error = await rejectionOf(service.requestVendorSignInOtp('9000000001'));
 
     expect(error.kind).toBe('unknown');
     expect(error.retryAfterSeconds).toBe(600);
     expect(error.userMessage).toBe('Too many attempts. Try again in 10 minutes.');
     expect(onUnauthorized).not.toHaveBeenCalled();
-    expect(JSON.stringify({ ...error, message: error.message })).not.toContain(AUTH_CODE);
   });
 
-  it('never treats a refused auth code as a dead session', async () => {
-    backendAnswers(fails(401, 'AUTH_CODE_INVALID'));
+  it('never treats a refused code as a dead session', async () => {
+    setTokenProvider(() => 'jwt-somebody');
+    backendAnswers(fails(400, 'OTP_INVALID'));
 
-    await rejectionOf(service.signInVendor('9000000001', AUTH_CODE));
-    sent.length = 0;
-    await rejectionOf(service.verifyVendorAuthCode(REGISTRATION_ID, AUTH_CODE));
+    await rejectionOf(service.verifyVendorSignInOtp('9000000001', TYPED_CODE));
+    await rejectionOf(service.verifyVendorOtp(REGISTRATION_ID, TYPED_CODE));
+    await rejectionOf(service.verifyCustomerOtp('9876543210', TYPED_CODE));
 
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
@@ -498,19 +578,19 @@ describe('every error code the contract lists', () => {
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 
-  it('puts the auth code in no error and no log line', async () => {
-    backendAnswers(fails(401, 'AUTH_CODE_INVALID'));
+  it('puts the typed code in no error and no log line', async () => {
+    backendAnswers(fails(400, 'OTP_INVALID'));
 
-    const signIn = await rejectionOf(service.signInVendor('9000000001', AUTH_CODE));
-    const confirm = await rejectionOf(service.verifyVendorAuthCode(REGISTRATION_ID, AUTH_CODE));
+    const signIn = await rejectionOf(service.verifyVendorSignInOtp('9000000001', TYPED_CODE));
+    const register = await rejectionOf(service.verifyVendorOtp(REGISTRATION_ID, TYPED_CODE));
 
-    for (const error of [signIn, confirm]) {
+    for (const error of [signIn, register]) {
       expect(JSON.stringify({ ...error, message: error.message, cause: error.cause })).not.toContain(
-        AUTH_CODE,
+        TYPED_CODE,
       );
     }
     const logged = JSON.stringify(consoleCalls);
-    expect(logged).toContain('AUTH_CODE_INVALID');
-    expect(logged).not.toContain(AUTH_CODE);
+    expect(logged).toContain('OTP_INVALID');
+    expect(logged).not.toContain(TYPED_CODE);
   });
 });

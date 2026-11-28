@@ -14,14 +14,24 @@
  * session flips RootNavigator instead, so the stack has no route into the
  * application.
  *
- * Vendor authentication is complete alongside it: sign in for returning
- * vendors, and registration through to auth code confirmation for new ones.
- * Auth code display and confirmation are states inside VendorOtp rather than
- * routes, so the credential never travels between screens.
+ * Vendor authentication is complete alongside it, in the same shape: phone,
+ * then one-time code, for returning vendors; registration, then one-time code,
+ * for new ones (phase5-contract.md section 1, 28/11/2026). Either code signs
+ * the vendor in, and nothing navigates onward from it either. There is no auth
+ * code route — that credential was retired.
  *
  * The introduction is gated here rather than in RootNavigator, because this
  * stack is mounted exactly when it is relevant: nobody is signed in. A user with
  * a session never mounts this navigator, so they can never be shown it.
+ *
+ * Before both, once: "Choose your language" (phase5-contract.md section 7,
+ * 28/11/2026), while no language has been chosen on this device. It is drawn
+ * in place of the stack rather than as a route in it, so nothing can navigate
+ * back to it, Android Back on it leaves the app as on any first screen, and the
+ * stack still opens on the first route the onboarding gate picks. Choosing
+ * flips the locale store's `isChosen`, and this navigator follows; a language
+ * other than the current one also re-mounts the tree (AppRoot), so the stack
+ * opens already in it.
  */
 
 import React from 'react';
@@ -33,7 +43,10 @@ import { CustomerOtpScreen } from '@/features/auth/screens/CustomerOtpScreen';
 import { VendorLoginScreen } from '@/features/auth/screens/VendorLoginScreen';
 import { VendorOtpScreen } from '@/features/auth/screens/VendorOtpScreen';
 import { VendorRegistrationScreen } from '@/features/auth/screens/VendorRegistrationScreen';
+import { VendorSignInOtpScreen } from '@/features/auth/screens/VendorSignInOtpScreen';
 import { SplashScreen } from '@/features/auth/screens/SplashScreen';
+import { useLocaleState } from '@/features/language/hooks/useLanguage';
+import { LanguageScreen } from '@/features/language/screens/LanguageScreen';
 import { useOnboardingGate } from '@/features/onboarding/hooks/useOnboardingGate';
 import { OnboardingScreen } from '@/features/onboarding/screens/OnboardingScreen';
 import type { AuthStackParamList } from '@/navigation/types';
@@ -42,6 +55,12 @@ const Stack = createNativeStackNavigator<AuthStackParamList>();
 
 export function AuthNavigator() {
   const gate = useOnboardingGate();
+  const { isChosen } = useLocaleState();
+
+  // First launch: the language comes before the introduction and sign in.
+  if (!isChosen) {
+    return <LanguageScreen mode="first" />;
+  }
 
   /**
    * The same splash the session read shows, so the two checks read as one wait
@@ -74,6 +93,7 @@ export function AuthNavigator() {
       <Stack.Screen name="CustomerLogin" component={CustomerLoginScreen} />
       <Stack.Screen name="CustomerOtp" component={CustomerOtpScreen} />
       <Stack.Screen name="VendorLogin" component={VendorLoginScreen} />
+      <Stack.Screen name="VendorSignInOtp" component={VendorSignInOtpScreen} />
       <Stack.Screen name="VendorRegistration" component={VendorRegistrationScreen} />
       <Stack.Screen name="VendorOtp" component={VendorOtpScreen} />
     </Stack.Navigator>

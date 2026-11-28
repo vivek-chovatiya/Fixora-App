@@ -9,6 +9,9 @@
  * - the phone optional (the request contract's §7): a member added without
  *   one sends none, and an edit without one sends `phone: null`, which clears
  *   it (absent would leave it unchanged);
+ * - the role optional (phase5-contract.md section 4, T137, 28/11/2026): none is
+ *   always sent as `designation: ""` — on an add, and on an edit, where it
+ *   clears it — and a stored `""`, or none at all, reads as no role;
  * - a new photo sent as the URL `ImageService` uploaded it to, and every photo
  *   read back through `toImageUrl` (Phase 4B, 24/11/2026);
  * - `_id`, `vendorId` and timestamps never leaving the service.
@@ -159,6 +162,24 @@ describe('listMembers', () => {
     expect(JSON.stringify(team)).not.toMatch(/_id|vendorId|createdAt|updatedAt|designation|profileImage/);
   });
 
+  it.each([
+    ['an empty designation', ''],
+    ['a blank one', '   '],
+    ['none at all', undefined],
+    ['null', null],
+  ])('reads %s as no role — the key absent, never an empty string (T137)', async (_name, designation) => {
+    const row: Record<string, unknown> = memberRow(ANITA, { designation });
+    if (designation === undefined) {
+      delete row.designation;
+    }
+    backend({ 'GET /team': () => ok([row]) });
+
+    const [member] = await service.listMembers();
+
+    expect(member).toEqual({ id: ANITA, name: 'Anita Rao', phone: '9000011111', status: 'ACTIVE' });
+    expect('role' in member).toBe(false);
+  });
+
   it('reads a stored photo path as an address this phone can load, and anything else as none', async () => {
     backend({
       'GET /team': () =>
@@ -221,6 +242,17 @@ describe('addMember', () => {
     await service.addMember(member);
 
     expect(sent[0].body).toEqual({ name: 'Anita Rao', designation: 'Senior electrician' });
+  });
+
+  it.each([
+    ['no role', input({ role: undefined })],
+    ['a blank role', input({ role: '   ' })],
+  ])('adds a member with %s as designation "" — said, never left to a default (T137)', async (_name, member) => {
+    backend({ 'POST /team': () => ok(memberRow(ANITA, { designation: '' })), 'GET /team': () => ok(TEAM()) });
+
+    await service.addMember(member);
+
+    expect(sent[0].body).toEqual({ name: 'Anita Rao', phone: '9000011111', designation: '' });
   });
 
   it('adds a member with the photo it uploaded, sent as it is held', async () => {
@@ -310,6 +342,20 @@ describe('updateMember', () => {
       name: 'Anita Rao',
       phone: null,
       designation: 'Senior electrician',
+      profileImage: null,
+    });
+  });
+
+  it('clears the role of an edit without one with designation "" (T137)', async () => {
+    backend({ 'POST /team/update': () => ok(memberRow(ANITA, { designation: '' })), 'GET /team': () => ok(TEAM()) });
+
+    await service.updateMember(ANITA, input({ role: undefined }));
+
+    expect(sent[0].body).toEqual({
+      id: ANITA,
+      name: 'Anita Rao',
+      phone: '9000011111',
+      designation: '',
       profileImage: null,
     });
   });

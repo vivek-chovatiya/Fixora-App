@@ -22,6 +22,9 @@
  * multipart call), and logs a refusal — a 4xx — below error level: it is the
  * backend answering, and only a server failing earns the red debug toast.
  *
+ * Since Phase 5 (28/11/2026) every request says which language the app is in
+ * (`Accept-Language: en | hi | gu`) — a seam for a backend that does not read it yet.
+ *
  * ⚠️ Nothing the backend wrote in English reaches `userMessage`, and nothing the
  * request carried reaches the error. The axios error is deliberately not kept as
  * the `cause`: it holds the request body — a one-time code, a vendor's auth
@@ -41,6 +44,7 @@ import axios, {
 } from 'axios';
 
 import { AppConfig } from '@/core/config/AppConfig';
+import { getLocale } from '@/core/i18n/locale';
 import { createLogger } from '@/core/logger/Logger';
 import { AppError } from '@/shared/types/error';
 
@@ -102,15 +106,6 @@ export interface HttpEnvelope<T> {
 }
 
 /**
- * 401 codes that refuse a credential rather than a session.
- *
- * A vendor typing a wrong auth code has no session to end. Sending that refusal
- * to the unauthorized handler would, on a device where somebody is somehow still
- * signed in, sign them out for another person's typing mistake.
- */
-const CREDENTIAL_REFUSAL_CODES: ReadonlySet<string> = new Set(['AUTH_CODE_INVALID']);
-
-/**
  * A request as this client sends it: with the token it carried, kept so that its
  * 401 can be judged against the session it was sent for rather than whichever
  * one is signed in when the answer arrives.
@@ -134,7 +129,7 @@ function describeCall(config: AxiosRequestConfig | undefined): { method?: string
  *
  * The field names are kept; the backend's sentences are not. They are English
  * written for developers, and Joi's pattern message quotes the rejected value —
- * which for the auth code would put the credential in the error.
+ * which for a one-time code would put the code in the error.
  */
 function toFieldErrors(errors: unknown): Record<string, string> | undefined {
   if (!Array.isArray(errors)) {
@@ -217,6 +212,11 @@ function createInstance(): AxiosInstance {
   });
 
   instance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+    // The language the app is speaking, read per request so a change applies to
+    // the very next call (phase5-contract.md section 7). A seam only: the
+    // backend ignores it for now, and nothing it writes is translated yet.
+    config.headers.set('Accept-Language', getLocale());
+
     const token = tokenProvider();
     if (token) {
       config.headers.set('Authorization', `Bearer ${token}`);
@@ -243,12 +243,14 @@ function createInstance(): AxiosInstance {
  * acting on it would sign the wrong person out. A request that carried no token
  * had no session to lose. A revoked session (the backend's token version) is
  * still the current token, so it still signs out.
+ *
+ * There is no list of 401 codes that refuse a credential rather than a session
+ * any more. It held the vendor auth code's `AUTH_CODE_INVALID` alone, and that
+ * code was retired with the auth code (phase5-contract.md section 1.3): every
+ * one-time-code refusal is a 400, a 403 or a 429, none of which reaches here.
  */
 function isCurrentSessionRejected(appError: AppError, config: SentConfig | undefined): boolean {
   if (appError.kind !== 'unauthorized') {
-    return false;
-  }
-  if (appError.code && CREDENTIAL_REFUSAL_CODES.has(appError.code)) {
     return false;
   }
   if ((config as HttpRequestConfig | undefined)?.skipUnauthorizedHandler) {

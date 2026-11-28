@@ -3,7 +3,9 @@
  *
  * The padding between the window's edges and a dialog drawn on the platform
  * `Modal`, shared by `ConfirmDialog` and the vendor's `TimeChoiceDialog`, the
- * two dialogs built on that shell.
+ * two dialogs built on that shell — and by `OptionsSheet` (28/11/2026), which
+ * takes the top edge for its backdrop and the bottom one inside its own
+ * surface, so the sheet's fill still reaches the bottom of the window.
  *
  * It exists because a `statusBarTranslucent` modal is the whole window: its
  * backdrop runs up behind the status bar and down behind the gesture bar, and a

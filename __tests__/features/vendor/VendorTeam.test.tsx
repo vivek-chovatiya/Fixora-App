@@ -12,8 +12,11 @@
  * - nobody yet is section 48's sentence with its one Add
  * - loading, a failed first read and its retry (once, however often pressed),
  *   a failed pull keeping the team under a notice, and a read on returning
- * - adding: required fields said under each field and nothing sent; success
+ * - adding: the required name said under its field and nothing sent; success
  *   said and the member listed; a failure keeps every value; Save sends once
+ * - the role is optional (T137, 28/11/2026): the field says "Optional" with no
+ *   required marker; no role sends none, an emptied one clears it, and a card
+ *   with none has no role line and is spoken as the name alone
  * - editing: opens on the stored details; saves; a failure keeps the edits;
  *   Save sends once; a member no longer on the team says so; leaving unsaved
  *   asks first
@@ -30,7 +33,10 @@
  *   toasts; what was typed survives, and the change alone never wakes the
  *   discard guard; saving afterwards keeps the status
  * - the photo (section 39's Profile Image, 2026-10-21): the card shows it and
- *   says exactly what it said before; the form adds, replaces and removes it,
+ *   says exactly what it said before; the form adds, replaces and removes it
+ *   through one button and its options sheet (T136) — gallery, camera, and
+ *   Remove only when there is a photo; backing out changes nothing, and a
+ *   camera that cannot be used says so in plain words;
  *   uploads it when chosen, keeps everything typed when the upload fails,
  *   never saves while an upload runs nor uploads while a save does, and asks
  *   before a chosen photo is left behind; an upload says "Uploading the
@@ -599,7 +605,8 @@ describe('Vendor team — adding', () => {
     await screen.press(FORM.saveAdd, screen.form());
 
     expect(screen.fieldError('team-member-name')).toBe(RULES.memberNameRequired);
-    expect(screen.fieldError('team-member-role')).toBe(RULES.memberRoleRequired);
+    // The role is optional (T137): nothing is asked of it.
+    expect(screen.fieldError('team-member-role')).toBeUndefined();
     expect(screen.fieldError('team-member-phone')).toBeUndefined();
     expect(screen.has('team-member-fix-errors')).toBe(true);
     expect(addMember).not.toHaveBeenCalled();
@@ -640,6 +647,50 @@ describe('Vendor team — adding', () => {
     await addThroughForm(screen, { name: 'Kiran Rao', role: 'Apprentice' });
 
     expect(Object.keys(addMember.mock.calls[0][0]).sort()).toEqual(['name', 'role']);
+  });
+
+  it('adds a member with no role: none is sent, and their card has no role line (T137)', async () => {
+    const addMember = jest.spyOn(team, 'addMember');
+    const screen = await render();
+
+    await addThroughForm(screen, { name: 'Kiran Rao', role: '   ' });
+
+    expect(addMember).toHaveBeenCalledTimes(1);
+    expect(addMember.mock.calls[0][0]).toEqual({ name: 'Kiran Rao' });
+    const added = screen.members()[3];
+    expect(added.name).toBe('Kiran Rao');
+    expect('role' in added).toBe(false);
+    expect(screen.has(`team-member-${added.id}-role`)).toBe(false);
+    expect(screen.details(added.id)).toBe('Kiran Rao');
+  });
+
+  it('says the role is optional, as the phone does, with no required marker (T137)', async () => {
+    const screen = await render();
+    await screen.press(COPY.add);
+
+    const [role] = screen
+      .form()
+      .findAll(node => node.props?.testID === 'team-member-role' && 'helperText' in (node.props ?? {}));
+    expect(role.props.helperText).toBe(FORM.roleHelper);
+    expect(role.props.required).toBeFalsy();
+    const [name] = screen
+      .form()
+      .findAll(node => node.props?.testID === 'team-member-name' && 'required' in (node.props ?? {}));
+    expect(name.props.required).toBe(true);
+  });
+
+  it('clears a member’s role when it is emptied on an edit (T137)', async () => {
+    const updateMember = jest.spyOn(team, 'updateMember');
+    const screen = await render();
+    await screen.press(COPY.editSpoken('Suresh Naik'));
+
+    await screen.type('team-member-role', '');
+    await screen.press(FORM.saveEdit, screen.form());
+
+    expect(Object.keys(updateMember.mock.calls[0][1]).sort()).toEqual(['name', 'phone']);
+    expect('role' in screen.members()[0]).toBe(false);
+    expect(screen.has('team-member-tm_1-role')).toBe(false);
+    expect(screen.details('tm_1')).toBe(COPY.memberSpoken('Suresh Naik', undefined, formatPhone('9000000101')));
   });
 
   it('keeps everything typed when adding fails, and Save tries again', async () => {
@@ -1645,6 +1696,47 @@ describe('Vendor team — the photo', () => {
 
   const withStoredPhoto = () => team.updateMember('tm_1', { ...SURESH, photoUrl: STORED });
 
+  /** "Add photo", or "Change photo" over one: the one button that opens the photo options (T136). */
+  const photoButton = (screen: Screen): Instance =>
+    screen.pressable(FORM.photoAdd, screen.form())[0] ?? screen.pressable(FORM.photoChange, screen.form())[0];
+
+  /** iOS's end of the sheet's fade, which runs the choice (`OptionsSheet`); tests run as iOS. */
+  const sheetGone = async (screen: Screen) => {
+    await act(async () => {
+      screen.renderer.root
+        .findAll(node => typeof node.props?.onDismiss === 'function')
+        .forEach(node => node.props.onDismiss());
+    });
+    await screen.flush();
+  };
+
+  const openOptions = async (screen: Screen) => {
+    await act(async () => {
+      photoButton(screen).props.onPress();
+    });
+    await screen.flush();
+  };
+
+  /** The options the open sheet offers, in order, by their words. */
+  const offered = (screen: Screen): string[] =>
+    screen
+      .host('team-member-photo-sheet')
+      .findAll(node => node.props?.accessibilityRole === 'button' && typeof node.props?.onPress === 'function')
+      .map(node => String(node.props.accessibilityLabel))
+      .filter(label => label !== FORM.photoCancel);
+
+  const cancelOptions = async (screen: Screen) => {
+    await screen.press(FORM.photoCancel, screen.host('team-member-photo-sheet'));
+    await sheetGone(screen);
+  };
+
+  /** Opens the photo options and makes a choice, letting the sheet go as iOS does. */
+  const choosePhoto = async (screen: Screen, label: string) => {
+    await openOptions(screen);
+    await screen.press(label, screen.host('team-member-photo-sheet'));
+    await sheetGone(screen);
+  };
+
   it('shows a member’s photo on their card, and says the card exactly as before', async () => {
     await withStoredPhoto();
     const screen = await render();
@@ -1677,9 +1769,16 @@ describe('Vendor team — the photo', () => {
       )
       .map(node => node.props.testID);
     expect(order[0]).toBe('team-member-photo');
-    expect(screen.pressable(FORM.photoAddCameraSpoken, screen.form()).length).toBeGreaterThan(0);
-    expect(screen.pressable(FORM.photoAddGallerySpoken, screen.form()).length).toBeGreaterThan(0);
-    expect(screen.pressable(FORM.photoRemoveSpoken)).toHaveLength(0);
+    // One button, offering to add; the old row of three is gone.
+    expect(screen.pressable(FORM.photoAdd, screen.form())).toHaveLength(1);
+    expect(screen.pressable(FORM.photoChange, screen.form())).toHaveLength(0);
+    expect(photoButton(screen).props.accessibilityHint).toBe(FORM.photoOptionsHint);
+    await openOptions(screen);
+    expect(screen.host('team-member-photo-sheet').props.accessibilityLabel).toBe(FORM.photoSheetTitle);
+    // The gallery, then the camera — and nothing to remove, with no photo.
+    expect(offered(screen)).toEqual([FORM.photoGallery, FORM.photoCamera]);
+    expect(screen.pressable(FORM.photoRemove)).toHaveLength(0);
+    await cancelOptions(screen);
     // The picture is not a stop: the actions say whether there is one.
     expect(hiddenFromScreenReader(screen, 'team-member-photo-avatar')).toBe(true);
   });
@@ -1689,7 +1788,7 @@ describe('Vendor team — the photo', () => {
     const screen = await render();
     await screen.press(COPY.add);
 
-    await screen.press(FORM.photoAddGallerySpoken, screen.form());
+    await choosePhoto(screen, FORM.photoGallery);
 
     expect(pickFromGallery).toHaveBeenCalledTimes(1);
     expect(upload).toHaveBeenCalledTimes(1);
@@ -1698,8 +1797,10 @@ describe('Vendor team — the photo', () => {
     // Uploaded, not saved: nothing reaches the team until Save.
     expect(addMember).not.toHaveBeenCalled();
     expect(pictureOf(screen, 'team-member-photo-avatar')).toEqual({ uri: UPLOADED });
-    expect(screen.pressable(FORM.photoReplaceGallerySpoken, screen.form()).length).toBeGreaterThan(0);
-    expect(screen.pressable(FORM.photoRemoveSpoken, screen.form()).length).toBeGreaterThan(0);
+    expect(screen.pressable(FORM.photoChange, screen.form())).toHaveLength(1);
+    await openOptions(screen);
+    expect(offered(screen)).toEqual([FORM.photoGallery, FORM.photoCamera, FORM.photoRemove]);
+    await cancelOptions(screen);
 
     await screen.type('team-member-name', 'Kiran Rao');
     await screen.type('team-member-role', 'Apprentice');
@@ -1718,9 +1819,9 @@ describe('Vendor team — the photo', () => {
     await screen.press(COPY.editSpoken('Suresh Naik'));
 
     expect(pictureOf(screen, 'team-member-photo-avatar')).toEqual({ uri: STORED });
-    expect(screen.pressable(FORM.photoRemoveSpoken, screen.form()).length).toBeGreaterThan(0);
+    expect(screen.pressable(FORM.photoChange, screen.form())).toHaveLength(1);
 
-    await screen.press(FORM.photoReplaceCameraSpoken, screen.form());
+    await choosePhoto(screen, FORM.photoCamera);
     expect(pickFromCamera).toHaveBeenCalledTimes(1);
     await screen.press(FORM.saveEdit, screen.form());
 
@@ -1748,9 +1849,9 @@ describe('Vendor team — the photo', () => {
     const screen = await render();
     await screen.press(COPY.editSpoken('Suresh Naik'));
 
-    await screen.press(FORM.photoRemoveSpoken, screen.form());
+    await choosePhoto(screen, FORM.photoRemove);
     expect(pictureOf(screen, 'team-member-photo-avatar')).toBeUndefined();
-    expect(screen.pressable(FORM.photoAddCameraSpoken, screen.form()).length).toBeGreaterThan(0);
+    expect(screen.pressable(FORM.photoAdd, screen.form())).toHaveLength(1);
     // Not saved yet: the stored photo is untouched until Save.
     expect((await team.listMembers())[0].photoUrl).toBe(STORED);
 
@@ -1770,7 +1871,7 @@ describe('Vendor team — the photo', () => {
     await screen.type('team-member-role', 'Apprentice');
     await screen.type('team-member-phone', '9000000104');
 
-    await screen.press(FORM.photoAddGallerySpoken, screen.form());
+    await choosePhoto(screen, FORM.photoGallery);
 
     expect(screen.text('team-member-photo-error')).toContain(FORM.photoFailedTitle);
     // The failure's own words never reach the screen.
@@ -1779,7 +1880,9 @@ describe('Vendor team — the photo', () => {
     expect(screen.field('team-member-role').props.value).toBe('Apprentice');
     expect(screen.field('team-member-phone').props.value).toBe('9000000104');
     // Nothing was uploaded: there is no photo to remove, and none is drawn.
-    expect(screen.pressable(FORM.photoRemoveSpoken)).toHaveLength(0);
+    await openOptions(screen);
+    expect(offered(screen)).toEqual([FORM.photoGallery, FORM.photoCamera]);
+    await cancelOptions(screen);
     expect(pictureOf(screen, 'team-member-photo-avatar')).toBeUndefined();
 
     await screen.press(FORM.photoRetry, screen.host('team-member-photo'));
@@ -1804,11 +1907,11 @@ describe('Vendor team — the photo', () => {
     const screen = await render();
     await screen.press(COPY.add);
 
-    await screen.press(FORM.photoAddCameraSpoken, screen.form());
+    await choosePhoto(screen, FORM.photoCamera);
     await screen.press(FORM.photoDiscard, screen.host('team-member-photo'));
 
     expect(screen.has('team-member-photo-error')).toBe(false);
-    expect(screen.pressable(FORM.photoAddCameraSpoken, screen.form()).length).toBeGreaterThan(0);
+    expect(screen.pressable(FORM.photoAdd, screen.form())).toHaveLength(1);
 
     await screen.type('team-member-name', 'Kiran Rao');
     await screen.type('team-member-role', 'Apprentice');
@@ -1826,13 +1929,13 @@ describe('Vendor team — the photo', () => {
     await screen.type('team-member-name', 'Kiran Rao');
     await screen.type('team-member-role', 'Apprentice');
 
-    await screen.press(FORM.photoAddCameraSpoken, screen.form());
+    await choosePhoto(screen, FORM.photoCamera);
 
     expect(screen.text('team-member-photo-busy')).toContain(FORM.photoUploading);
     expect(screen.host('team-member-photo-busy').props.accessibilityLiveRegion).toBe('polite');
     expect(screen.pressable(FORM.saveAdd, screen.form())[0].props.disabled).toBe(true);
     // Nothing else can start another photo meanwhile.
-    expect(screen.pressable(FORM.photoAddGallerySpoken, screen.form())[0].props.disabled).toBe(true);
+    expect(photoButton(screen).props.disabled).toBe(true);
     await screen.press(FORM.saveAdd, screen.form());
     expect(addMember).not.toHaveBeenCalled();
 
@@ -1857,11 +1960,16 @@ describe('Vendor team — the photo', () => {
     await screen.type('team-member-name', 'Kiran Rao');
     await screen.type('team-member-role', 'Apprentice');
 
-    const [camera] = screen.pressable(FORM.photoAddCameraSpoken, screen.form());
+    await openOptions(screen);
+    const [camera] = screen.pressable(FORM.photoCamera, screen.host('team-member-photo-sheet'));
     const [save] = screen.pressable(FORM.saveAdd, screen.form());
-    // One frame: Save is pressed before the screen has drawn the upload as running.
+    // One frame: the camera chosen and the sheet gone, then Save, before the
+    // screen has drawn the upload as running.
     await act(async () => {
       camera.props.onPress();
+      screen.renderer.root
+        .findAll(node => typeof node.props?.onDismiss === 'function')
+        .forEach(node => node.props.onDismiss());
       save.props.onPress();
     });
     await screen.flush();
@@ -1885,14 +1993,12 @@ describe('Vendor team — the photo', () => {
 
     await screen.press(FORM.saveAdd, screen.form());
     expect(addMember).toHaveBeenCalledTimes(1);
-    expect(screen.pressable(FORM.photoAddCameraSpoken, screen.form())[0].props.disabled).toBe(true);
+    expect(photoButton(screen).props.disabled).toBe(true);
 
-    // Straight to the form's own handler, as a tap in the frame before the button greyed out.
-    const [handler] = screen
-      .form()
-      .findAll(node => node.props?.label === FORM.photoCamera && typeof node.props?.onPress === 'function');
+    // Straight to the form's own handler, as a choice made in the frame before the button greyed out.
+    const [field] = screen.form().findAll(node => typeof node.props?.onTakePhoto === 'function');
     await act(async () => {
-      handler.props.onPress();
+      field.props.onTakePhoto();
     });
     await screen.flush();
     expect(pickFromCamera).not.toHaveBeenCalled();
@@ -1913,7 +2019,7 @@ describe('Vendor team — the photo', () => {
     expect(screen.onForm()).toBe(false);
 
     await screen.press(COPY.editSpoken('Suresh Naik'));
-    await screen.press(FORM.photoRemoveSpoken, screen.form());
+    await choosePhoto(screen, FORM.photoRemove);
     await screen.press(FORM.back);
     expect(screen.onForm()).toBe(true);
     expect(screen.pressable(FORM.discardKeep)).toHaveLength(1);
@@ -1928,7 +2034,7 @@ describe('Vendor team — the photo', () => {
     const screen = await render();
     await screen.press(COPY.add);
 
-    await screen.press(FORM.photoAddGallerySpoken, screen.form());
+    await choosePhoto(screen, FORM.photoGallery);
     await screen.press(FORM.back);
 
     expect(screen.onForm()).toBe(true);
@@ -1965,7 +2071,7 @@ describe('Vendor team — the photo', () => {
     const screen = await render();
     await screen.press(COPY.add);
 
-    await screen.press(FORM.photoAddCameraSpoken, screen.form());
+    await choosePhoto(screen, FORM.photoCamera);
 
     expect(screen.text('team-member-photo-busy')).toBe(FORM.photoUploading);
     expect(screen.host('team-member-photo-busy').props.accessibilityLiveRegion).toBe('polite');
@@ -1982,7 +2088,7 @@ describe('Vendor team — the photo', () => {
     const { uploading, report } = holdUpload();
     const screen = await render();
     await screen.press(COPY.add);
-    await screen.press(FORM.photoAddCameraSpoken, screen.form());
+    await choosePhoto(screen, FORM.photoCamera);
 
     await report(screen, 0.42);
 
@@ -2017,7 +2123,7 @@ describe('Vendor team — the photo', () => {
     const { uploading, report } = holdUpload();
     const screen = await render();
     await screen.press(COPY.add);
-    await screen.press(FORM.photoAddCameraSpoken, screen.form());
+    await choosePhoto(screen, FORM.photoCamera);
 
     await report(screen, 0.2);
     expect(liveRegionsIn(screen.host('team-member-photo-progress'))).toEqual([]);
@@ -2036,7 +2142,7 @@ describe('Vendor team — the photo', () => {
     const first = holdUpload();
     const screen = await render();
     await screen.press(COPY.add);
-    await screen.press(FORM.photoAddCameraSpoken, screen.form());
+    await choosePhoto(screen, FORM.photoCamera);
     await first.report(screen, 0.5);
     expect(screen.has('team-member-photo-progress')).toBe(true);
 
@@ -2048,7 +2154,7 @@ describe('Vendor team — the photo', () => {
     expect(screen.has('team-member-photo-busy')).toBe(false);
 
     const second = holdUpload();
-    await screen.press(FORM.photoReplaceGallerySpoken, screen.form());
+    await choosePhoto(screen, FORM.photoGallery);
     await second.report(screen, 0.3);
     expect(screen.has('team-member-photo-progress')).toBe(true);
 
@@ -2058,6 +2164,52 @@ describe('Vendor team — the photo', () => {
     await screen.flush();
     expect(screen.has('team-member-photo-progress')).toBe(false);
     expect(screen.text('team-member-photo-error')).toContain(FORM.photoFailedTitle);
+  });
+
+  /* Backing out, and a camera that cannot be used (T136) ------------------- */
+
+  it('changes nothing when the camera or the gallery is backed out of', async () => {
+    pickFromCamera.mockResolvedValueOnce([]);
+    pickFromGallery.mockResolvedValueOnce([]);
+    const screen = await render();
+    await screen.press(COPY.add);
+    await screen.type('team-member-name', 'Kiran Rao');
+
+    await choosePhoto(screen, FORM.photoCamera);
+    await choosePhoto(screen, FORM.photoGallery);
+
+    expect(pickFromCamera).toHaveBeenCalledTimes(1);
+    expect(pickFromGallery).toHaveBeenCalledTimes(1);
+    expect(upload).not.toHaveBeenCalled();
+    expect(screen.has('team-member-photo-error')).toBe(false);
+    expect(screen.has('team-member-photo-busy')).toBe(false);
+    expect(pictureOf(screen, 'team-member-photo-avatar')).toBeUndefined();
+    expect(screen.pressable(FORM.photoAdd, screen.form())).toHaveLength(1);
+    expect(screen.field('team-member-name').props.value).toBe('Kiran Rao');
+  });
+
+  it('says in plain words when the camera cannot be used, keeps everything typed, and the gallery still works', async () => {
+    pickFromCamera.mockRejectedValueOnce(
+      new AppError({ kind: 'unknown', code: 'CAMERA_UNAVAILABLE', message: 'Image picker failed: camera_unavailable' }),
+    );
+    const screen = await render();
+    await screen.press(COPY.add);
+    await screen.type('team-member-name', 'Kiran Rao');
+
+    await choosePhoto(screen, FORM.photoCamera);
+
+    const words = AppError.messageForCode('CAMERA_UNAVAILABLE') as string;
+    expect(words).toMatch(/gallery/);
+    expect(upload).not.toHaveBeenCalled();
+    expect(screen.text('team-member-photo-error')).toContain(words);
+    expect(screen.text('team-member-photo')).not.toContain('camera_unavailable');
+    // No photo was taken, so there is nothing to try again.
+    expect(screen.pressable(FORM.photoRetry, screen.host('team-member-photo'))).toHaveLength(0);
+    expect(screen.field('team-member-name').props.value).toBe('Kiran Rao');
+
+    await choosePhoto(screen, FORM.photoGallery);
+    expect(pictureOf(screen, 'team-member-photo-avatar')).toEqual({ uri: UPLOADED });
+    expect(screen.has('team-member-photo-error')).toBe(false);
   });
 });
 

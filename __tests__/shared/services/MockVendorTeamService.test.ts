@@ -7,8 +7,9 @@
  *   refused on every call; no call takes a vendor id
  * - one vendor never sees or changes another's team: a member id that is not
  *   on this team is `notFound`, even when it is on somebody else's
- * - it re-checks what it is sent (a name and a role within their ceilings, a
- *   phone that is a phone) and stores it normalised; a refusal changes nothing
+ * - it re-checks what it is sent (a name, and a role when there is one, within
+ *   their ceilings; a phone that is a phone) and stores it normalised — a blank
+ *   role as none (T137, 28/11/2026); a refusal changes nothing
  * - every mutation answers with the whole team, in the order members were added
  * - the team survives a restart; "nobody" stays nobody; a removed member's id
  *   is never handed to somebody new; a change that could not be stored did not
@@ -186,13 +187,11 @@ describe('MockVendorTeamService — adding', () => {
     }
   });
 
-  it('refuses a missing name or role, one too long, or a phone that is not a phone — and adds nobody', async () => {
+  it('refuses a missing name, a name or role too long, or a phone that is not a phone — and adds nobody', async () => {
     const team = service();
     const refused = [
       { name: '', role: 'Helper' },
       { name: '   ', role: 'Helper' },
-      { name: 'Kiran Rao', role: '' },
-      { name: 'Kiran Rao', role: '  ' },
       { name: 'K'.repeat(81), role: 'Helper' },
       { name: 'Kiran Rao', role: 'R'.repeat(61) },
       { name: 'Kiran Rao', role: 'Helper', phone: '12345' },
@@ -204,6 +203,16 @@ describe('MockVendorTeamService — adding', () => {
       expect((await refusal(team.addMember(input))).kind).toBe('validation');
     }
     expect(await team.listMembers()).toEqual(RAVI_TEAM);
+  });
+
+  it('adds a member with no role — none, blank or only spaces — storing no role key at all (T137)', async () => {
+    for (const role of [undefined, '', '   ']) {
+      current = { ...MEENA, id: `usr_vendor_norole_${String(role).length}` };
+      const [added] = await service().addMember({ name: 'Kiran Rao', role });
+
+      expect(added).toEqual({ id: added.id, name: 'Kiran Rao', status: 'ACTIVE' });
+      expect('role' in added).toBe(false);
+    }
   });
 
   it('accepts a name and a role at exactly their ceilings', async () => {
@@ -254,6 +263,12 @@ describe('MockVendorTeamService — editing', () => {
       status: 'ACTIVE',
     });
     expect(answer.map(member => member.id)).toEqual(['tm_1', 'tm_2', 'tm_3']);
+  });
+
+  it('clears a role the vendor emptied (T137)', async () => {
+    const answer = await service().updateMember('tm_1', { name: 'Suresh Naik', role: '', phone: '9000000101' });
+
+    expect(answer[0]).toEqual({ id: 'tm_1', name: 'Suresh Naik', phone: '9000000101', status: 'ACTIVE' });
   });
 
   it('clears a phone the vendor emptied', async () => {

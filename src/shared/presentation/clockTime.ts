@@ -12,7 +12,13 @@
  * what turns 19:00 into "7:00 PM" for a reader whose locale wants that and
  * leaves it as "19:00" for one whose locale does not — so a test compares with
  * this function's own answer, never with a literal "7:00 PM".
+ *
+ * Since Phase 5 (28/11/2026) it follows the interface's language when that is
+ * Hindi or Gujarati (`intlLocaleTag`); in English it is the device's own clock,
+ * exactly as before.
  */
+
+import { intlLocaleTag } from '@/core/i18n';
 
 /**
  * Reads a stored `HH:mm` back out in the reader's own clock format. A value it
@@ -29,5 +35,5 @@ export function formatTimeValue(value: string): string {
   }
 
   const reference = new Date(2000, 0, 1, hour, minute);
-  return reference.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return reference.toLocaleTimeString(intlLocaleTag(), { hour: 'numeric', minute: '2-digit' });
 }

@@ -33,12 +33,22 @@
  * the cards stay apart (above), this one part of them is the same.
  *
  * The picture is decorative unless the caller names it (`pictureSpoken`): on
- * the team form the actions already say whether there is a photo ("Add their
- * photo…" or "Replace their photo…"), so a stop saying only "photo" adds
- * nothing; the business picture names itself, as it always has.
+ * the team form the action already says whether there is a photo ("Add
+ * photo" or "Change photo"), so a stop saying only "photo" adds nothing; the
+ * business picture names itself, as it always has.
+ *
+ * ⚠️ Two ways to offer the actions (`actions`). The business picture keeps its
+ * buttons on the card (`buttons`, the default). The team member's photo has
+ * one button that opens an `OptionsSheet` — "Choose from gallery", "Take
+ * photo", and "Remove photo" only when there is one to remove (`sheet`, T136,
+ * phase5-contract.md section 5, 28/11/2026). Each way has its own words
+ * (`PhotoFieldCopy`, `PhotoFieldSheetCopy`); everything after a choice — the
+ * upload, its progress, a failure with Try again and Discard — is the same
+ * card. The sheet runs a choice once it is closing (its header says why), so
+ * the camera and the photo library open over the form, not over the sheet.
  */
 
-import React from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import {
@@ -46,25 +56,19 @@ import {
   Button,
   Card,
   ErrorState,
+  OptionsSheet,
   PhotoUploadProgress,
   SecondaryButton,
   Text,
+  type OptionsSheetOption,
 } from '@/shared/components';
 import type { ImageUpload } from '@/shared/hooks/useImageUpload';
 import { useTheme, type IconName } from '@/shared/theme';
 
-/** The words a photo field needs; each form passes its own frozen copy. */
-export interface PhotoFieldCopy {
+/** The words both ways of offering the actions share. */
+interface PhotoFieldSharedCopy {
   photoSection: string;
   photoSupport: string;
-  photoCamera: string;
-  photoGallery: string;
-  photoAddCameraSpoken: string;
-  photoAddGallerySpoken: string;
-  photoReplaceCameraSpoken: string;
-  photoReplaceGallerySpoken: string;
-  photoRemove: string;
-  photoRemoveSpoken: string;
   /** Before the upload has reported a figure; spoken once. */
   photoUploading: string;
   /** Beside the bar, once it has. */
@@ -75,7 +79,37 @@ export interface PhotoFieldCopy {
   photoDiscardHint: string;
 }
 
-export interface PhotoFieldProps {
+/** The words for buttons on the card (the business picture); each form passes its own frozen copy. */
+export interface PhotoFieldCopy extends PhotoFieldSharedCopy {
+  photoCamera: string;
+  photoGallery: string;
+  photoAddCameraSpoken: string;
+  photoAddGallerySpoken: string;
+  photoReplaceCameraSpoken: string;
+  photoReplaceGallerySpoken: string;
+  photoRemove: string;
+  photoRemoveSpoken: string;
+}
+
+/** The words for one button and its options sheet (the team member's photo, T136). */
+export interface PhotoFieldSheetCopy extends PhotoFieldSharedCopy {
+  /** The button with no photo yet. */
+  photoAdd: string;
+  /** The button over a photo. */
+  photoChange: string;
+  photoOptionsHint: string;
+  photoSheetTitle: string;
+  photoGallery: string;
+  photoGalleryHint: string;
+  photoCamera: string;
+  photoCameraHint: string;
+  photoRemove: string;
+  photoRemoveHint: string;
+  photoCancel: string;
+  photoCancelHint: string;
+}
+
+interface PhotoFieldBaseProps {
   photo: ImageUpload;
   /** The uploaded picture the form holds; undefined for none. */
   photoUrl: string | undefined;
@@ -85,7 +119,6 @@ export interface PhotoFieldProps {
   fallbackIcon?: IconName;
   /** The picture's spoken name; absent, the picture is hidden from a screen reader. */
   pictureSpoken?: string;
-  copy: PhotoFieldCopy;
   /** The form is saving (or doing something else of its own): nothing here can be pressed. */
   locked: boolean;
   onTakePhoto: () => void;
@@ -93,25 +126,32 @@ export interface PhotoFieldProps {
   onRemovePhoto: () => void;
   /** Uploads the picture that failed again, without opening the picker. */
   onRetryPhoto: () => void;
-  /** The card's; its parts are `-avatar`, `-busy`, `-progress` and `-error` after it. */
+  /** The card's; its parts are `-avatar`, `-busy`, `-progress`, `-error` and, with a sheet, `-sheet` after it. */
   testID: string;
 }
 
+export type PhotoFieldProps = PhotoFieldBaseProps &
+  (
+    | { actions?: 'buttons'; copy: PhotoFieldCopy }
+    | { actions: 'sheet'; copy: PhotoFieldSheetCopy }
+  );
+
 /** Not memoised: `photo` is a new object on every render of its form. */
-export function PhotoField({
-  photo,
-  photoUrl,
-  name,
-  fallbackIcon,
-  pictureSpoken,
-  copy,
-  locked,
-  onTakePhoto,
-  onChoosePhoto,
-  onRemovePhoto,
-  onRetryPhoto,
-  testID,
-}: PhotoFieldProps) {
+export function PhotoField(props: PhotoFieldProps) {
+  const {
+    photo,
+    photoUrl,
+    name,
+    fallbackIcon,
+    pictureSpoken,
+    copy,
+    locked,
+    onTakePhoto,
+    onChoosePhoto,
+    onRemovePhoto,
+    onRetryPhoto,
+    testID,
+  } = props;
   const theme = useTheme();
   const hasPhoto = photoUrl !== undefined;
   // One thing at a time: never while the form saves, never during another picture action.
@@ -157,34 +197,54 @@ export function PhotoField({
         </Text>
       </View>
 
-      <View style={[styles.row, { gap: theme.spacing.sm }]}>
-        <SecondaryButton
-          label={copy.photoCamera}
-          icon="camera"
-          onPress={onTakePhoto}
+      {props.actions === 'sheet' ? (
+        <PhotoOptions
+          copy={props.copy}
+          hasPhoto={hasPhoto}
+          // As the Remove button below: not over a photo that has not uploaded yet.
+          canRemove={hasPhoto && !photo.pending}
           disabled={busy}
-          accessibilityLabel={hasPhoto ? copy.photoReplaceCameraSpoken : copy.photoAddCameraSpoken}
-          style={styles.rowItem}
+          onTakePhoto={onTakePhoto}
+          onChoosePhoto={onChoosePhoto}
+          onRemovePhoto={onRemovePhoto}
+          testID={testID}
         />
-        <SecondaryButton
-          label={copy.photoGallery}
-          icon="gallery"
-          onPress={onChoosePhoto}
-          disabled={busy}
-          accessibilityLabel={hasPhoto ? copy.photoReplaceGallerySpoken : copy.photoAddGallerySpoken}
-          style={styles.rowItem}
-        />
-      </View>
+      ) : (
+        <>
+          <View style={[styles.row, { gap: theme.spacing.sm }]}>
+            <SecondaryButton
+              label={props.copy.photoCamera}
+              icon="camera"
+              onPress={onTakePhoto}
+              disabled={busy}
+              accessibilityLabel={
+                hasPhoto ? props.copy.photoReplaceCameraSpoken : props.copy.photoAddCameraSpoken
+              }
+              style={styles.rowItem}
+            />
+            <SecondaryButton
+              label={props.copy.photoGallery}
+              icon="gallery"
+              onPress={onChoosePhoto}
+              disabled={busy}
+              accessibilityLabel={
+                hasPhoto ? props.copy.photoReplaceGallerySpoken : props.copy.photoAddGallerySpoken
+              }
+              style={styles.rowItem}
+            />
+          </View>
 
-      {hasPhoto && !photo.pending ? (
-        <SecondaryButton
-          label={copy.photoRemove}
-          icon="remove"
-          onPress={onRemovePhoto}
-          disabled={busy}
-          accessibilityLabel={copy.photoRemoveSpoken}
-        />
-      ) : null}
+          {hasPhoto && !photo.pending ? (
+            <SecondaryButton
+              label={props.copy.photoRemove}
+              icon="remove"
+              onPress={onRemovePhoto}
+              disabled={busy}
+              accessibilityLabel={props.copy.photoRemoveSpoken}
+            />
+          ) : null}
+        </>
+      )}
 
       {/* Shared with the customer's picture on Profile (3D-12); see its docblock. */}
       <PhotoUploadProgress
@@ -223,6 +283,90 @@ export function PhotoField({
         </View>
       ) : null}
     </Card>
+  );
+}
+
+interface PhotoOptionsProps {
+  copy: PhotoFieldSheetCopy;
+  hasPhoto: boolean;
+  /** A stored or uploaded photo is there to remove. */
+  canRemove: boolean;
+  /** Saving, or another picture action: the button cannot be pressed. */
+  disabled: boolean;
+  onTakePhoto: () => void;
+  onChoosePhoto: () => void;
+  onRemovePhoto: () => void;
+  testID: string;
+}
+
+/**
+ * The one button and the sheet it opens. The gallery first: it needs no
+ * permission and is what most people reach for; the camera second; removing
+ * last, red-glyphed, and only when there is something to remove.
+ */
+function PhotoOptions({
+  copy,
+  hasPhoto,
+  canRemove,
+  disabled,
+  onTakePhoto,
+  onChoosePhoto,
+  onRemovePhoto,
+  testID,
+}: PhotoOptionsProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const open = useCallback(() => setIsOpen(true), []);
+  const close = useCallback(() => setIsOpen(false), []);
+
+  const options = useMemo<OptionsSheetOption[]>(() => {
+    const offered: OptionsSheetOption[] = [
+      {
+        key: 'gallery',
+        label: copy.photoGallery,
+        hint: copy.photoGalleryHint,
+        icon: 'gallery',
+        onSelect: onChoosePhoto,
+      },
+      {
+        key: 'camera',
+        label: copy.photoCamera,
+        hint: copy.photoCameraHint,
+        icon: 'camera',
+        onSelect: onTakePhoto,
+      },
+    ];
+    if (canRemove) {
+      offered.push({
+        key: 'remove',
+        label: copy.photoRemove,
+        hint: copy.photoRemoveHint,
+        icon: 'remove',
+        tone: 'danger',
+        onSelect: onRemovePhoto,
+      });
+    }
+    return offered;
+  }, [canRemove, copy, onChoosePhoto, onRemovePhoto, onTakePhoto]);
+
+  return (
+    <>
+      <SecondaryButton
+        label={hasPhoto ? copy.photoChange : copy.photoAdd}
+        icon="camera"
+        onPress={open}
+        disabled={disabled}
+        accessibilityHint={copy.photoOptionsHint}
+      />
+      <OptionsSheet
+        visible={isOpen}
+        title={copy.photoSheetTitle}
+        options={options}
+        onClose={close}
+        cancelLabel={copy.photoCancel}
+        cancelHint={copy.photoCancelHint}
+        testID={`${testID}-sheet`}
+      />
+    </>
   );
 }
 

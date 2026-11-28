@@ -30,7 +30,8 @@ export const icons = Object.freeze({
   arrowForward: 'arrow-right',
   close: 'close',
   menu: 'menu',
-  more: 'dots-vertical',
+  // Horizontal by the owner's choice (28/11/2026), for the notifications menu button.
+  more: 'dots-horizontal',
 
   // Tabs
   home: 'home-outline',
@@ -81,6 +82,12 @@ export const icons = Object.freeze({
   call: 'phone-outline',
   logout: 'logout',
   settings: 'cog-outline',
+  /**
+   * The app's language (Phase 5, 28/11/2026, approved by the owner's lead). It
+   * replaced `settings` on the Language row, where a cog read as "app settings"
+   * rather than "the language this app speaks".
+   */
+  language: 'translate',
   /** Password reveal toggle. */
   visibilityOn: 'eye-outline',
   visibilityOff: 'eye-off-outline',

@@ -13,11 +13,25 @@
  * the service are absent too: those come from `AppError.userMessage`, which is
  * the only copy the backend is allowed to influence.
  *
- * Nothing here is a secret. No one-time code, auth code or phone number is
- * stored in this file.
+ * Nothing here is a secret. No one-time code or phone number is stored in this
+ * file.
+ *
+ * Every code screen has two ways to say where the code went: `sentTo`, and
+ * `sentToWhatsApp` for a challenge whose `deliveryChannel` is `WHATSAPP`
+ * (phase5-contract.md section 2). The channel is the backend's answer, never
+ * the app's assumption, which is why the plain sentence names none.
+ *
+ * In English, Hindi and Gujarati since Phase 5 (28/11/2026, phase5-contract.md
+ * section 7): `AUTH_COPY_EN` is the source, `authCopy.hi.ts` and `authCopy.gu.ts`
+ * translate it, and `AUTH_COPY` answers in the current language, falling back to
+ * English key by key (`core/i18n`). Read it in render, never at module scope.
  */
 
-export const AUTH_COPY = Object.freeze({
+import { localized } from '@/core/i18n';
+import { AUTH_COPY_GU } from '@/features/auth/constants/authCopy.gu';
+import { AUTH_COPY_HI } from '@/features/auth/constants/authCopy.hi';
+
+export const AUTH_COPY_EN = Object.freeze({
   brand: Object.freeze({
     /**
      * The product name as it is written in the interface. Kept here rather than
@@ -67,6 +81,12 @@ export const AUTH_COPY = Object.freeze({
      * translated sentence at a fixed index.
      */
     title: 'Welcome to',
+    /**
+     * Whatever follows the product name. Empty in English; a language that
+     * puts the name first ("Fixora में आपका स्वागत है") leaves `title` empty and
+     * says the rest here.
+     */
+    titleAfter: '',
     tagline: 'Connect. Book. Get things done.',
     subtitle: 'Choose how you want to continue.',
 
@@ -115,6 +135,8 @@ export const AUTH_COPY = Object.freeze({
      * it.
      */
     sentTo: 'We sent a code to {destination}',
+    /** The same line when the backend says the code went by WhatsApp. */
+    sentToWhatsApp: 'We sent a code on WhatsApp to {destination}',
     codeLabel: 'Verification code',
     /**
      * Says what the missing button used to say by existing. Sighted users infer
@@ -128,34 +150,26 @@ export const AUTH_COPY = Object.freeze({
     changeAction: 'Change phone number',
   }),
 
+  /**
+   * Returning vendors: phone, then a one-time code, as customers (owner decision
+   * 28/11/2026, phase5-contract.md section 1.1 — the permanent auth code is gone).
+   */
   vendorLogin: Object.freeze({
     title: 'Vendor sign in',
-    subtitle: 'Sign in with your phone number and your authentication code.',
+    subtitle: 'Enter your phone number and we will send you a verification code.',
     phoneLabel: 'Phone number',
     phonePlaceholder: 'Your registered phone number',
-    codeLabel: 'Authentication code',
-    codePlaceholder: 'Your authentication code',
-    /**
-     * States where the code came from, and — now that its shape is fixed
-     * (21/10/2026) — how long it is, without offering a recovery route the
-     * backend does not yet support. `{length}` is
-     * `AppConfig.vendorAuthCode.length`.
-     */
-    codeHelper: 'The {length}-digit code you saved when you registered your business.',
-    /** Names what the reveal control acts on, rather than leaving it "button". */
-    codeReveal: 'Show authentication code',
-    codeHide: 'Hide authentication code',
-    submit: 'Sign in',
-    submitHint: 'Signs you in to your vendor account',
+    submit: 'Send code',
+    submitHint: 'Sends a verification code to the number you entered',
     registerPrompt: 'New to Fixora?',
     registerAction: 'Register your business',
 
     /**
      * A returning vendor on the device they last signed in on: the number is
-     * remembered, so only the code is asked for.
+     * remembered, so the code can be asked for in one tap.
      */
     welcomeTitle: 'Welcome back',
-    welcomeSubtitle: 'Enter your authentication code to sign in.',
+    welcomeSubtitle: 'We will send a verification code to this number to sign you in.',
     /**
      * Spoken in place of the masked number. `{digits}` is the last four, spelt
      * one at a time — the bullets mean nothing read aloud, and "zero zero zero
@@ -164,19 +178,28 @@ export const AUTH_COPY = Object.freeze({
     rememberedPhoneSpoken: 'Phone number ending {digits}',
     useDifferentNumber: 'Use a different number',
     useDifferentNumberHint: 'Forgets this number on this device so you can enter another',
+  }),
 
+  /** The code step of vendor sign in. Same shape as `customerOtp`. */
+  vendorSignInOtp: Object.freeze({
+    title: 'Verify your number',
+    /** `{destination}` is replaced with the masked number the backend reports. */
+    sentTo: 'We sent a code to {destination}',
+    sentToWhatsApp: 'We sent a code on WhatsApp to {destination}',
+    codeLabel: 'Verification code',
+    codeHint: 'Signs you in automatically once you have entered every digit',
+    resend: 'Resend code',
+    /** `{seconds}` is replaced with `common.secondsShort`, which carries the unit. */
+    resendIn: 'Resend code in {seconds}',
+    changeAction: 'Change phone number',
     /**
-     * What a refused sign in says. Chosen by the app rather than taken from the
-     * service, because a refusal is `unauthorized` and that kind's default copy
-     * is "your session has expired" — about a session nobody has yet.
-     *
-     * Both allow for a code an administrator has changed, and neither repeats
-     * the code or says which half was wrong: the backend refuses an unknown
-     * number and a wrong code alike, and the copy must not undo that.
+     * The way out for a number with no vendor account. The backend never says
+     * so — its code is refused as a wrong one (phase5-contract.md section 1.1)
+     * — so the way to register is offered to everyone here, worded so it reads
+     * as an option rather than as a diagnosis.
      */
-    codeRefused: "That code didn't work. Check it, or if your code was changed, use the new one.",
-    detailsRefused:
-      "That number and code didn't work. Check them, or if your code was changed, use the new one.",
+    registerPrompt: 'New vendor?',
+    registerAction: 'Register your business',
   }),
 
   vendorRegistration: Object.freeze({
@@ -211,52 +234,22 @@ export const AUTH_COPY = Object.freeze({
     title: 'Verify your business number',
     /** `{destination}` is replaced with the masked number the backend reports. */
     sentTo: 'We sent a code to {destination}',
+    sentToWhatsApp: 'We sent a code on WhatsApp to {destination}',
     codeLabel: 'Verification code',
     /**
-     * Deliberately does not promise a sign in. Verifying the number activates
-     * the business and issues an auth code; the session comes later, once that
-     * code is confirmed (PROJECT_BIBLE.md section 7A.2).
+     * Verifying the number creates the business and signs the vendor in, in one
+     * step (phase5-contract.md section 1.2) — so this promises the sign in, as
+     * the customer's does.
      */
-    codeHint: 'Checks the code automatically once you have entered every digit',
+    codeHint: 'Signs you in automatically once you have entered every digit',
     resend: 'Resend code',
     /** `{seconds}` is replaced with `common.secondsShort`, which carries the unit. */
     resendIn: 'Resend code in {seconds}',
     changeAction: 'Change registration details',
   }),
-
-  /**
-   * The auth code steps.
-   *
-   * The wording avoids "approved" throughout. Nothing was reviewed and nobody
-   * approved anything — the number was verified and the business activated
-   * automatically (PROJECT_BIBLE.md section 7A.2). It also avoids implying the
-   * vendor is signed in, because they are not until the code is confirmed.
-   */
-  vendorAuthCode: Object.freeze({
-    displayTitle: 'Phone verified',
-    displayBody:
-      'Your business is active. This is your authentication code — you will need it every time you sign in.',
-    displayWarning: 'Save it somewhere safe. It is shown here once, and it does not expire.',
-    codeLabel: 'Your authentication code',
-    copy: 'Copy code',
-    copied: 'Copied',
-    copyHint: 'Copies your authentication code to the clipboard',
-    copyFailed: 'We could not copy the code. Please write it down instead.',
-    continueAction: 'I have saved it',
-    continueHint: 'Continues to confirm the code you just saved',
-
-    confirmTitle: 'Confirm your code',
-    /** `{length}` is `AppConfig.vendorAuthCode.length`. */
-    confirmBody: 'Enter the {length}-digit authentication code you just saved.',
-    confirmLabel: 'Authentication code',
-    confirmPlaceholder: 'Enter your code',
-    confirmAction: 'Continue',
-    confirmHint: 'Confirms your code and signs you in',
-    regenerate: 'Regenerate code',
-    regenerateHint: 'Replaces your code with a new one. The current code stops working.',
-    back: 'Show my code again',
-  }),
 });
+
+export const AUTH_COPY = localized({ en: AUTH_COPY_EN, hi: AUTH_COPY_HI, gu: AUTH_COPY_GU });
 
 /**
  * Fills `{name}` placeholders in a copy string.

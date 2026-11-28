@@ -23,6 +23,7 @@ import {
 } from 'react-native';
 
 import { FieldLabel } from '@/shared/components/FieldLabel';
+import { COMPONENT_COPY } from '@/shared/components/componentCopy';
 import { Icon } from '@/shared/components/Icon';
 import { Text } from '@/shared/components/Text';
 import { useTheme, type IconName, type RadiusToken } from '@/shared/theme';
@@ -372,7 +373,11 @@ export interface PasswordInputProps
  */
 export const PasswordInput = memo(
   forwardRef<TextInput, PasswordInputProps>(function PasswordInputBase(
-    { revealLabel = 'Show', hideLabel = 'Hide', ...props },
+    {
+      revealLabel = COMPONENT_COPY.passwordInput.reveal,
+      hideLabel = COMPONENT_COPY.passwordInput.hide,
+      ...props
+    },
     ref,
   ) {
     const [isVisible, setIsVisible] = useState(false);

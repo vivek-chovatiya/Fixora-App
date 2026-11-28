@@ -226,6 +226,29 @@ describe('import boundaries (CLAUDE.md section 4)', () => {
     expect(offenders('@react-native-community/netinfo', 'src/shared/services/device/')).toEqual([]);
   });
 
+  /*
+    Push (phase5-contract.md section 6, 28/11/2026). Firebase is reached through
+    `PushService` and nothing else — and only in `FirebasePushService`, which
+    loads it on demand: a Firebase package imported anywhere at load time would
+    stop a build without its native module from starting at all.
+  */
+  it('keeps Firebase inside the push device service', () => {
+    const device = 'src/shared/services/device/FirebasePushService.ts';
+    for (const name of ['@react-native-firebase/app', '@react-native-firebase/messaging']) {
+      expect(offenders(name, device)).toEqual([]);
+    }
+    // …and is looking: the service really does load both.
+    const service = ALL.find(({ file }) => file === device);
+    expect(service && importsAtRuntime(service.text, packageNamed('@react-native-firebase/app'))).toBe(
+      true,
+    );
+    expect(
+      service && importsAtRuntime(service.text, packageNamed('@react-native-firebase/messaging')),
+    ).toBe(true);
+    // Never at the top of the file: loaded inside a function, after the check.
+    expect(service?.text).not.toMatch(/^\s*import\s[^;]*['"]@react-native-firebase\//m);
+  });
+
   it('keeps the image picker inside the image service', () => {
     expect(
       offenders('react-native-image-picker', 'src/shared/services/api/ApiImageService.ts'),

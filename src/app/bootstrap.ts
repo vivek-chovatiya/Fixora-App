@@ -18,7 +18,8 @@ import { createLogger } from '@/core/logger/Logger';
 import { installGlobalErrorHandler } from '@/app/globalErrorHandler';
 import { store } from '@/app/store';
 import { signOut } from '@/features/auth/state/authThunks';
-import { configureServices } from '@/shared/services/ServiceRegistry';
+import { startRestoringSavedLocale } from '@/features/language/state/localeChoice';
+import { configureServices, getService } from '@/shared/services/ServiceRegistry';
 import { trackEvent } from '@/shared/services/telemetry';
 
 const log = createLogger('bootstrap');
@@ -37,6 +38,18 @@ export function bootstrapApp(): void {
   // exists, and before anything else here can throw.
   installGlobalErrorHandler();
 
+  // The saved language, read now so it is usually known by the first render;
+  // AppRoot draws nothing until it is (phase5-contract.md section 7). It never
+  // rejects — an unreadable choice reads as none, and the chooser asks again.
+  startRestoringSavedLocale();
+
+  // Push messages that arrive with the app in the background or closed
+  // (phase5-contract.md section 6). Here, at the start of the JavaScript and
+  // before anything renders, because such a message starts this JavaScript on
+  // its own, with no screen; a handler set by a component would miss it. With
+  // push off (no Firebase config in the build) this does nothing.
+  getService('push').handleBackgroundMessages();
+
   // Reads the token at request time rather than capturing it, so a sign in or
   // sign out takes effect on the very next request without re-registering.
   setTokenProvider(() => store.getState().auth.token);
@@ -49,12 +62,16 @@ export function bootstrapApp(): void {
   // signed in now, so a late answer for an account that has already left cannot
   // sign out the next one; and `signOut` is single-flight, so a burst of 401s
   // from one dying session ends it once.
+  //
+  // `forced`: nobody asked to leave, so the session is cleared without waiting
+  // for this device's push token to be unregistered — a call the refused
+  // session cannot authorise any more (`authThunks.endSession`).
   setUnauthorizedHandler(() => {
     if (store.getState().auth.status !== 'authenticated') {
       return;
     }
     log.warn('Session rejected by server; signing out.');
-    void signOut(store.dispatch);
+    void signOut(store.dispatch, { forced: true });
   });
 
   // Once per cold start: the guard above holds for the life of the JavaScript,

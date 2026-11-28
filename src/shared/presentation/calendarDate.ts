@@ -17,7 +17,14 @@
  * ⚠️ The reader's own calendar. `toLocaleDateString` writes the weekday and the
  * month the way the reader's locale does, so a test compares with this
  * function's own answer, never with a literal "Thu 11 Sep".
+ *
+ * Since Phase 5 (28/11/2026) the weekday and month follow the interface when it
+ * speaks Hindi or Gujarati (`intlLocaleTag`), so a date reads in the same
+ * language as the sentence around it. In English the tag is `undefined`, the
+ * device's own format, exactly as before.
  */
+
+import { intlLocaleTag } from '@/core/i18n';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -58,7 +65,7 @@ export function formatDayLabel(date: Date, today: Date, copy: DayWords): string 
     return copy.tomorrow;
   }
 
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(intlLocaleTag(), {
     weekday: 'short',
     day: 'numeric',
     month: 'short',

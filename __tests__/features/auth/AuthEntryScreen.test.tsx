@@ -41,9 +41,8 @@ function forbiddenAuthService(): AuthService {
     registerVendor: forbidden('registerVendor'),
     requestVendorOtp: forbidden('requestVendorOtp'),
     verifyVendorOtp: forbidden('verifyVendorOtp'),
-    verifyVendorAuthCode: forbidden('verifyVendorAuthCode'),
-    regenerateVendorAuthCode: forbidden('regenerateVendorAuthCode'),
-    signInVendor: forbidden('signInVendor'),
+    requestVendorSignInOtp: forbidden('requestVendorSignInOtp'),
+    verifyVendorSignInOtp: forbidden('verifyVendorSignInOtp'),
     signOut: forbidden('signOut'),
   } as AuthService;
 }

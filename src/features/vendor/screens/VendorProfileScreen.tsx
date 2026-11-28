@@ -60,6 +60,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSignOut } from '@/features/auth/hooks/useAuth';
 import { AvailabilitySection } from '@/features/vendor/components/AvailabilitySection';
 import { ProfileDetailRow } from '@/features/vendor/components/ProfileDetailRow';
+import { LanguageRow } from '@/features/language/components/LanguageRow';
 import { ShopImagesSection } from '@/features/vendor/components/ShopImagesSection';
 import { presentRatingFigure } from '@/features/vendor/constants/reviewPresentation';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
@@ -114,6 +115,7 @@ export function VendorProfileScreen({ navigation }: Props) {
   const openTeam = useCallback(() => navigation.navigate('Team'), [navigation]);
   const openShopImages = useCallback(() => navigation.navigate('ShopImages'), [navigation]);
   const openWorkingHours = useCallback(() => navigation.navigate('WorkingHours'), [navigation]);
+  const changeLanguage = useCallback(() => navigation.navigate('Language'), [navigation]);
   const askToLogOut = useCallback(() => setIsConfirming(true), []);
   const cancelLogOut = useCallback(() => setIsConfirming(false), []);
   const confirmLogOut = useCallback(async () => {
@@ -293,6 +295,9 @@ export function VendorProfileScreen({ navigation }: Props) {
           fullWidth
           accessibilityHint={COPY.editHint}
         />
+
+        {/* The way back to the first launch's language chooser (phase5-contract.md section 7). */}
+        <LanguageRow onPress={changeLanguage} disabled={isLoggingOut} />
 
         {logoutError ? (
           <ErrorState

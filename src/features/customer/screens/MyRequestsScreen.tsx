@@ -44,12 +44,19 @@ import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { RecentRequestCard } from '@/features/customer/components/RecentRequestCard';
-import { SelectionChip } from '@/features/customer/components/SelectionChip';
 import { Skeleton } from '@/features/customer/components/Skeleton';
 import { CUSTOMER_COPY } from '@/features/customer/constants/customerCopy';
 import { useMyRequests } from '@/features/customer/hooks/useMyRequests';
 import type { CustomerStackParamList, CustomerTabParamList } from '@/navigation/types';
-import { Button, EmptyState, ErrorState, Loader, Screen, Text } from '@/shared/components';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  Loader,
+  Screen,
+  SelectionChipRail,
+  Text,
+} from '@/shared/components';
 import type {
   CustomerRequest,
   RequestHistoryFilter,
@@ -69,19 +76,56 @@ type Props = CompositeScreenProps<
 >;
 
 /** Section 23's four views, in the order it lists them. */
+/*
+  ⚠️ The words are getters, read each time a chip is drawn. They were strings
+  read when this module loaded, which froze the chips in that moment's language:
+  after switching to Hindi the filters stayed English (Phase 5, 28/11/2026). The
+  list itself stays one stable array, as the rail expects.
+*/
 const FILTERS: ReadonlyArray<{ value: RequestHistoryFilter; label: string }> = [
-  { value: 'all', label: COPY.filterAll },
-  { value: 'active', label: COPY.filterActive },
-  { value: 'completed', label: COPY.filterCompleted },
-  { value: 'cancelled', label: COPY.filterCancelled },
+  {
+    value: 'all',
+    get label() {
+      return COPY.filterAll;
+    },
+  },
+  {
+    value: 'active',
+    get label() {
+      return COPY.filterActive;
+    },
+  },
+  {
+    value: 'completed',
+    get label() {
+      return COPY.filterCompleted;
+    },
+  },
+  {
+    value: 'cancelled',
+    get label() {
+      return COPY.filterCancelled;
+    },
+  },
 ];
 
 /** What a filter that matches nothing says. `all` is section 48's, below. */
-const FILTER_EMPTY: Readonly<Record<Exclude<RequestHistoryFilter, 'all'>, { title: string; message: string }>> = {
-  active: { title: COPY.emptyActiveTitle, message: COPY.emptyActiveMessage },
-  completed: { title: COPY.emptyCompletedTitle, message: COPY.emptyCompletedMessage },
-  cancelled: { title: COPY.emptyCancelledTitle, message: COPY.emptyCancelledMessage },
-};
+function filterEmpty(
+  filter: Exclude<RequestHistoryFilter, 'all'>,
+): { title: string; message: string } {
+  // Read when it is shown, for the reason the filters' labels are getters.
+  switch (filter) {
+    case 'active':
+      return { title: COPY.emptyActiveTitle, message: COPY.emptyActiveMessage };
+    case 'completed':
+      return { title: COPY.emptyCompletedTitle, message: COPY.emptyCompletedMessage };
+    case 'cancelled':
+      return { title: COPY.emptyCancelledTitle, message: COPY.emptyCancelledMessage };
+  }
+}
+
+/** Each filter chip's id, as the chips had before they moved onto the rail. */
+const filterTestID = (value: RequestHistoryFilter) => `my-requests-filter-${value}`;
 
 /** Roughly a card, the same reservation Home's list makes, so nothing jumps. */
 const CARD_HEIGHT = 132;
@@ -147,25 +191,19 @@ export function MyRequestsScreen({ navigation }: Props) {
       </View>
 
       {/*
-        One of four, said as one of four. Wrapped rather than scrolled sideways,
-        so all four are always visible and none can be missed at 360dp.
+        One of four, said as one of four, on one row that scrolls sideways
+        (T134, 28/11/2026) — it used to wrap, and a second row of filters read
+        as a second control. The chosen one is always brought into view.
       */}
-      <View
-        accessibilityRole="radiogroup"
+      <SelectionChipRail
+        options={FILTERS}
+        value={filter}
+        onChange={setFilter}
         accessibilityLabel={COPY.filtersLabel}
-        style={[styles.filters, { gap: theme.spacing.sm }]}
-        testID="my-requests-filters">
-        {FILTERS.map(option => (
-          <SelectionChip
-            key={option.value}
-            label={option.label}
-            selected={filter === option.value}
-            onPress={() => setFilter(option.value)}
-            accessibilityHint={COPY.filterHint}
-            testID={`my-requests-filter-${option.value}`}
-          />
-        ))}
-      </View>
+        accessibilityHint={COPY.filterHint}
+        testID="my-requests-filters"
+        chipTestID={filterTestID}
+      />
     </View>
   );
 
@@ -209,8 +247,8 @@ export function MyRequestsScreen({ navigation }: Props) {
     />
   ) : (
     <EmptyState
-      title={FILTER_EMPTY[filter].title}
-      message={FILTER_EMPTY[filter].message}
+      title={filterEmpty(filter).title}
+      message={filterEmpty(filter).message}
       icon="requests"
       fullScreen={false}
       testID="my-requests-empty"
@@ -283,10 +321,6 @@ export function MyRequestsScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  filters: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
   content: {
     // So the empty and error states can centre in the space under the filters.
     flexGrow: 1,

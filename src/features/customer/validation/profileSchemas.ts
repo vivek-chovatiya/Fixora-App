@@ -16,6 +16,11 @@
  * The email is optional and may be emptied, which is how it is removed. An
  * address that is typed must still look like one — `optionalEmailSchema` is the
  * same rule vendor registration already uses, reused rather than rewritten.
+ *
+ * ⚠️ Every message is read through a function (`{ error: () => … }`). The
+ * schema is built once, when this module loads; a string read then would stay
+ * in that moment's language after the app's language changes (Phase 5,
+ * 28/11/2026).
  */
 
 import { z } from 'zod';
@@ -26,13 +31,15 @@ import { optionalEmailSchema } from '@/shared/validation/email';
 
 const COPY = CUSTOMER_COPY.editProfile;
 
-const tooLong = `Please keep this to ${PROFILE_NAME_MAX_LENGTH} characters or fewer.`;
+const tooLong = {
+  error: () => COPY.nameTooLong.replace('{count}', String(PROFILE_NAME_MAX_LENGTH)),
+};
 
 export const profileSchema = z.object({
   firstName: z
     .string()
     .trim()
-    .min(1, `${COPY.firstNameLabel} is required.`)
+    .min(1, { error: () => COPY.firstNameRequired })
     .max(PROFILE_NAME_MAX_LENGTH, tooLong),
   /*
     Trimmed but not required: blank is a real answer, and 3D-7's name rule

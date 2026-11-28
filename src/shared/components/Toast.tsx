@@ -27,6 +27,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { COMPONENT_COPY } from '@/shared/components/componentCopy';
 import { Icon } from '@/shared/components/Icon';
 import { Text } from '@/shared/components/Text';
 import { useTheme, type ColorTokens, type IconName } from '@/shared/theme';
@@ -133,7 +134,7 @@ export function Toast({
           onPress={onDismiss}
           accessibilityRole="button"
           accessibilityLabel={message}
-          accessibilityHint="Dismisses this message"
+          accessibilityHint={COMPONENT_COPY.toast.dismissHint}
           style={[
             styles.content,
             { padding: theme.spacing.md, gap: theme.spacing.sm, minHeight: theme.hitSlop.minTarget },

@@ -12,7 +12,7 @@
  * server's fault to report, not data for the screen to make sense of.
  *
  * ⚠️ A refusal names the field and never the value. Some of these values are
- * credentials — the vendor's auth code, the session token — and an error is
+ * credentials — the session token, for one — and an error is
  * logged, reported to the crash reporter and passed around the UI.
  */
 

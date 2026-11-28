@@ -15,6 +15,7 @@ import React, { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { PrimaryButton } from '@/shared/components/Button';
+import { COMPONENT_COPY } from '@/shared/components/componentCopy';
 import { ERROR_PRESENTATION } from '@/shared/components/errorPresentation';
 import { Icon } from '@/shared/components/Icon';
 import { Text } from '@/shared/components/Text';
@@ -35,7 +36,7 @@ function ErrorStateComponent({
   error,
   onRetry,
   title,
-  retryLabel = 'Try again',
+  retryLabel = COMPONENT_COPY.errorState.retry,
   fullScreen = true,
   testID,
 }: ErrorStateProps) {

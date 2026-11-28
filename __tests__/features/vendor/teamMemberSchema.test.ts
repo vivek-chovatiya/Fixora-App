@@ -2,10 +2,12 @@
  * The team member form's rules (Phase 3E-7): what a vendor is told, and what
  * is sent.
  *
- * Pinned here: name and role are required and bounded (owner decision,
- * 2026-10-08); the phone is optional and, when typed, held to the app's one
- * phone rule with that rule's own words; values are trimmed; the input sent
- * carries exactly name, role and — only when given — the phone as digits.
+ * Pinned here: the name is required and bounded; the role is optional but
+ * bounded (phase5-contract.md section 4, T137, 28/11/2026 — it was required by
+ * the owner's decision of 2026-10-08); the phone is optional and, when typed,
+ * held to the app's one phone rule with that rule's own words; values are
+ * trimmed; the input sent carries exactly the name and — only when given — the
+ * role and the phone as digits.
  */
 
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
@@ -39,15 +41,19 @@ describe('teamMemberSchema', () => {
     expect(messages({ name: 'Kiran Rao', role: 'Apprentice', phone: '90000 00104' })).toEqual({});
   });
 
-  it('asks for a name and a role, blank or only spaces', () => {
-    expect(messages({ name: '', role: '', phone: '' })).toEqual({
+  it('asks for a name, blank or only spaces', () => {
+    expect(messages({ name: '', role: 'Apprentice', phone: '' })).toEqual({
       name: COPY.memberNameRequired,
-      role: COPY.memberRoleRequired,
     });
-    expect(messages({ name: '   ', role: '  ', phone: '' })).toEqual({
+    expect(messages({ name: '   ', role: 'Apprentice', phone: '' })).toEqual({
       name: COPY.memberNameRequired,
-      role: COPY.memberRoleRequired,
     });
+  });
+
+  it('takes no role at all — blank or only spaces — as an answer (T137)', () => {
+    expect(messages({ name: 'Kiran Rao', role: '', phone: '' })).toEqual({});
+    expect(messages({ name: 'Kiran Rao', role: '   ', phone: '' })).toEqual({});
+    expect(teamMemberSchema.parse({ name: 'Kiran Rao', role: '   ', phone: '' }).role).toBe('');
   });
 
   it('bounds the name at 80 characters and the role at 60', () => {
@@ -102,6 +108,13 @@ describe('buildTeamMemberInput', () => {
     });
   });
 
+  it('leaves the role off entirely when there is none — not an empty string (T137)', () => {
+    const input = buildTeamMemberInput(teamMemberSchema.parse({ name: 'Kiran Rao', role: '  ', phone: '' }));
+
+    expect(input).toEqual({ name: 'Kiran Rao' });
+    expect('role' in input).toBe(false);
+  });
+
   it('leaves the photo off entirely when there is none — not an empty string', () => {
     for (const photoUrl of [undefined, '']) {
       const input = buildTeamMemberInput({ name: 'Kiran Rao', role: 'Apprentice', phone: '' }, photoUrl);
@@ -122,6 +135,14 @@ describe('teamMemberFormValues', () => {
     ).toEqual({
       name: 'Farhan Ali',
       role: 'Helper',
+      phone: '',
+    });
+  });
+
+  it('opens a member with no role on a blank role', () => {
+    expect(teamMemberFormValues({ id: 'tm_9', name: 'Leela Das', status: 'ACTIVE' })).toEqual({
+      name: 'Leela Das',
+      role: '',
       phone: '',
     });
   });

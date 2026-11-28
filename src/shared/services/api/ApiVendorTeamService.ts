@@ -23,6 +23,10 @@
  *   member is added without one, and because an edit replaces every detail,
  *   an edit without one sends `phone: null`, which the contract says clears it
  *   (an absent `phone` would leave the old one in place).
+ * - **So is the role** (phase5-contract.md section 4, T137, 28/11/2026). No
+ *   role is always sent as `designation: ""` — on an add, where the backend
+ *   used to fill a missing one with "Technician", and on an edit, where `""`
+ *   clears it. A stored `""`, or none at all, reads as no role.
  * - **Photos** (Phase 4B, 24/11/2026): a new photo is the URL `ImageService`
  *   uploaded as a `team` photo, sent as it is — the backend takes its own
  *   `/uploads/...` path back in the full-URL form, and keeps a photo sent back
@@ -82,14 +86,15 @@ function toAppStatus(backend: string): string {
 
 function toMember(row: unknown): TeamMember {
   const record = requireRecord(row, 'teamMember');
+  const role = optionalString(record, 'designation');
   const phone = optionalString(record, 'phone');
   const photoUrl = toImageUrl(record.profileImage);
 
   return {
     id: requireString(record, 'id', 'teamMember'),
     name: requireString(record, 'name', 'teamMember'),
-    role: requireString(record, 'designation', 'teamMember'),
     // Absent rather than undefined or "", as the mock's members are.
+    ...(role ? { role } : {}),
     ...(phone ? { phone } : {}),
     ...(photoUrl ? { photoUrl } : {}),
     status: toAppStatus(requireString(record, 'status', 'teamMember')),
@@ -101,6 +106,11 @@ function createdAtOf(row: unknown): number {
   const value = isRecord(row) ? row.createdAt : undefined;
   const ms = typeof value === 'string' ? Date.parse(value) : Number.NaN;
   return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms;
+}
+
+/** The role an input carries, trimmed, or "" — blank is no role, and "" is how none is sent. */
+function designationOf(input: TeamMemberInput): string {
+  return typeof input.role === 'string' ? input.role.trim() : '';
 }
 
 /** The photo an input carries, or undefined — blank is no photo. */
@@ -140,7 +150,9 @@ export class ApiVendorTeamService extends BaseApiService implements VendorTeamSe
       name: input.name,
       // Absent, never "": a member without a phone or photo has none.
       ...(phone ? { phone } : {}),
-      designation: input.role,
+      // Always sent, "" for none: the backend defaulted a missing one to "Technician"
+      // before contract section 4, and "" says "none" to either.
+      designation: designationOf(input),
       ...(photoUrl ? { profileImage: photoUrl } : {}),
     });
     return this.readTeam();
@@ -157,7 +169,8 @@ export class ApiVendorTeamService extends BaseApiService implements VendorTeamSe
       name: input.name,
       // Every detail is replaced: no phone in the input clears the one they had.
       phone: phone ?? null,
-      designation: input.role,
+      // Every detail is replaced: no role in the input ("") clears the one they had.
+      designation: designationOf(input),
       // Every detail is replaced: no photo in the input removes the one they had.
       profileImage: photoUrl ?? null,
     });

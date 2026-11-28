@@ -120,6 +120,7 @@ describe('MockNotificationService — the session', () => {
       notifications.markAsRead('ntf_c1_01'),
       notifications.markAllAsRead(),
       notifications.remove('ntf_c1_01'),
+      notifications.removeAll(),
     ];
 
     for (const call of calls) {
@@ -350,6 +351,39 @@ describe('MockNotificationService — reading', () => {
     expect((await refusal(notifications.markAsRead(newest.id))).kind).toBe('notFound');
     expect((await refusal(notifications.remove(newest.id))).kind).toBe('notFound');
   });
+
+  it('removes every one, the pages not yet listed too, and keeps the inbox empty', async () => {
+    current = VENKATA;
+    const notifications = service();
+    expect((await everything(notifications)).length).toBeGreaterThan(PAGE_SIZE);
+
+    await notifications.removeAll();
+
+    expect(await everything(notifications)).toEqual([]);
+    expect(await notifications.getUnreadCount()).toBe(0);
+    // Emptied, not reset: the fixtures do not come back on the next read.
+    expect((await notifications.list({ page: FIRST, pageSize: PAGE_SIZE })).total).toBe(0);
+  });
+
+  it('removes all of one account’s inbox and nobody else’s', async () => {
+    const notifications = service();
+    current = RAVI;
+    const ravis = await everything(notifications);
+
+    current = ASHA;
+    await notifications.removeAll();
+
+    expect(await everything(notifications)).toEqual([]);
+    current = RAVI;
+    expect(await everything(notifications)).toEqual(ravis);
+  });
+
+  it('clears an empty inbox without complaint', async () => {
+    current = MEENA;
+    const notifications = service();
+
+    await expect(notifications.removeAll()).resolves.toBeUndefined();
+  });
 });
 
 describe('MockNotificationService — the starting inboxes', () => {
@@ -436,12 +470,60 @@ describe('MockNotificationService — the starting inboxes', () => {
   });
 });
 
-describe('MockNotificationService — push', () => {
-  it('keeps the push surface inert in Phase 1', async () => {
-    current = null;
+/*
+  The push token calls answer as the backend's /devices endpoints do
+  (phase5-contract.md section 6.1): one account per token, moved by registering
+  it elsewhere, removed only by its own account, and nothing for nobody.
+*/
+describe('MockNotificationService — push devices', () => {
+  const TOKEN = 'fcm-token-for-this-device';
+
+  it("pairs a token with the signed-in account and unpairs it on that account's word", async () => {
     const notifications = service();
 
-    await expect(notifications.registerDevice('device-token')).resolves.toBeUndefined();
-    await expect(notifications.unregisterDevice()).resolves.toBeUndefined();
+    await notifications.registerDevice({ token: TOKEN, platform: 'android' });
+    expect(notifications.isDeviceRegistered(TOKEN, ASHA.id)).toBe(true);
+
+    await notifications.unregisterDevice(TOKEN);
+    expect(notifications.isDeviceRegistered(TOKEN, ASHA.id)).toBe(false);
+  });
+
+  it('moves a token registered from another account, which then cannot remove it', async () => {
+    const notifications = service();
+    await notifications.registerDevice({ token: TOKEN, platform: 'android' });
+
+    current = RAVI;
+    await notifications.registerDevice({ token: TOKEN, platform: 'android' });
+    expect(notifications.isDeviceRegistered(TOKEN, RAVI.id)).toBe(true);
+    expect(notifications.isDeviceRegistered(TOKEN, ASHA.id)).toBe(false);
+
+    // Somebody else's token: succeeds, changes nothing, says nothing.
+    current = ASHA;
+    await expect(notifications.unregisterDevice(TOKEN)).resolves.toBeUndefined();
+    expect(notifications.isDeviceRegistered(TOKEN, RAVI.id)).toBe(true);
+  });
+
+  it('refuses nobody, a blank or over-long token, and an unknown platform', async () => {
+    const notifications = service();
+
+    expect((await refusal(notifications.registerDevice({ token: '   ', platform: 'ios' }))).kind).toBe(
+      'validation',
+    );
+    expect(
+      (await refusal(notifications.registerDevice({ token: 'x'.repeat(4097), platform: 'ios' }))).kind,
+    ).toBe('validation');
+    expect(
+      (
+        await refusal(
+          notifications.registerDevice({ token: TOKEN, platform: 'web' as unknown as 'ios' }),
+        )
+      ).kind,
+    ).toBe('validation');
+
+    current = null;
+    expect((await refusal(notifications.registerDevice({ token: TOKEN, platform: 'ios' }))).kind).toBe(
+      'unauthorized',
+    );
+    expect((await refusal(notifications.unregisterDevice(TOKEN))).kind).toBe('unauthorized');
   });
 });

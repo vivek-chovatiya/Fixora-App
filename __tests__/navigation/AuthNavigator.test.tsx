@@ -3,8 +3,10 @@
  *
  * Two things are worth pinning here rather than discovering later. Every screen
  * a user must reach is registered — a route that exists in the type but has no
- * screen fails at runtime, in front of someone. And no recovery route exists,
- * which is deliberate: the backend has no operation that could safely back one.
+ * screen fails at runtime, in front of someone. And no auth-code or recovery
+ * route exists: the permanent vendor auth code was retired on 28/11/2026
+ * (phase5-contract.md section 1), so vendors sign in with a one-time code and
+ * there is nothing to show, confirm, regenerate or recover.
  */
 
 import React from 'react';
@@ -60,6 +62,7 @@ async function renderStack(hasCompletedOnboarding: boolean) {
       </Provider>,
     );
   });
+  mounted.push(renderer);
 
   const state = navigation.current?.getRootState();
 
@@ -77,7 +80,15 @@ async function registeredRoutes(): Promise<string[]> {
   return (await renderStack(true)).routes;
 }
 
+/** Every stack a test rendered, unmounted after it so no screen outlives its test. */
+const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
+
 afterEach(() => {
+  for (const renderer of mounted.splice(0)) {
+    act(() => {
+      renderer.unmount();
+    });
+  }
   resetServices();
 });
 
@@ -91,6 +102,7 @@ describe('AuthNavigator', () => {
       'CustomerLogin',
       'CustomerOtp',
       'VendorLogin',
+      'VendorSignInOtp',
       'VendorRegistration',
       'VendorOtp',
     ]);
@@ -122,21 +134,21 @@ describe('AuthNavigator', () => {
     expect(shows('auth-entry-screen')).toBe(false);
   });
 
-  it('has no auth code route: the credential never travels between screens', async () => {
+  it('has no auth code route: the vendor auth code was retired', async () => {
     const routes = await registeredRoutes();
 
-    // Display and confirmation are states inside VendorOtp. Separate routes
-    // would mean handing a standing credential through navigation.
+    // Vendors sign in with a one-time code since 28/11/2026, so there is no
+    // credential to display, confirm or regenerate — on any route.
     expect(routes).not.toContain('VendorAuthCode');
     expect(routes).not.toContain('VendorAuthCodeConfirmation');
+    expect(routes.some(route => /AuthCode/i.test(route))).toBe(false);
   });
 
-  it('has no recovery route, because no backend operation can safely back one', async () => {
+  it('has no recovery route: a vendor who can receive a code can sign in', async () => {
     const routes = await registeredRoutes();
 
-    // `regenerateVendorAuthCode` is keyed by a registrationId a returning vendor
-    // does not have. Phone-only regeneration would make a lost phone an account
-    // takeover, so this stays absent until the backend offers something better.
+    // With no standing credential there is nothing to lose and nothing to
+    // recover. A forgotten-code route would be a screen with no purpose.
     expect(routes).not.toContain('VendorRecovery');
     expect(routes).not.toContain('ForgotAuthCode');
     expect(routes).not.toContain('ForgotPassword');

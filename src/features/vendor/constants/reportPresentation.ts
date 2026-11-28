@@ -40,12 +40,31 @@ import type {
 const COPY = VENDOR_COPY.reports;
 const DASHBOARD = VENDOR_COPY.dashboard;
 
-/** Section 42's time filters, in its order, with the words each chip shows. */
-export const VENDOR_REPORT_PERIOD_OPTIONS: ReadonlyArray<{ value: VendorReportPeriod; label: string }> = [
-  { value: 'today', label: COPY.periodToday },
-  { value: 'week', label: COPY.periodWeek },
-  { value: 'month', label: COPY.periodMonth },
-];
+/** Which word each period's chip shows — a key, read when the chip is drawn. */
+const PERIOD_WORDS = Object.freeze({
+  today: 'periodToday',
+  week: 'periodWeek',
+  month: 'periodMonth',
+} as const satisfies Record<VendorReportPeriod, keyof typeof COPY>);
+
+function periodOption(value: VendorReportPeriod) {
+  return Object.freeze({
+    value,
+    get label(): string {
+      return COPY[PERIOD_WORDS[value]];
+    },
+  });
+}
+
+/**
+ * Section 42's time filters, in its order, with the words each chip shows.
+ *
+ * ⚠️ `label` is a getter. It was a string read when this module loaded, which
+ * kept the chips in that moment's language after the app switched to Hindi or
+ * Gujarati (Phase 5, 28/11/2026). The array stays one stable object.
+ */
+export const VENDOR_REPORT_PERIOD_OPTIONS: ReadonlyArray<{ value: VendorReportPeriod; label: string }> =
+  Object.freeze([periodOption('today'), periodOption('week'), periodOption('month')]);
 
 /** The four counts, in section 42's order. */
 export type ReportCountKey = 'total' | 'completed' | 'rejected' | 'cancelled';

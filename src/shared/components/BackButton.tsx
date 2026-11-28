@@ -30,6 +30,7 @@
 import React, { memo } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 
+import { COMPONENT_COPY } from '@/shared/components/componentCopy';
 import { Icon } from '@/shared/components/Icon';
 import { useTheme } from '@/shared/theme';
 
@@ -44,8 +45,8 @@ export interface BackButtonProps {
 
 function BackButtonComponent({
   onPress,
-  accessibilityLabel = 'Back',
-  accessibilityHint = 'Returns to the previous screen',
+  accessibilityLabel = COMPONENT_COPY.backButton.label,
+  accessibilityHint = COMPONENT_COPY.backButton.hint,
   testID,
 }: BackButtonProps) {
   const theme = useTheme();

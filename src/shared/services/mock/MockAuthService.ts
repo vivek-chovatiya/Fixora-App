@@ -6,17 +6,21 @@
  * the real service lands, every decision here moves server side and this file is
  * deleted.
  *
- * The vendor auth code is treated as a standing credential throughout. It is
- * never logged, never echoed into an error, and never stored anywhere but this
- * in-memory simulation.
+ * Both roles prove the phone with a one-time code on every sign in (owner
+ * decision 28/11/2026, phase5-contract.md section 1). There is no permanent
+ * vendor auth code any more, so nothing here issues, stores or compares one.
  *
- * Vendor onboarding follows the approved sequence, and the ordering matters:
+ *   customer:      request code (phone)          → verify code → session
+ *   vendor:        request code (phone)          → verify code → session
+ *   new vendor:    register → verify code (registrationId) → vendor created
+ *                                                            + session
  *
- *   register → verify one-time code → vendor activated + auth code issued
- *            → vendor confirms auth code → session
- *
- * Verifying the one-time code proves the phone number. It does not sign the
- * vendor in. Only `verifyVendorAuthCode` produces a session.
+ * ⚠️ A returning vendor's code request answers alike for every well-formed
+ * number, and is held alike for every number, as the backend holds it — only
+ * delivery is for real vendors. So verifying fails the same way for a number
+ * with no vendor account as for a wrong code (`OTP_INVALID`), and the same way
+ * for any number that asked for no code (`OTP_EXPIRED`). That sameness is the
+ * contract (section 1.1), not an accident to tidy away.
  */
 
 import { AppConfig } from '@/core/config/AppConfig';
@@ -27,16 +31,13 @@ import {
   MOCK_OTP_RESEND_AFTER_SECONDS,
   MOCK_OTP_TTL_SECONDS,
   findMockAccount,
-  generateMockVendorAuthCode,
   maskPhone,
-  nextMockVendorAuthCode,
-  type MockRandomSource,
 } from '@/shared/services/mock/mockAuthData';
 import { mockId, simulateNetwork, type MockLatency } from '@/shared/services/mock/mockUtils';
 import type {
   AuthService,
   OtpChallenge,
-  VendorAuthCode,
+  OtpDeliveryChannel,
   VendorRegistration,
   VendorRegistrationDetails,
 } from '@/shared/services/types/AuthService';
@@ -53,23 +54,15 @@ interface VendorOnboarding {
   phone: string;
   user: AuthUser;
   challenge: IssuedChallenge;
-  otpVerified: boolean;
-  /** Current code. Regeneration replaces it, which is what revokes the old one. */
-  authCode: string | null;
-}
-
-/** A vendor who finished onboarding during this app process. */
-interface ActiveVendor {
-  user: AuthUser;
-  authCode: string;
 }
 
 /**
  * The clock and the latency exist so tests can remove the two things that make
  * a mock slow to assert against: waiting for a clock, and waiting for a network.
- * The random source exists so a test can know the code it will be issued.
+ * The delivery channel exists so a test can reach the wording of a code sent on
+ * WhatsApp without a backend.
  *
- * None is set by the running app, which keeps real-feeling latency and codes.
+ * None is set by the running app, which keeps real-feeling latency.
  */
 export interface MockAuthServiceOptions {
   /**
@@ -83,32 +76,38 @@ export interface MockAuthServiceOptions {
    */
   latency?: MockLatency;
   /**
-   * Where issued vendor auth codes come from. Defaults to `Math.random`; a test
-   * passes a fixed sequence to pin the code a registration receives.
+   * What every challenge reports as its channel. Defaults to `NONE`, which is
+   * the truth: the mock delivers nothing, the code is `MOCK_OTP_CODE`.
    */
-  random?: MockRandomSource;
+  deliveryChannel?: OtpDeliveryChannel;
 }
 
 export class MockAuthService implements AuthService {
   /** Customer one-time codes, by normalised phone. */
   private readonly customerChallenges = new Map<string, IssuedChallenge>();
 
+  /**
+   * Returning vendors' one-time codes, by normalised phone — held for every
+   * number that asked, vendor or not, so the answers cannot tell them apart.
+   */
+  private readonly vendorSignInChallenges = new Map<string, IssuedChallenge>();
+
   /** In-progress vendor onboardings, by registration id. */
   private readonly onboardings = new Map<string, VendorOnboarding>();
 
-  /** Vendors activated this process, by normalised phone. */
-  private readonly activeVendors = new Map<string, ActiveVendor>();
+  /** Vendors created this process, by normalised phone. */
+  private readonly activeVendors = new Map<string, AuthUser>();
 
   private readonly now: () => number;
 
   private readonly latency: MockLatency | undefined;
 
-  private readonly random: MockRandomSource;
+  private readonly deliveryChannel: OtpDeliveryChannel;
 
   constructor(options: MockAuthServiceOptions = {}) {
     this.now = options.now ?? (() => Date.now());
     this.latency = options.latency;
-    this.random = options.random ?? Math.random;
+    this.deliveryChannel = options.deliveryChannel ?? 'NONE';
   }
 
   /**
@@ -139,6 +138,13 @@ export class MockAuthService implements AuthService {
       const digits = normalisePhone(phone);
       const challenge = this.customerChallenges.get(digits);
 
+      if (!challenge) {
+        throw new AppError({
+          kind: 'validation',
+          message: 'No mock challenge issued',
+          userMessage: 'Request a code before verifying.',
+        });
+      }
       this.assertChallengeUsable(challenge, () => this.customerChallenges.delete(digits));
       this.assertOtpMatches(code);
 
@@ -167,8 +173,8 @@ export class MockAuthService implements AuthService {
       if (this.findActiveVendor(digits)) {
         throw new AppError({
           kind: 'conflict',
+          code: 'PHONE_ALREADY_REGISTERED',
           message: 'Mock vendor already registered',
-          userMessage: 'An account already exists for this number. Try signing in instead.',
         });
       }
 
@@ -185,8 +191,6 @@ export class MockAuthService implements AuthService {
           role: 'vendor',
         },
         challenge: { expiresAtMs: this.expiryFromNow() },
-        otpVerified: false,
-        authCode: null,
       });
 
       log.info('Mock vendor registration started', { phone: maskPhone(digits) });
@@ -206,7 +210,7 @@ export class MockAuthService implements AuthService {
     });
   }
 
-  async verifyVendorOtp(registrationId: string, code: string): Promise<VendorAuthCode> {
+  async verifyVendorOtp(registrationId: string, code: string): Promise<SessionPayload> {
     return this.simulate(() => {
       const onboarding = this.requireOnboarding(registrationId);
 
@@ -215,55 +219,12 @@ export class MockAuthService implements AuthService {
       });
       this.assertOtpMatches(code);
 
-      // Verification activates the vendor. There is no administrator approval
-      // step in the approved flow.
-      onboarding.otpVerified = true;
-      onboarding.authCode = this.issueVendorAuthCode(onboarding.authCode);
-
-      // The code itself is never logged.
-      log.info('Mock vendor activated and auth code issued', {
-        phone: maskPhone(onboarding.phone),
-      });
-
-      return { code: onboarding.authCode, issuedAt: new Date(this.now()).toISOString() };
-    });
-  }
-
-  async regenerateVendorAuthCode(registrationId: string): Promise<VendorAuthCode> {
-    return this.simulate(() => {
-      const onboarding = this.requireOnboarding(registrationId);
-      this.assertPhoneVerified(onboarding);
-
-      // Replacing the value is what revokes the previous one: every check
-      // compares against the current code only.
-      onboarding.authCode = this.issueVendorAuthCode(onboarding.authCode);
-      log.info('Mock vendor auth code regenerated', { phone: maskPhone(onboarding.phone) });
-
-      return { code: onboarding.authCode, issuedAt: new Date(this.now()).toISOString() };
-    });
-  }
-
-  async verifyVendorAuthCode(registrationId: string, authCode: string): Promise<SessionPayload> {
-    return this.simulate(() => {
-      const onboarding = this.requireOnboarding(registrationId);
-      this.assertPhoneVerified(onboarding);
-
-      if (!onboarding.authCode || authCode.trim() !== onboarding.authCode) {
-        // Says nothing about the expected value, and never echoes the attempt.
-        throw new AppError({
-          kind: 'validation',
-          message: 'Mock vendor auth code mismatch',
-          userMessage: 'That code is not correct. Please check and try again.',
-        });
-      }
-
-      this.activeVendors.set(onboarding.phone, {
-        user: onboarding.user,
-        authCode: onboarding.authCode,
-      });
+      // Verification creates the vendor, active at once — there is no
+      // administrator approval step — and signs them in (contract section 1.2).
+      this.activeVendors.set(onboarding.phone, onboarding.user);
       this.onboardings.delete(registrationId);
 
-      log.info('Mock vendor session issued', { phone: maskPhone(onboarding.phone) });
+      log.info('Mock vendor created and session issued', { phone: maskPhone(onboarding.phone) });
 
       return this.createSession(onboarding.user);
     });
@@ -271,24 +232,44 @@ export class MockAuthService implements AuthService {
 
   /* Vendor sign in ------------------------------------------------------- */
 
-  async signInVendor(phone: string, authCode: string): Promise<SessionPayload> {
+  async requestVendorSignInOtp(phone: string): Promise<OtpChallenge> {
+    return this.simulate(() => {
+      const digits = this.requirePlausiblePhone(phone);
+
+      // Held for every number, as the backend holds it: the response, and every
+      // later answer about this code, must never say whether the number has an
+      // account. (A real backend only delivers to a vendor; the mock delivers
+      // nothing to anyone.)
+      this.vendorSignInChallenges.set(digits, { expiresAtMs: this.expiryFromNow() });
+      log.info('Mock vendor sign-in code requested', { phone: maskPhone(digits) });
+
+      return this.buildChallenge(digits);
+    });
+  }
+
+  async verifyVendorSignInOtp(phone: string, code: string): Promise<SessionPayload> {
     return this.simulate(() => {
       const digits = normalisePhone(phone);
-      const vendor = this.findActiveVendor(digits);
+      const challenge = this.vendorSignInChallenges.get(digits);
 
-      // An unknown number and a wrong code fail identically, so neither reveals
-      // which vendors exist.
-      if (!vendor || authCode.trim() !== vendor.authCode) {
-        throw new AppError({
-          kind: 'unauthorized',
-          message: 'Mock vendor sign in rejected',
-          userMessage: 'Those sign-in details were not recognised.',
-        });
+      // No code asked for reads as one that has run out — for every number.
+      if (!challenge) {
+        throw this.expiredCode();
+      }
+      this.assertChallengeUsable(challenge, () => this.vendorSignInChallenges.delete(digits));
+      this.assertOtpMatches(code);
+
+      // The right digits for a number with no vendor account are still a wrong
+      // code: none was ever sent to it (contract section 1.1).
+      const vendor = this.findActiveVendor(digits);
+      if (!vendor) {
+        throw this.wrongCode();
       }
 
+      this.vendorSignInChallenges.delete(digits);
       log.info('Mock vendor session issued', { phone: maskPhone(digits) });
 
-      return this.createSession(vendor.user);
+      return this.createSession(vendor);
     });
   }
 
@@ -296,9 +277,10 @@ export class MockAuthService implements AuthService {
 
   async signOut(): Promise<void> {
     return this.simulate(() => {
-      // Outstanding challenges die with the session. Activated vendors do not:
+      // Outstanding challenges die with the session. Created vendors do not:
       // signing out is not the same as losing an account.
       this.customerChallenges.clear();
+      this.vendorSignInChallenges.clear();
       log.info('Mock session invalidated');
     });
   }
@@ -322,43 +304,31 @@ export class MockAuthService implements AuthService {
     if (!onboarding) {
       throw new AppError({
         kind: 'notFound',
+        code: 'REGISTRATION_NOT_FOUND',
         message: 'No mock vendor registration for this id',
-        userMessage: 'That registration is no longer available. Please start again.',
       });
     }
     return onboarding;
   }
 
-  private assertPhoneVerified(onboarding: VendorOnboarding): void {
-    if (!onboarding.otpVerified) {
-      throw new AppError({
-        kind: 'forbidden',
-        message: 'Mock vendor phone not verified',
-        userMessage: 'Verify your phone number before continuing.',
-      });
+  private assertChallengeUsable(challenge: IssuedChallenge, expire: () => void): void {
+    if (this.now() > challenge.expiresAtMs) {
+      expire();
+      throw this.expiredCode();
     }
   }
 
-  private assertChallengeUsable(
-    challenge: IssuedChallenge | undefined,
-    expire: () => void,
-  ): asserts challenge is IssuedChallenge {
-    if (!challenge) {
-      throw new AppError({
-        kind: 'validation',
-        message: 'No mock challenge issued',
-        userMessage: 'Request a code before verifying.',
-      });
-    }
-
-    if (this.now() > challenge.expiresAtMs) {
-      expire();
-      throw new AppError({
-        kind: 'unauthorized',
-        message: 'Mock challenge expired',
-        userMessage: 'That code has expired. Request a new one.',
-      });
-    }
+  /**
+   * The backend's `OTP_EXPIRED`. `unauthorized` as it always was here, so the
+   * customer screens built against it read the same; the code is what chooses
+   * the sentence.
+   */
+  private expiredCode(): AppError {
+    return new AppError({
+      kind: 'unauthorized',
+      code: 'OTP_EXPIRED',
+      message: 'Mock challenge expired',
+    });
   }
 
   /**
@@ -367,39 +337,28 @@ export class MockAuthService implements AuthService {
    */
   private assertOtpMatches(code: string): void {
     if (code.trim() !== MOCK_OTP_CODE) {
-      throw new AppError({
-        kind: 'validation',
-        message: 'Mock code mismatch',
-        userMessage: 'That code is not correct. Please check and try again.',
-      });
+      throw this.wrongCode();
     }
   }
 
-  /** Seeded vendors and vendors activated this process resolve the same way. */
-  private findActiveVendor(digits: string): ActiveVendor | undefined {
-    const activated = this.activeVendors.get(digits);
-    if (activated) {
-      return activated;
+  /** The backend's `OTP_INVALID`: says nothing about the expected value, never echoes the attempt. */
+  private wrongCode(): AppError {
+    return new AppError({
+      kind: 'validation',
+      code: 'OTP_INVALID',
+      message: 'Mock code mismatch',
+    });
+  }
+
+  /** Seeded vendors and vendors created this process resolve the same way. */
+  private findActiveVendor(digits: string): AuthUser | undefined {
+    const created = this.activeVendors.get(digits);
+    if (created) {
+      return created;
     }
 
     const seeded = findMockAccount(digits);
-    if (seeded?.user.role === 'vendor' && seeded.vendorAuthCode) {
-      return { user: seeded.user, authCode: seeded.vendorAuthCode };
-    }
-
-    return undefined;
-  }
-
-  /**
-   * A fresh code, never the one it replaces.
-   *
-   * Six random digits repeat one time in a million — and every time, from a
-   * pinned test source. A "regenerated" code equal to the revoked one would
-   * revoke nothing, so a repeat is stepped past rather than trusted to luck.
-   */
-  private issueVendorAuthCode(previous: string | null): string {
-    const code = generateMockVendorAuthCode(this.random);
-    return code === previous ? nextMockVendorAuthCode(code) : code;
+    return seeded?.user.role === 'vendor' ? seeded.user : undefined;
   }
 
   private expiryFromNow(): number {
@@ -411,6 +370,7 @@ export class MockAuthService implements AuthService {
       maskedDestination: maskPhone(digits),
       expiresAt: new Date(this.expiryFromNow()).toISOString(),
       resendAfterSeconds: MOCK_OTP_RESEND_AFTER_SECONDS,
+      deliveryChannel: this.deliveryChannel,
     };
   }
 

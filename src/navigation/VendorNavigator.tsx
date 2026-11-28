@@ -40,6 +40,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { useAuthSession } from '@/features/auth/hooks/useAuth';
+import { ChangeLanguageScreen } from '@/features/language/screens/LanguageScreen';
 import { NotificationsScreen } from '@/features/notifications/screens/NotificationsScreen';
 import { VENDOR_COPY } from '@/features/vendor/constants/vendorCopy';
 import { CompleteWorkScreen } from '@/features/vendor/screens/CompleteWorkScreen';
@@ -61,6 +62,7 @@ import {
 } from '@/features/vendor/state/VendorProfileContext';
 import { VendorWorkSyncProvider } from '@/features/vendor/state/VendorWorkSync';
 import { renderFloatingTabBar } from '@/navigation/components/FloatingTabBar';
+import { NAVIGATION_COPY } from '@/navigation/navigationCopy';
 import { createTabIcon } from '@/navigation/tabIcon';
 import { createTabScreenOptions } from '@/navigation/tabScreenOptions';
 import type { VendorStackParamList, VendorTabParamList } from '@/navigation/types';
@@ -85,22 +87,29 @@ function VendorTabs() {
       <Tab.Screen
         name="Dashboard"
         component={VendorDashboardScreen}
-        options={{ tabBarIcon: createTabIcon('home') }}
+        // The tab's name in the app's language, read in render (`navigationCopy`).
+        options={{ title: NAVIGATION_COPY.vendorTabs.Dashboard, tabBarIcon: createTabIcon('home') }}
       />
       <Tab.Screen
         name="Requests"
         component={VendorRequestsScreen}
-        options={{ tabBarIcon: createTabIcon('requests') }}
+        options={{
+          title: NAVIGATION_COPY.vendorTabs.Requests,
+          tabBarIcon: createTabIcon('requests'),
+        }}
       />
       <Tab.Screen
         name="Team"
         component={VendorTeamScreen}
-        options={{ tabBarIcon: createTabIcon('team') }}
+        options={{ title: NAVIGATION_COPY.vendorTabs.Team, tabBarIcon: createTabIcon('team') }}
       />
       <Tab.Screen
         name="Profile"
         component={VendorProfileScreen}
-        options={{ tabBarIcon: createTabIcon('profile') }}
+        options={{
+          title: NAVIGATION_COPY.vendorTabs.Profile,
+          tabBarIcon: createTabIcon('profile'),
+        }}
       />
     </Tab.Navigator>
   );
@@ -135,6 +144,8 @@ function VendorStack() {
           <Stack.Screen name="VendorRequestDetails" component={VendorRequestDetailsScreen} />
           {/* Pushed from the Dashboard's bell (section 57); the customer stack has its own. */}
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
+          {/* Pushed from Profile's Language row; the customer stack registers the same. */}
+          <Stack.Screen name="Language" component={ChangeLanguageScreen} />
           {/* Pushed from "Mark completed"; a reference only — the service checks the rest. */}
           <Stack.Screen name="CompleteWork" component={CompleteWorkScreen} />
           {/* Pushed from "Record payment" on finished work; a reference only, as above. */}

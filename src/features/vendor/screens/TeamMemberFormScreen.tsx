@@ -7,8 +7,10 @@
  * adding and editing differ only in what the form opens with
  * (`EditAddressScreen`'s reasoning, 3D-9).
  *
- * ⚠️ Name and role are required, the phone is optional (owner decision,
- * 2026-10-08), and the rules are the service's said to a person
+ * ⚠️ The name is required; the role (optional since phase5-contract.md section
+ * 4, T137, 28/11/2026 — required by the owner's decision of 2026-10-08) and the
+ * phone are not, each saying "Optional" under it and carrying no required
+ * marker. The rules are the service's said to a person
  * (`teamMemberSchema`): field messages under each field, a live "Check the
  * highlighted fields." beside Save, and nothing sent until they pass. A phone,
  * when given, is held to the app's one phone rule.
@@ -41,9 +43,14 @@
  * status at all.
  *
  * ⚠️ The form opens with section 39's Profile Image (2026-10-21): the business
- * picture's pattern (`VendorProfileFormScreen`), not a new one — take or choose
- * a photo through `useImageUpload`, uploaded the moment it is chosen, a failure
- * kept with Try again and Discard, Remove for one that is there. The uploaded
+ * picture's pattern (`VendorProfileFormScreen`), not a new one — a photo from
+ * the gallery or the camera through `useImageUpload`, uploaded the moment it is
+ * chosen, a failure kept with Try again and Discard, and removing one that is
+ * there. Since T136 (28/11/2026) the three are one "Add photo" / "Change
+ * photo" button and an options sheet (`PhotoField`'s `sheet`), "Remove photo"
+ * in it only when there is a photo; backing out of the camera or the gallery
+ * changes nothing, and a camera that cannot be used says so on the card
+ * (`CAMERA_UNAVAILABLE`) with nothing typed lost. The uploaded
  * URL is only a value in this form until Save, so leaving without saving
  * leaves the member's photo as it was. Save waits while an upload is running
  * (its URL would miss the save) and the photo waits while Save runs; a failed
@@ -419,6 +426,7 @@ function TeamMemberFields({ navigation, form, member }: TeamMemberFieldsProps) {
         `pictureSpoken`): the actions already say whether there is a photo.
       */}
       <PhotoField
+        actions="sheet"
         photo={photo}
         photoUrl={photoUrl}
         name={watch('name')}
@@ -449,8 +457,8 @@ function TeamMemberFields({ navigation, form, member }: TeamMemberFieldsProps) {
           control={control}
           name="role"
           label={COPY.roleLabel}
-          required
           placeholder={COPY.rolePlaceholder}
+          helperText={COPY.roleHelper}
           maxLength={TEAM_MEMBER_ROLE_MAX_LENGTH}
           autoCapitalize="sentences"
           editable={!isSaving}

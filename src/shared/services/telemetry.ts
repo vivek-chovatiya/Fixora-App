@@ -44,9 +44,9 @@ type TelemetryKey = 'analytics' | 'crashReporter';
  * Parts of a property key that mark its value as personal data.
  *
  * Matched anywhere in the key, ignoring case, so `customerPhone` and
- * `ownerName` are caught along with `phone` and `name`. `code` is here for the
- * vendor auth code (section 7A.2) and takes every other code with it: a false
- * positive costs one property, a false negative leaks a standing credential.
+ * `ownerName` are caught along with `phone` and `name`. `code` is here for
+ * one-time codes (section 7A) and takes every other code with it: a false
+ * positive costs one property, a false negative leaks a credential.
  */
 const PERSONAL_KEY_FRAGMENTS: readonly string[] = [
   'name',

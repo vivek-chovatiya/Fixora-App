@@ -31,6 +31,7 @@ const REGISTRATION: VendorRegistration = {
     maskedDestination: '••••••3210',
     expiresAt: new Date(Date.now() + 300_000).toISOString(),
     resendAfterSeconds: 30,
+    deliveryChannel: 'NONE',
   },
 };
 
@@ -54,9 +55,8 @@ function stubAuthService(overrides: Partial<AuthService> = {}): AuthService {
     verifyCustomerOtp: unexpected('verifyCustomerOtp'),
     requestVendorOtp: unexpected('requestVendorOtp'),
     verifyVendorOtp: unexpected('verifyVendorOtp'),
-    verifyVendorAuthCode: unexpected('verifyVendorAuthCode'),
-    regenerateVendorAuthCode: unexpected('regenerateVendorAuthCode'),
-    signInVendor: unexpected('signInVendor'),
+    requestVendorSignInOtp: unexpected('requestVendorSignInOtp'),
+    verifyVendorSignInOtp: unexpected('verifyVendorSignInOtp'),
     signOut: unexpected('signOut'),
     ...overrides,
   } as AuthService;

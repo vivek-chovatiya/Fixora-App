@@ -8,6 +8,12 @@
  *
  * Elevation is expressed as a shadow token rather than a raw shadow, which is
  * what keeps cards consistent and lets dark mode adjust shadow colour centrally.
+ *
+ * A pressable card can also offer screen-reader actions (`accessibilityActions`,
+ * 28/11/2026): a notification's "Delete", which is otherwise only a swipe. They
+ * go on the button the card draws, because that is the element a screen reader
+ * focuses; a card that is not a button has no element to carry them, and its
+ * caller puts them on whatever it makes accessible instead.
  */
 
 import React, { memo, type ReactNode } from 'react';
@@ -15,6 +21,8 @@ import {
   Pressable,
   StyleSheet,
   View,
+  type AccessibilityActionEvent,
+  type AccessibilityActionInfo,
   type PressableStateCallbackType,
   type StyleProp,
   type ViewStyle,
@@ -35,6 +43,9 @@ export interface CardProps {
   disabled?: boolean;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  /** Screen-reader actions on the card's button. Ignored without `onPress`. */
+  accessibilityActions?: readonly AccessibilityActionInfo[];
+  onAccessibilityAction?: (event: AccessibilityActionEvent) => void;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }
@@ -50,6 +61,8 @@ function CardComponent({
   disabled = false,
   accessibilityLabel,
   accessibilityHint,
+  accessibilityActions,
+  onAccessibilityAction,
   style,
   testID,
 }: CardProps) {
@@ -84,6 +97,8 @@ function CardComponent({
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled }}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={onAccessibilityAction}
       style={({ pressed }: PressableStateCallbackType) => [
         base,
         pressed && { opacity: theme.opacity.pressed },

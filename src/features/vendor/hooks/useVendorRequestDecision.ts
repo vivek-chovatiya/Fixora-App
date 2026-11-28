@@ -154,27 +154,33 @@ function sent(
   return 'reason' in result ? result : { outcome: 'done', request: result.request };
 }
 
-const ACTIONS: Readonly<Record<VendorRequestAction, ActionSpec>> = {
-  accept: {
+/*
+  ⚠️ Each entry is a function, called when its toast is shown. They were
+  objects of strings read when this module loaded, which kept every accept,
+  reject and work toast in that moment's language after the app switched
+  (Phase 5, 28/11/2026). The same holds for REFUSAL_COPY below.
+*/
+const ACTIONS: Readonly<Record<VendorRequestAction, () => ActionSpec>> = {
+  accept: () => ({
     done: { message: COPY.accepted, tone: 'success', icon: 'success' },
     failed: COPY.acceptFailed,
-  },
-  reject: {
+  }),
+  reject: () => ({
     done: { message: COPY.rejected, tone: 'neutral', icon: 'reject' },
     failed: COPY.rejectFailed,
-  },
-  start: {
+  }),
+  start: () => ({
     done: { message: WORK.started, tone: 'info', icon: 'startWork' },
     failed: WORK.startFailed,
-  },
-  complete: {
+  }),
+  complete: () => ({
     done: { message: WORK.completed, tone: 'success', icon: 'completeWork' },
     failed: WORK.completeFailed,
-  },
-  recordPayment: {
+  }),
+  recordPayment: () => ({
     done: { message: WORK.paymentRecorded, tone: 'success', icon: 'success' },
     failed: WORK.recordPaymentFailed,
-  },
+  }),
 };
 
 /** The calls behind the actions a reference is enough for. */
@@ -186,11 +192,11 @@ const BY_REFERENCE: Readonly<
   start: async (service, id) => sent(await service.startRequest(id)),
 };
 
-const REFUSAL_COPY: Readonly<Record<VendorActionRefusal, string>> = {
-  taken: COPY.taken,
-  notPending: COPY.notPending,
-  invalidTransition: WORK.changed,
-  notFound: COPY.unavailable,
+const REFUSAL_COPY: Readonly<Record<VendorActionRefusal, () => string>> = {
+  taken: () => COPY.taken,
+  notPending: () => COPY.notPending,
+  invalidTransition: () => WORK.changed,
+  notFound: () => COPY.unavailable,
 };
 
 /**
@@ -240,7 +246,7 @@ export function useVendorRequestDecision(): VendorRequestDecisionState {
       const action = ACTIONS[decision];
 
       const unavailable = (reason: VendorActionRefusal): VendorDecisionOutcome => {
-        showToast({ message: REFUSAL_COPY[reason], tone: 'info', icon: 'info' });
+        showToast({ message: REFUSAL_COPY[reason](), tone: 'info', icon: 'info' });
         // What is on screen is wrong about this request; every view reads again.
         workChanged();
         return { kind: 'unavailable', reason };
@@ -263,7 +269,7 @@ export function useVendorRequestDecision(): VendorRequestDecisionState {
         if (event) {
           track(event, counted);
         }
-        showToast(action.done);
+        showToast(action().done);
         workChanged();
         return { kind: 'answered', decision, request: result.request };
       } catch (caught) {
@@ -277,7 +283,7 @@ export function useVendorRequestDecision(): VendorRequestDecisionState {
         }
 
         const { tone, icon } = ERROR_PRESENTATION[error.kind];
-        showToast({ message: `${action.failed} ${error.userMessage}`, tone, icon });
+        showToast({ message: `${action().failed} ${error.userMessage}`, tone, icon });
         return { kind: 'failed', error };
       } finally {
         inFlight.current = false;

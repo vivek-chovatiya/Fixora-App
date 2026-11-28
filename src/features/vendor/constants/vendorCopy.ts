@@ -6,9 +6,22 @@
  * file is what multi-language translates later.
  *
  * ⚠️ Nothing here may name a service category (PROJECT_BIBLE.md section 11).
+ *
+ * In English, Hindi and Gujarati since Phase 5 (28/11/2026, phase5-contract.md
+ * section 7): `VENDOR_COPY_EN` is the source, `vendorCopy.hi.ts` and
+ * `vendorCopy.gu.ts` translate it, and `VENDOR_COPY` answers in the current
+ * language, key by key, falling back to English (`core/i18n`).
+ *
+ * ⚠️ Read it in render. A string taken from `VENDOR_COPY` while a module loads
+ * keeps the language of that moment; a section (`VENDOR_COPY.dashboard`) may be
+ * held anywhere.
  */
 
-export const VENDOR_COPY = Object.freeze({
+import { localized } from '@/core/i18n';
+import { VENDOR_COPY_GU } from '@/features/vendor/constants/vendorCopy.gu';
+import { VENDOR_COPY_HI } from '@/features/vendor/constants/vendorCopy.hi';
+
+export const VENDOR_COPY_EN = Object.freeze({
   /** Deciding whether setup is needed, before either the form or the app appears. */
   gate: Object.freeze({
     loading: 'Loading your business profile',
@@ -94,10 +107,13 @@ export const VENDOR_COPY = Object.freeze({
     areaTooLong: (max: number) => `The service area must be ${max} characters or fewer.`,
     categoriesRequired: 'Select at least one service you offer.',
 
-    /** A team member's details (Phase 3E-7). Phone messages are the shared phone rule's. */
+    /**
+     * A team member's details (Phase 3E-7). Phone messages are the shared phone
+     * rule's. The role has no "required" message since it became optional
+     * (phase5-contract.md section 4, T137, 28/11/2026) — only its ceiling.
+     */
     memberNameRequired: 'Enter their name.',
     memberNameTooLong: (max: number) => `The name must be ${max} characters or fewer.`,
-    memberRoleRequired: 'Enter their role.',
     memberRoleTooLong: (max: number) => `The role must be ${max} characters or fewer.`,
 
     /**
@@ -228,6 +244,11 @@ export const VENDOR_COPY = Object.freeze({
     statusInProgress: 'In progress',
     statusCompleted: 'Completed',
     statusRejected: 'Rejected',
+    /**
+     * The customer withdrew it (section 21's `CANCELLED`). Reached by opening
+     * it — from its push, say — since a cancelled request is in no list.
+     */
+    statusCancelled: 'Cancelled',
     /** A status the app does not recognise. Says so, and guesses nothing. */
     statusUnknown: 'Status unavailable',
 
@@ -508,6 +529,16 @@ export const VENDOR_COPY = Object.freeze({
 
     requestSection: 'Request',
     referenceLabel: 'Reference',
+    /**
+     * The copy button beside the reference (T135, 28/11/2026). A glyph on
+     * screen, so its spoken name says what it copies; the customer's details
+     * word it the same way.
+     */
+    copyReference: (reference: string) => `Copy reference ${reference}`,
+    copyReferenceHint: 'Copies the reference to the clipboard',
+    /** Shown beside the button for a moment once the reference is on the clipboard. */
+    copied: 'Copied',
+    copyFailed: 'We could not copy the reference. You can write it down instead.',
     categoryLabel: 'Category',
     serviceLabel: 'Service',
     statusLabel: 'Status',
@@ -717,9 +748,14 @@ export const VENDOR_COPY = Object.freeze({
     emptyMessage: "You haven't added any team members yet.",
 
     phoneLabel: 'Phone',
-    /** A member's details, said as one sentence. */
-    memberSpoken: (name: string, role: string, phone?: string) =>
-      phone ? `${name}, ${role}. Phone ${phone}` : `${name}, ${role}`,
+    /**
+     * A member's details, said as one sentence. The role is optional (T137,
+     * 28/11/2026): without one the sentence is the name, never "Asha, ."
+     */
+    memberSpoken: (name: string, role?: string, phone?: string) => {
+      const who = role ? `${name}, ${role}` : name;
+      return phone ? `${who}. Phone ${phone}` : who;
+    },
 
     /**
      * Section 39's status, as the team shows it (`teamMemberStatus.ts`).
@@ -776,27 +812,34 @@ export const VENDOR_COPY = Object.freeze({
     namePlaceholder: 'Their full name',
     roleLabel: 'Role',
     rolePlaceholder: 'e.g. Senior technician',
+    /** Optional since T137 (28/11/2026), said the way the phone below it says so. */
+    roleHelper: 'Optional',
     phoneLabel: 'Phone number',
     phonePlaceholder: 'Their phone number',
     phoneHelper: 'Optional',
 
     /**
-     * Section 39's Profile Image, at the top of the form (2026-10-21): the
-     * business picture's interaction (`profileForm`), in a team member's
-     * words. The picture itself is not a stop for a screen reader — the
-     * actions say whether there is one ("Add…" or "Replace…") — so each spoken
-     * name says what happens to whose photo.
+     * Section 39's Profile Image, at the top of the form (2026-10-21). Since
+     * T136 (28/11/2026) one button — "Add photo", or "Change photo" once there
+     * is one — opens a sheet of what can be done: choose from the gallery, take
+     * a photo, and remove the one there is (only then). The picture itself is
+     * not a stop for a screen reader: the button's words already say whether
+     * there is one.
      */
     photoSection: 'Photo',
     photoSupport: 'Optional. A clear photo of their face.',
-    photoCamera: 'Take a photo',
-    photoGallery: 'Choose a photo',
-    photoAddCameraSpoken: 'Add their photo with the camera',
-    photoAddGallerySpoken: 'Add their photo from your photos',
-    photoReplaceCameraSpoken: 'Replace their photo with the camera',
-    photoReplaceGallerySpoken: 'Replace their photo from your photos',
+    photoAdd: 'Add photo',
+    photoChange: 'Change photo',
+    photoOptionsHint: 'Opens the photo options',
+    photoSheetTitle: 'Their photo',
+    photoGallery: 'Choose from gallery',
+    photoGalleryHint: 'Opens your photos to choose one',
+    photoCamera: 'Take photo',
+    photoCameraHint: 'Opens the camera',
     photoRemove: 'Remove photo',
-    photoRemoveSpoken: 'Remove their photo',
+    photoRemoveHint: 'Takes their photo off this form. Save to keep the change.',
+    photoCancel: 'Cancel',
+    photoCancelHint: 'Closes the photo options',
     photoUploading: 'Uploading the photo…',
     /** As the business picture's (`profileForm.photoProgress`). */
     photoProgress: (percent: number) => `Uploading… ${percent}%`,
@@ -1173,4 +1216,10 @@ export const VENDOR_COPY = Object.freeze({
     logoutConfirm: 'Log out',
     logoutConfirmHint: 'Signs you out of Fixora',
   }),
+});
+
+export const VENDOR_COPY = localized({
+  en: VENDOR_COPY_EN,
+  hi: VENDOR_COPY_HI,
+  gu: VENDOR_COPY_GU,
 });

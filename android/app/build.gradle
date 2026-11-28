@@ -3,6 +3,25 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 /**
+ * Push notifications through Firebase Cloud Messaging (phase5-contract.md
+ * section 6, owner-approved 28/11/2026) — switched on by a file, not by code.
+ *
+ * The google-services plugin turns `google-services.json` into the resources
+ * Firebase starts from (`google_app_id` and friends). Without the file the
+ * plugin would fail the build, so it is applied only when the file is there:
+ * no file, no Firebase app at run time, and the app's `FirebasePushService`
+ * sees that and does nothing. Adding the file for application id `com.fixora`
+ * and rebuilding is the whole of switching push on for Android.
+ *
+ * ⚠️ The file is the owner's to add, from the Firebase console, at exactly
+ * `android/app/google-services.json`. A copy anywhere else (a variant folder,
+ * the repository root) is not looked for here and leaves push off.
+ */
+if (file("google-services.json").exists()) {
+    apply plugin: "com.google.gms.google-services"
+}
+
+/**
  * Bundles the icon font into the APK.
  *
  * Without this, every Icon renders as an empty box: the glyph names resolve, the

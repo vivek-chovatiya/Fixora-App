@@ -33,7 +33,8 @@ export interface UseServiceMutationOptions {
    * Set false when the result is a credential. `mutate` still resolves with it,
    * so the caller decides where it lives and for how long — but the hook stops
    * being a second place it is held, which is the difference between one owner
-   * and two for something like the vendor auth code.
+   * and two for a credential. (Its first user, the vendor auth code, was
+   * retired on 28/11/2026; the option stays for the next one.)
    */
   retainResult?: boolean;
 }

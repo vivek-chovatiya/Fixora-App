@@ -8,6 +8,11 @@
  * description or an area; the vendor knows how to describe their business.
  *
  * Values are trimmed here, so what is validated is what is sent.
+ *
+ * ⚠️ Every message is read through a function (`{ error: () => … }`): the schema
+ * is built once, when this module loads, and a string read then would stay in
+ * that moment's language once the vendor copy is translated (Phase 5,
+ * 28/11/2026).
  */
 
 import { z } from 'zod';
@@ -26,17 +31,23 @@ export const vendorProfileSchema = z.object({
   businessName: z
     .string()
     .trim()
-    .min(1, COPY.businessNameRequired)
-    .max(VENDOR_BUSINESS_NAME_MAX_LENGTH, COPY.businessNameTooLong(VENDOR_BUSINESS_NAME_MAX_LENGTH)),
+    .min(1, { error: () => COPY.businessNameRequired })
+    .max(VENDOR_BUSINESS_NAME_MAX_LENGTH, {
+      error: () => COPY.businessNameTooLong(VENDOR_BUSINESS_NAME_MAX_LENGTH),
+    }),
   description: z
     .string()
     .trim()
-    .max(VENDOR_DESCRIPTION_MAX_LENGTH, COPY.descriptionTooLong(VENDOR_DESCRIPTION_MAX_LENGTH)),
-  serviceCategoryIds: z.array(z.string()).min(1, COPY.categoriesRequired),
+    .max(VENDOR_DESCRIPTION_MAX_LENGTH, {
+      error: () => COPY.descriptionTooLong(VENDOR_DESCRIPTION_MAX_LENGTH),
+    }),
+  serviceCategoryIds: z.array(z.string()).min(1, { error: () => COPY.categoriesRequired }),
   serviceArea: z
     .string()
     .trim()
-    .max(VENDOR_SERVICE_AREA_MAX_LENGTH, COPY.areaTooLong(VENDOR_SERVICE_AREA_MAX_LENGTH)),
+    .max(VENDOR_SERVICE_AREA_MAX_LENGTH, {
+      error: () => COPY.areaTooLong(VENDOR_SERVICE_AREA_MAX_LENGTH),
+    }),
 });
 
 export type VendorProfileForm = z.infer<typeof vendorProfileSchema>;

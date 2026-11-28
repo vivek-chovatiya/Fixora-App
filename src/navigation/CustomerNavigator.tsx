@@ -59,7 +59,9 @@ import { RequestReviewScreen } from '@/features/customer/screens/RequestReviewSc
 import { RequestSubmittedScreen } from '@/features/customer/screens/RequestSubmittedScreen';
 import { SubCategoriesScreen } from '@/features/customer/screens/SubCategoriesScreen';
 import { RequestDraftProvider } from '@/features/customer/state/RequestDraftContext';
+import { ChangeLanguageScreen } from '@/features/language/screens/LanguageScreen';
 import { NotificationsScreen } from '@/features/notifications/screens/NotificationsScreen';
+import { NAVIGATION_COPY } from '@/navigation/navigationCopy';
 import { renderFloatingTabBar } from '@/navigation/components/FloatingTabBar';
 import { createTabIcon } from '@/navigation/tabIcon';
 import { createTabScreenOptions } from '@/navigation/tabScreenOptions';
@@ -82,17 +84,24 @@ function CustomerTabs() {
       <Tab.Screen
         name="Home"
         component={CustomerHomeScreen}
-        options={{ tabBarIcon: createTabIcon('home') }}
+        // The tab's name in the app's language, read in render (`navigationCopy`).
+        options={{ title: NAVIGATION_COPY.customerTabs.Home, tabBarIcon: createTabIcon('home') }}
       />
       <Tab.Screen
         name="Requests"
         component={MyRequestsScreen}
-        options={{ tabBarIcon: createTabIcon('requests') }}
+        options={{
+          title: NAVIGATION_COPY.customerTabs.Requests,
+          tabBarIcon: createTabIcon('requests'),
+        }}
       />
       <Tab.Screen
         name="Profile"
         component={CustomerProfileScreen}
-        options={{ tabBarIcon: createTabIcon('profile') }}
+        options={{
+          title: NAVIGATION_COPY.customerTabs.Profile,
+          tabBarIcon: createTabIcon('profile'),
+        }}
       />
     </Tab.Navigator>
   );
@@ -150,6 +159,8 @@ export function CustomerNavigator() {
           application, so neither stack reaches into the other.
         */}
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
+        {/* Pushed from Profile's Language row; the vendor stack registers the same. */}
+        <Stack.Screen name="Language" component={ChangeLanguageScreen} />
       </Stack.Navigator>
     </RequestDraftProvider>
   );

@@ -5,13 +5,14 @@
  * section 39, Phase 3E-7). It behaves like a backend rather than like a
  * convenience:
  *
- * - it re-checks what it is sent — a name and a role, within their ceilings,
- *   a phone that is a phone, a photo that is an uploaded http(s) URL — because
- *   a real server does, and a form that has never met a refusal will not
- *   handle one;
- * - it normalises (trims; a phone becomes digits; a blank phone or photo is
- *   none) and answers with the team as it stored it, so the device adopts the
- *   server's version;
+ * - it re-checks what it is sent — a name, and a role when there is one
+ *   (optional since phase5-contract.md section 4, T137, 28/11/2026), within
+ *   their ceilings, a phone that is a phone, a photo that is an uploaded
+ *   http(s) URL — because a real server does, and a form that has never met a
+ *   refusal will not handle one;
+ * - it normalises (trims; a phone becomes digits; a blank role, phone or photo
+ *   is none) and answers with the team as it stored it, so the device adopts
+ *   the server's version;
  * - it refuses when no vendor is signed in, and a customer is not a vendor;
  * - it answers `notFound` for a member that is not on this vendor's team —
  *   including one on somebody else's — so it can neither change another
@@ -128,9 +129,7 @@ function normalise(input: TeamMemberInput): TeamMemberInput {
   if (name.length > TEAM_MEMBER_NAME_MAX_LENGTH) {
     refuse('the name is too long');
   }
-  if (!role) {
-    refuse('a role is required');
-  }
+  // No role is allowed (contract section 4); one that is given still has a ceiling.
   if (role.length > TEAM_MEMBER_ROLE_MAX_LENGTH) {
     refuse('the role is too long');
   }
@@ -141,7 +140,7 @@ function normalise(input: TeamMemberInput): TeamMemberInput {
 
   return {
     name,
-    role,
+    ...(role ? { role } : {}),
     ...(typedPhone ? { phone: normalisePhone(typedPhone) } : {}),
     ...(photoUrl ? { photoUrl } : {}),
   };

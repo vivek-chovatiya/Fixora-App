@@ -13,14 +13,16 @@
  * hours wrapped into a block would take over the form, and unlike priority the
  * options are a sequence, so running out of sight to the right is the shape the
  * content already has.
+ *
+ * The rail itself is the shared `SelectionChipRail` since T134 (28/11/2026),
+ * when the requests lists' filters needed the same row; this keeps the form's
+ * test ids, where "no preference" — an empty value — is `-any`.
  */
 
 import React, { memo, useCallback } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
 
-import { SelectionChip } from '@/features/customer/components/SelectionChip';
 import type { ScheduleOption } from '@/features/customer/constants/requestScheduling';
-import { useTheme } from '@/shared/theme';
+import { SelectionChipRail } from '@/shared/components';
 
 export interface ScheduleRailProps {
   options: readonly ScheduleOption[];
@@ -32,32 +34,6 @@ export interface ScheduleRailProps {
   testID?: string;
 }
 
-function RailOption({
-  option,
-  selected,
-  onChange,
-  accessibilityHint,
-  testID,
-}: {
-  option: ScheduleOption;
-  selected: boolean;
-  onChange: (value: string) => void;
-  accessibilityHint?: string;
-  testID?: string;
-}) {
-  const handlePress = useCallback(() => onChange(option.value), [onChange, option.value]);
-
-  return (
-    <SelectionChip
-      label={option.label}
-      selected={selected}
-      onPress={handlePress}
-      accessibilityHint={accessibilityHint}
-      testID={testID}
-    />
-  );
-}
-
 function ScheduleRailComponent({
   options,
   value,
@@ -66,42 +42,22 @@ function ScheduleRailComponent({
   accessibilityHint,
   testID,
 }: ScheduleRailProps) {
-  const theme = useTheme();
+  const chipTestID = useCallback(
+    (optionValue: string) => `${testID}-${optionValue || 'any'}`,
+    [testID],
+  );
 
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      accessibilityRole="radiogroup"
+    <SelectionChipRail
+      options={options}
+      value={value}
+      onChange={onChange}
       accessibilityLabel={accessibilityLabel}
-      // Bleeds to the screen edge and pads itself back, so a rail that runs off
-      // the side looks like it continues rather than stopping at a margin.
-      style={[styles.rail, { marginHorizontal: -theme.screenPadding }]}
-      contentContainerStyle={{
-        paddingHorizontal: theme.screenPadding,
-        gap: theme.spacing.sm,
-      }}
-      testID={testID}>
-      {options.map(option => (
-        <RailOption
-          key={option.value || 'any'}
-          option={option}
-          selected={option.value === value}
-          onChange={onChange}
-          accessibilityHint={accessibilityHint}
-          testID={testID ? `${testID}-${option.value || 'any'}` : undefined}
-        />
-      ))}
-    </ScrollView>
+      accessibilityHint={accessibilityHint}
+      testID={testID}
+      chipTestID={testID ? chipTestID : undefined}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  rail: {
-    // Without this the rail claims the height of the tallest thing it could
-    // ever hold rather than the height of a chip.
-    flexGrow: 0,
-  },
-});
 
 export const ScheduleRail = memo(ScheduleRailComponent);

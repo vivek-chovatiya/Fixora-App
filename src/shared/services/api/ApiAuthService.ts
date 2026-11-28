@@ -3,9 +3,12 @@
  *
  * AuthService against the real backend, built to the shared sign-in contract of
  * 17/11/2026 (`/auth/customer/*`, `/auth/vendor/*`, `/auth/logout`;
- * PROJECT_BIBLE.md sections 7, 7A, 28 and 29). `MockAuthService` is the
- * behaviour it matches: the screens were built against that, and nothing above
- * the service may notice which one is registered.
+ * PROJECT_BIBLE.md sections 7, 7A, 28 and 29) as amended by phase5-contract.md
+ * sections 1 and 2 (28/11/2026): vendors sign in with a one-time code every
+ * time, registration ends in a session, and every challenge says which channel
+ * carried the code. `MockAuthService` is the behaviour it matches: the screens
+ * were built against that, and nothing above the service may notice which one
+ * is registered.
  *
  * Decisions:
  * - Every response is read field by field into the app's own types. Nothing
@@ -18,19 +21,16 @@
  *   the customer's verification would open the wrong application, so it is
  *   refused as a server fault rather than trusted.
  * - Failures are HttpClient's: the kind from the status, the copy from the
- *   backend's `code` (`AppError.messageForCode`). One exception, documented on
- *   `verifyVendorAuthCode`.
+ *   backend's `code` (`AppError.messageForCode`) — `OTP_DELIVERY_FAILED` (503)
+ *   included, which reads as a retryable server failure.
  * - Signing out asks HttpClient not to treat its own 401 as a dead session:
  *   it is already ending the session, and the thunk clears it either way.
  *
- * ⚠️ The vendor auth code is a standing credential (PROJECT_BIBLE.md section
- * 7A.2). It is sent in a request body and returned exactly once, for display.
- * Nothing here logs it, keeps it, or puts it in an error: a malformed one is
- * refused by naming the field, never the value, and HttpClient keeps request
- * bodies out of every error it builds.
+ * ⚠️ The permanent vendor auth code is gone (contract section 1.3): its routes
+ * answer 404 now. Nothing here may call `/vendor/signin`,
+ * `/vendor/auth-code/*` or `/vendors/auth-code/regenerate` again.
  */
 
-import { AppConfig } from '@/core/config/AppConfig';
 import type { AuthUser, SessionPayload, UserRole } from '@/features/auth/types';
 import { BaseApiService } from '@/shared/services/api/BaseApiService';
 import {
@@ -44,15 +44,23 @@ import { toImageUrl } from '@/shared/services/api/uploadUrls';
 import type {
   AuthService,
   OtpChallenge,
-  VendorAuthCode,
+  OtpDeliveryChannel,
   VendorRegistration,
   VendorRegistrationDetails,
 } from '@/shared/services/types/AuthService';
-import { AppError } from '@/shared/types/error';
 import { normalisePhone } from '@/shared/validation/phone';
 
-/** A code shaped as the contract promises: exactly the configured number of digits. */
-const AUTH_CODE_SHAPE = new RegExp(`^\\d{${AppConfig.vendorAuthCode.length}}$`);
+/**
+ * The challenge's `deliveryChannel`, as the app's value.
+ *
+ * ⚠️ Lenient on purpose, unlike the fields around it. It only chooses words, so
+ * a missing one (a backend not yet on phase5-contract.md section 2) or one the
+ * app does not know (a channel added later) reads as `NONE` — today's wording —
+ * rather than refusing a code the user has already been sent.
+ */
+function toDeliveryChannel(value: unknown): OtpDeliveryChannel {
+  return value === 'WHATSAPP' ? 'WHATSAPP' : 'NONE';
+}
 
 function toChallenge(raw: unknown, what = 'challenge'): OtpChallenge {
   const record = requireRecord(raw, what);
@@ -69,22 +77,8 @@ function toChallenge(raw: unknown, what = 'challenge'): OtpChallenge {
     maskedDestination: requireString(record, 'maskedDestination', what),
     expiresAt,
     resendAfterSeconds,
+    deliveryChannel: toDeliveryChannel(record.deliveryChannel),
   };
-}
-
-/**
- * ⚠️ Refuses a code of the wrong shape rather than showing it. A code read as a
- * number would have lost a leading zero, and a vendor who saved that would be
- * locked out by the very code they were told to keep.
- */
-function toAuthCode(raw: unknown): VendorAuthCode {
-  const record = requireRecord(raw, 'authCode');
-  const code = record.code;
-  if (typeof code !== 'string' || !AUTH_CODE_SHAPE.test(code)) {
-    throw malformedResponse('authCode.code');
-  }
-
-  return { code, issuedAt: requireString(record, 'issuedAt', 'authCode') };
 }
 
 function toUserRole(value: string | undefined): UserRole | undefined {
@@ -174,58 +168,28 @@ export class ApiAuthService extends BaseApiService implements AuthService {
     return toChallenge(data);
   }
 
-  async verifyVendorOtp(registrationId: string, code: string): Promise<VendorAuthCode> {
+  /** Creates the vendor and signs them in (contract section 1.2). */
+  async verifyVendorOtp(registrationId: string, code: string): Promise<SessionPayload> {
     const data = await this.post<unknown>('/vendor/otp/verify', {
       registrationId,
       code: code.trim(),
     });
-    return toAuthCode(data);
-  }
-
-  /**
-   * The vendor types back the code they were just shown.
-   *
-   * ⚠️ The contract does not say which code a wrong entry here answers with.
-   * If it is `AUTH_CODE_INVALID`, the sign-in refusal's sentence ("not
-   * recognised") would be wrong on a screen where nothing was signed in to and
-   * the vendor has only mistyped — so it reads as the mock's wrong-code sentence
-   * instead. The kind, status and code are kept; only the copy changes.
-   */
-  async verifyVendorAuthCode(registrationId: string, authCode: string): Promise<SessionPayload> {
-    let data: unknown;
-    try {
-      data = await this.post<unknown>('/vendor/auth-code/confirm', {
-        registrationId,
-        authCode: authCode.trim(),
-      });
-    } catch (caught) {
-      const error = AppError.from(caught);
-      if (error.code !== 'AUTH_CODE_INVALID') {
-        throw error;
-      }
-      throw new AppError({
-        kind: error.kind,
-        message: error.message,
-        userMessage: AppError.messageForCode('OTP_INVALID'),
-        code: error.code,
-        statusCode: error.statusCode,
-        cause: error.cause,
-      });
-    }
     return toSession(data, 'vendor');
-  }
-
-  async regenerateVendorAuthCode(registrationId: string): Promise<VendorAuthCode> {
-    const data = await this.post<unknown>('/vendor/auth-code/regenerate', { registrationId });
-    return toAuthCode(data);
   }
 
   /* Vendor sign in ------------------------------------------------------- */
 
-  async signInVendor(phone: string, authCode: string): Promise<SessionPayload> {
-    const data = await this.post<unknown>('/vendor/signin', {
+  async requestVendorSignInOtp(phone: string): Promise<OtpChallenge> {
+    const data = await this.post<unknown>('/vendor/signin/otp/request', {
       phone: normalisePhone(phone),
-      authCode: authCode.trim(),
+    });
+    return toChallenge(data);
+  }
+
+  async verifyVendorSignInOtp(phone: string, code: string): Promise<SessionPayload> {
+    const data = await this.post<unknown>('/vendor/signin/otp/verify', {
+      phone: normalisePhone(phone),
+      code: code.trim(),
     });
     return toSession(data, 'vendor');
   }

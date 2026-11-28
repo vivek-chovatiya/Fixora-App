@@ -26,6 +26,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 
+import { getClipboard, setClipboard } from '@/core/clipboard/Clipboard';
 import { setSessionStorage } from '@/core/storage/SessionStorage';
 import { authReducer, signedIn } from '@/features/auth/state/authSlice';
 import type { AuthUser } from '@/features/auth/types';
@@ -500,6 +501,20 @@ describe('Vendor requests — filters', () => {
       checked: true,
     });
   });
+
+  it('puts all five on one row that scrolls sideways, with no scroll indicator (T134)', async () => {
+    const screen = await render();
+
+    const group = screen.host('vendor-requests-filters');
+    expect(group.props.horizontal).toBe(true);
+    expect(group.props.showsHorizontalScrollIndicator).toBe(false);
+    // Every chip is in that one row, in order.
+    expect(
+      group
+        .findAll(node => node.props?.accessibilityRole === 'radio' && typeof node.props?.onPress === 'function')
+        .map(node => node.props.accessibilityLabel),
+    ).toEqual([COPY.filterAll, COPY.filterPending, COPY.filterActive, COPY.filterCompleted, COPY.filterRejected]);
+  });
 });
 
 describe('Vendor requests — empty', () => {
@@ -841,6 +856,53 @@ describe('Vendor request details', () => {
     return screen;
   }
 
+  it('copies the reference — exactly it — from a button named for it, and says so (T135)', async () => {
+    const original = getClipboard();
+    const copied: string[] = [];
+    setClipboard({
+      copy: async value => {
+        copied.push(value);
+      },
+    });
+
+    try {
+      const screen = await open();
+      const label = DETAILS.copyReference('REQ-31042');
+
+      const [button] = screen.pressable(label);
+      expect(button.props.accessibilityRole).toBe('button');
+      expect(button.props.accessibilityHint).toBe(DETAILS.copyReferenceHint);
+      expect(screen.has('vendor-request-reference-copy-copied')).toBe(false);
+
+      await screen.press(label);
+
+      expect(copied).toEqual(['REQ-31042']);
+      expect(screen.text('vendor-request-reference-copy-copied')).toBe(DETAILS.copied);
+    } finally {
+      setClipboard(original);
+    }
+  });
+
+  it('says in a toast when the reference could not be copied, never "Copied"', async () => {
+    const original = getClipboard();
+    setClipboard({
+      copy: async () => {
+        throw new Error('clipboard unavailable');
+      },
+    });
+
+    try {
+      const screen = await open();
+
+      await screen.press(DETAILS.copyReference('REQ-31042'));
+
+      expect(screen.text('toast')).toContain(DETAILS.copyFailed);
+      expect(screen.has('vendor-request-reference-copy-copied')).toBe(false);
+    } finally {
+      setClipboard(original);
+    }
+  });
+
   it('shows the request: service, status, urgency, reference, category, area, origin and description', async () => {
     const screen = await open();
 
@@ -949,6 +1011,35 @@ describe('Vendor request details', () => {
     expect(screen.text('vendor-request-priority')).toBe('Something new');
   });
 
+  /*
+    Opened from the push its cancelling sends, a cancelled request read "Status
+    unavailable" (device test, 28/11/2026). It says Cancelled, offers nothing,
+    and shows nothing of the customer: the vendor never held the work.
+  */
+  it('says a cancelled request is cancelled, with no action and no customer', async () => {
+    const screen = await render();
+    jest.spyOn(requests, 'getRequest').mockResolvedValueOnce({
+      id: 'REQ-31043',
+      serviceName: 'Fan installation',
+      customerName: 'Asha Patel',
+      priority: 'MEDIUM',
+      status: 'CANCELLED',
+      dispatch: 'directed',
+      createdAt: new Date().toISOString(),
+    });
+
+    await screen.press(FIRST_CARD);
+
+    expect(screen.text('vendor-request-status')).toContain(JOB.statusCancelled);
+    expect(screen.text('vendor-request-status')).not.toContain(JOB.statusUnknown);
+    // No answer, no work step, no payment, no customer card.
+    expect(screen.has('vendor-request-answer')).toBe(false);
+    expect(screen.has('vendor-request-work')).toBe(false);
+    expect(screen.has('vendor-request-payment')).toBe(false);
+    expect(screen.has('vendor-request-customer')).toBe(false);
+    expect(screen.text('vendor-request-details')).not.toContain('Asha Patel');
+  });
+
   it('says calmly that a request is not available, with no retry that cannot help', async () => {
     const screen = await render();
     jest
@@ -983,12 +1074,16 @@ describe('Vendor request details', () => {
     expect(screen.text('vendor-request-service')).toBe('Switchboard repair');
   });
 
-  it('has a way back and nothing else to press once a request is finished', async () => {
+  it('has a way back, the reference’s copy and nothing else to press once a request is finished', async () => {
     const screen = await render();
     await screen.choose('completed');
     await screen.openCard('REQ-30912');
 
-    expect([...new Set(screen.actions('vendor-request-details'))]).toEqual([DETAILS.back]);
+    // Copying the reference changes nothing about the request (T135).
+    expect([...new Set(screen.actions('vendor-request-details'))]).toEqual([
+      DETAILS.back,
+      DETAILS.copyReference('REQ-30912'),
+    ]);
   });
 
   it('offers a waiting request’s two answers beside the way back, and nothing else', async () => {
@@ -997,6 +1092,7 @@ describe('Vendor request details', () => {
     expect([...new Set(screen.actions('vendor-request-details'))]).toEqual([
       DETAILS.back,
       ...answersFor('Switchboard repair', 'REQ-31042'),
+      DETAILS.copyReference('REQ-31042'),
     ]);
   });
 
